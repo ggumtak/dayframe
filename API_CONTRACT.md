@@ -35,10 +35,16 @@ POST `{"text":"Tomorrow 7pm gym every Mon, Wed #health @workout p2","timezone":"
 | Tokens | Parsed behavior |
 | --- | --- |
 | `오늘`, `내일`, `모레`, `today`, `tomorrow`, `day after tomorrow`, `YYYY-MM-DD` | Calendar dates in the supplied zone |
+| `11월 25일`, `3일 뒤`, `2주 후`, `in 3 days` | Month and day (the next time it comes around), or an offset from today |
 | `다음주 화요일`, `다음 주 화요일`, `next week Tue`, `next Tue` | Weekday in the next Monday-starting week |
-| `오전 8시`, `오후 6시 30분`, `7pm`, `18:30`, `at 7:15 pm` | Local wall-clock time |
-| `매일`, `매주`, `매주 월수금`, `every Mon, Wed`, `every 2 weeks`, `daily`, `weekly` | Daily or weekly RRULE with optional weekday or interval |
+| `이번주 금요일`, `this Fri` | Weekday in the current Monday-starting week |
+| `오전 8시`, `오후 6시 30분`, `7시 반`, `7pm`, `18:30`, `at 7:15 pm` | Local wall-clock time |
+| `아침`, `새벽`, `낮`, `저녁`, `밤` before an hour, `정오`, `자정`, `noon`, `midnight` | Day period. `밤 12시` is the midnight that ends the given date |
+| `매일`, `매주`, `매주 월수금`, `월요일마다`, `every Mon, Wed`, `every 2 weeks`, `3일마다`, `daily`, `weekly` | Daily or weekly RRULE with optional weekday or interval |
+| `평일마다`, `매주 주말`, `격주`, `every weekday`, `every weekend`, `every other week` | Monday–Friday, Saturday–Sunday, or a two-week interval |
 | `#공부`, `#"Home Projects"`, `@workout`, `@"Read Later"`, `p1`–`p4` | Project name, tags, and priority |
+
+A date or time may carry `까지`, and a time may carry `쯤` or `에`. These particles are dropped from the title.
 
 An optional `now` is available for deterministic previews and tests. A time by itself uses the next future occurrence. With a weekly weekday list, the first due date is the first listed weekday on or after any explicit date. For timed recurrences, persist `recurrence_local_time` with `due_at` to retain the requested local time across daylight-saving changes. A skipped wall time moves forward by the transition gap. An ambiguous wall time uses the earlier offset. Supply daily or weekly RRULEs with intervals from 1 to 52. Weekly lists use `MO,TU,WE,TH,FR,SA,SU`. Unrecognized wording remains in the title.
 
