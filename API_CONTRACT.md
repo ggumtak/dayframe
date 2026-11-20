@@ -1,0 +1,75 @@
+# Dayframe API contract
+
+Use `/functions/v1/api/v1` on the Supabase URL. [openapi.yaml](openapi.yaml) is the machine-readable contract and [types.ts](packages/shared/types.ts) contains the matching TypeScript types.
+
+Send `Authorization: Bearer <Supabase access_token>` on private requests. Add `apikey: <Supabase publishable key>` when calling through the gateway. `/app/version` can run before login. Send `Content-Type: application/json` for routes with JSON request bodies.
+
+Successful responses contain a resource directly or a page shaped as `{ "items": [], "nextOffset": null }`. Lists use `limit` (1–100, default 50) and `offset` (default 0). Continue with `nextOffset` until it is `null`. Refresh from offset 0 after a mutation because additions and deletes can shift offsets. Deletes and tag links return `204` with an empty body. Repeating a delete is safe.
+
+Errors use `{ "error": { "code": "INVALID_INPUT", "message": "...", "fields": ["..."] } }`. Treat `401` as a session refresh/sign-in condition, `404` as a missing record, and `409` as a conflict or stale data requiring a refresh. The optional `fields` array contains validation details. Map client-visible messaging by `code`, with `message` as a fallback.
+
+## Accounts, organization and tasks
+
+| Route | Methods | Behavior |
+| --- | --- | --- |
+| `/me` | `GET`, `PATCH` | Profile, display name, and default task time zone |
+| `/projects`, `/sections`, `/tags` | `GET`, `POST` | List and create |
+| `/projects/{id}`, `/sections/{id}`, `/tags/{id}` | `GET`, `PATCH`, `DELETE` | Read, update, and delete |
+| `/tasks`, `/tasks/{id}` | Collection `GET`, `POST`. Item `GET`, `PATCH`, `DELETE` | Create and edit tasks at any depth |
+| `/subtasks`, `/subtasks/{id}` | `GET` | Read-only view for tasks with a parent |
+| `/tasks/parse` | `POST` | Preview Korean or English quick entry |
+| `/tasks/{id}/tags`, `/tasks/{id}/tags/{tagId}` | Collection `GET`. Link `PUT`, `DELETE` | List, attach or remove a tag |
+| `/tasks/{id}/complete`, `/tasks/{id}/reopen` | `POST` | Complete an occurrence or reopen a completed one-off task |
+| `/tasks/reschedule-overdue` | `POST` | Move prior-date open tasks to today in their own time zone |
+
+Sections may be filtered with `project_id`. List `/tasks?parent_task_id=root` for top-level tasks and `/tasks?parent_task_id=<uuid>` for direct children. The full list includes all depths. `project_id` filters direct project assignment. Child tasks inherit their project and section through their parent chain. Create them with `parent_task_id` and omit direct project and section fields. The parent remains fixed for the lifetime of the task. `state=open` or `state=completed` filters task and subtask lists. Priorities run from P1 (highest) to P4 (default). `position` is a signed integer sorted ascending. IDs break ties.
+
+Deleting a project cascades to its sections, directly assigned tasks and their descendants. Deleting a section clears its task links. Deleting a task cascades to its subtasks, tag links and completion history. Focus sessions retain their timing with the deleted link cleared.
+
+`due_at` is an ISO 8601 instant with an offset. `all_day: true` uses the start of the date in the task's IANA `timezone`. Format all-day values in that zone. Send `due_at: null`, `all_day: false` and `recurrence_rule: null` together when clearing a recurring or all-day schedule. A new task defaults to the time zone from `/me`.
+
+### Quick entry and recurrence
+
+POST `{"text":"Tomorrow 7pm gym every Mon, Wed #health @workout p2","timezone":"Asia/Seoul"}` to `/tasks/parse`. The preview includes `title`, `due_at`, `all_day`, `timezone`, `recurrence_rule`, `recurrence_local_time`, `project`, `tags`, and `priority`.
+
+| Tokens | Parsed behavior |
+| --- | --- |
+| `오늘`, `내일`, `모레`, `today`, `tomorrow`, `day after tomorrow`, `YYYY-MM-DD` | Calendar dates in the supplied zone |
+| `다음주 화요일`, `다음 주 화요일`, `next week Tue`, `next Tue` | Weekday in the next Monday-starting week |
+| `오전 8시`, `오후 6시 30분`, `7pm`, `18:30`, `at 7:15 pm` | Local wall-clock time |
+| `매일`, `매주`, `매주 월수금`, `every Mon, Wed`, `every 2 weeks`, `daily`, `weekly` | Daily or weekly RRULE with optional weekday or interval |
+| `#공부`, `#"Home Projects"`, `@workout`, `@"Read Later"`, `p1`–`p4` | Project name, tags, and priority |
+
+An optional `now` is available for deterministic previews and tests. A time by itself uses the next future occurrence. With a weekly weekday list, the first due date is the first listed weekday on or after any explicit date. For timed recurrences, persist `recurrence_local_time` with `due_at` to retain the requested local time across daylight-saving changes. A skipped wall time moves forward by the transition gap. An ambiguous wall time uses the earlier offset. Supply daily or weekly RRULEs with intervals from 1 to 52. Weekly lists use `MO,TU,WE,TH,FR,SA,SU`. Unrecognized wording remains in the title.
+
+To save, resolve the named project and tags against `/projects` and `/tags`, creating missing ones if the user chooses. POST task fields to `/tasks` with `project_id`, then attach each tag through the link route. An optional client-generated `id` lets an offline queue reconcile a conflicting creation by fetching that ID.
+
+For completion, generate a `request_id` UUID and send it with the unchanged task `updated_at` as `expected_updated_at`. Keep the exact timestamp string, including fractional seconds. Network retries should reuse the same pair. The response includes `task`, completion timestamp, and the original `occurrence_due_at`. A repeating task keeps its ID and advances to the next scheduled time after both the previous due time and completion. Missed occurrences are skipped. A stale revision returns `409`. To reopen a one-off task, call `/reopen` without a body. The earlier completion stays in history.
+
+Rescheduling returns `{ "count": number }`. A past-date task moves to the current calendar date in its own zone and retains its wall time and recurrence anchor. Tasks already dated today stay where they are. Refresh the task list after receiving the count.
+
+## Habits
+
+| Route | Methods | Behavior |
+| --- | --- | --- |
+| `/habits` | `GET`, `POST` | List or create schedules |
+| `/habits/{id}` | `GET`, `PATCH`, `DELETE` | Read, rename, archive with `{"archive":true}`, or delete |
+| `/habits/{id}/logs` | `GET` | List daily entries, newest first |
+| `/habits/{id}/logs/{date}` | `PUT`, `DELETE` | Replace or remove the entry for a habit-local `YYYY-MM-DD` |
+| `/habits/{id}/stats` | `GET` | Get streaks, period progress, and completion rate |
+
+`cadence` is `daily` or `weekly`. `target_count` is the number of completions per day or ISO Monday-starting week. `timezone` is required and `start_date` defaults to today in that zone. Archive a habit to keep its history. Cadence, goal, zone and start date stay fixed so historical stats remain meaningful.
+
+A completed log uses a positive `count` (default 1). A skipped or frozen log uses zero. PUT sets the day's total, so the app should send the intended full count. Log dates run from the habit's start date through today or its local archive date, whichever comes first.
+
+Stats use periods through the optional inclusive `through=YYYY-MM-DD`, capped at the archive date. The current incomplete period stays outside the denominator until it closes. A period counts immediately once it meets the goal. A frozen entry protects an otherwise unmet period from breaking the streak and excludes it from the rate. A skip without progress excludes a closed period from the rate but breaks the streak. A skip alongside partial progress leaves that period evaluated. Only completed periods increase the streak. These rules apply to days for daily habits and to weeks for weekly habits. A rate with zero evaluated periods is `null`. Other rates range from 0 to 1.
+
+## Focus sessions
+
+POST `/focus-sessions` to start a session. Omit `started_at` for server time. The default plan is 1,500 seconds. `task_id` or `habit_id` may link the session to one resource. Each user can have one running session. POST `/focus-sessions/{id}/finish` with `{"status":"completed"}` or `{"status":"cancelled"}`. Pass `ended_at` for an offline finish. Retrying the same terminal status returns the stored session when no conflicting end time is supplied. GET `/focus-sessions` or `/focus-sessions/{id}` for history. DELETE the item to remove it.
+
+## App updates
+
+`GET /app/version` returns `latestVersion`, `versionCode`, `minSupportedVersion`, `releaseNotes`, `apkDownloadUrl`, and `iosStoreOrTestFlightUrl`. A `404` before the first publication means no release metadata is available. Cache successful checks for up to 60 seconds. Compare the Android integer `versionCode` for APK upgrades and compare semantic version components numerically for the minimum supported version.
+
+The app owns download progress, Android install permissions, signer verification and installation UX. iOS should open the Apple URL once one is present. The publication workflow is in [BACKEND_README.md](BACKEND_README.md).

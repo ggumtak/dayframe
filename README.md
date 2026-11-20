@@ -1,2 +1,3 @@
-# dayframe
-Dayframe mobile productivity and habit tracker.
+# Dayframe
+
+Mobile productivity and habit tracker.

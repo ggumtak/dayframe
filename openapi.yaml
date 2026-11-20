@@ -1,0 +1,3548 @@
+openapi: 3.1.0
+info:
+  title: Dayframe API
+  version: 1.0.0
+  description: REST API for tasks, schedules, habits, focus and in-app updates.
+servers:
+  - url: https://{projectRef}.supabase.co/functions/v1/api/v1
+    variables:
+      projectRef:
+        default: exampleprojectref
+  - url: http://127.0.0.1:54321/functions/v1/api/v1
+tags:
+  - name: Account
+    description: Profile and default time zone.
+  - name: Organization
+    description: Projects, sections and reusable tags.
+  - name: Tasks
+    description: Task trees, parsing, completion and rescheduling.
+  - name: Habits
+    description: Habit schedules, progress logs and statistics.
+  - name: Focus
+    description: Pomodoro and focus session history.
+  - name: Releases
+    description: Public mobile update metadata.
+security:
+  - SupabaseJwt: []
+paths:
+  /me:
+    get:
+      operationId: getMe
+      summary: Get your profile
+      tags:
+        - Account
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateMe
+      summary: Update your profile
+      tags:
+        - Account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserPatch"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /projects:
+    get:
+      operationId: listProjects
+      summary: List projects
+      tags:
+        - Organization
+      parameters:
+        - &a2
+          name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Page size.
+        - &a3
+          name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 2147483547
+            default: 0
+          description: Offset from the previous page.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createProject
+      summary: Create a project
+      tags:
+        - Organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /projects/{id}:
+    get:
+      operationId: getProject
+      summary: Get a project
+      tags:
+        - Organization
+      parameters:
+        - &a1
+          name: id
+          in: path
+          required: true
+          schema: &a4
+            type: string
+            format: uuid
+          description: Resource identifier within the signed-in user's account.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateProject
+      summary: Update a project
+      tags:
+        - Organization
+      parameters:
+        - *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectPatch"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteProject
+      summary: Delete a project
+      tags:
+        - Organization
+      parameters:
+        - *a1
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /sections:
+    get:
+      operationId: listSections
+      summary: List sections
+      tags:
+        - Organization
+      parameters:
+        - *a2
+        - *a3
+        - &a5
+          name: project_id
+          in: query
+          schema: *a4
+          description: Direct project assignment.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SectionPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createSection
+      summary: Create a section
+      tags:
+        - Organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SectionInput"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Section"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /sections/{id}:
+    get:
+      operationId: getSection
+      summary: Get a section
+      tags:
+        - Organization
+      parameters:
+        - *a1
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Section"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateSection
+      summary: Update a section
+      tags:
+        - Organization
+      parameters:
+        - *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SectionPatch"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Section"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteSection
+      summary: Delete a section
+      tags:
+        - Organization
+      parameters:
+        - *a1
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tags:
+    get:
+      operationId: listTags
+      summary: List tags
+      tags:
+        - Organization
+      parameters:
+        - *a2
+        - *a3
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createTag
+      summary: Create a tag
+      tags:
+        - Organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagInput"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tags/{id}:
+    get:
+      operationId: getTag
+      summary: Get a tag
+      tags:
+        - Organization
+      parameters:
+        - *a1
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateTag
+      summary: Update a tag
+      tags:
+        - Organization
+      parameters:
+        - *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagInput"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteTag
+      summary: Delete a tag
+      tags:
+        - Organization
+      parameters:
+        - *a1
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks
+      tags:
+        - Tasks
+      parameters:
+        - *a2
+        - *a3
+        - *a5
+        - &a6
+          name: parent_task_id
+          in: query
+          schema:
+            anyOf:
+              - *a4
+              - const: root
+          description: Direct parent UUID, or root for top-level tasks.
+        - &a7
+          name: state
+          in: query
+          schema:
+            enum:
+              - open
+              - completed
+          description: Filter by completion state.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createTask
+      summary: Create a task
+      tags:
+        - Tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tasks/{id}:
+    get:
+      operationId: getTask
+      summary: Get a task
+      tags:
+        - Tasks
+      parameters:
+        - *a1
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateTask
+      summary: Update a task
+      tags:
+        - Tasks
+      parameters:
+        - *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskPatch"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteTask
+      summary: Delete a task
+      tags:
+        - Tasks
+      parameters:
+        - *a1
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /subtasks:
+    get:
+      operationId: listSubtasks
+      summary: List subtasks
+      tags:
+        - Tasks
+      parameters:
+        - *a2
+        - *a3
+        - *a6
+        - *a7
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubtaskPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /subtasks/{id}:
+    get:
+      operationId: getSubtask
+      summary: Get a subtask
+      tags:
+        - Tasks
+      parameters:
+        - *a1
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subtask"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tasks/parse:
+    post:
+      operationId: parseTask
+      summary: Preview a task from Korean or English text
+      tags:
+        - Tasks
+      description: "Returns a preview without persisting it. Use #project and @tag, and quote names that contain spaces."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParseTaskInput"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParsedTask"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tasks/reschedule-overdue:
+    post:
+      operationId: rescheduleOverdueTasks
+      summary: Move past-date open tasks to today
+      tags:
+        - Tasks
+      description: Uses each task's time zone and preserves its local time and recurrence anchor. Returns the number changed.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RescheduleResult"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tasks/{id}/complete:
+    post:
+      operationId: completeTask
+      summary: Complete the current task occurrence
+      tags:
+        - Tasks
+      description: Reuse request_id and expected_updated_at on network retries. Repeating tasks advance to the next
+        future occurrence.
+      parameters:
+        - *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteTaskInput"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskCompletion"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tasks/{id}/reopen:
+    post:
+      operationId: reopenTask
+      summary: Reopen a completed task
+      tags:
+        - Tasks
+      parameters:
+        - *a1
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tasks/{id}/tags:
+    get:
+      operationId: listTaskTags
+      summary: List assigned tags
+      tags:
+        - Tasks
+      parameters:
+        - *a1
+        - *a2
+        - *a3
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTagPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /tasks/{id}/tags/{tagId}:
+    put:
+      operationId: attachTaskTag
+      summary: Attach a tag
+      tags:
+        - Tasks
+      parameters:
+        - *a1
+        - &a8
+          name: tagId
+          in: path
+          required: true
+          schema: *a4
+          description: Tag identifier in the signed-in user's account.
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: detachTaskTag
+      summary: Detach a tag
+      tags:
+        - Tasks
+      parameters:
+        - *a1
+        - *a8
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /habits:
+    get:
+      operationId: listHabits
+      summary: List habits
+      tags:
+        - Habits
+      parameters:
+        - *a2
+        - *a3
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HabitPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createHabit
+      summary: Create a habit
+      tags:
+        - Habits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HabitInput"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /habits/{id}:
+    get:
+      operationId: getHabit
+      summary: Get a habit
+      tags:
+        - Habits
+      parameters:
+        - *a1
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateHabit
+      summary: Update a habit
+      tags:
+        - Habits
+      parameters:
+        - *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HabitPatch"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteHabit
+      summary: Delete a habit
+      tags:
+        - Habits
+      parameters:
+        - *a1
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /habits/{id}/stats:
+    get:
+      operationId: getHabitStats
+      summary: Get habit streak and completion statistics
+      tags:
+        - Habits
+      parameters:
+        - *a1
+        - name: through
+          in: query
+          schema: &a9
+            type: string
+            format: date
+          description: Inclusive habit-local cutoff date. Defaults to today.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HabitStats"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /habits/{id}/logs:
+    get:
+      operationId: listHabitLogs
+      summary: List habit logs
+      tags:
+        - Habits
+      parameters:
+        - *a1
+        - *a2
+        - *a3
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HabitLogPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /habits/{id}/logs/{date}:
+    put:
+      operationId: upsertHabitLog
+      summary: Set a habit log for a date
+      tags:
+        - Habits
+      description: Replaces the daily total, including when retried.
+      parameters:
+        - *a1
+        - &a10
+          name: date
+          in: path
+          required: true
+          schema: *a9
+          description: Habit-local log date.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HabitLogInput"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HabitLog"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteHabitLog
+      summary: Delete a habit log
+      tags:
+        - Habits
+      parameters:
+        - *a1
+        - *a10
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /focus-sessions:
+    get:
+      operationId: listFocusSessions
+      summary: List focus sessions
+      tags:
+        - Focus
+      parameters:
+        - *a2
+        - *a3
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FocusSessionPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createFocusSession
+      summary: Create a focus session
+      tags:
+        - Focus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FocusInput"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FocusSession"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /focus-sessions/{id}:
+    get:
+      operationId: getFocusSession
+      summary: Get a focus session
+      tags:
+        - Focus
+      parameters:
+        - *a1
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FocusSession"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteFocusSession
+      summary: Delete a focus session
+      tags:
+        - Focus
+      parameters:
+        - *a1
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /focus-sessions/{id}/finish:
+    post:
+      operationId: finishFocusSession
+      summary: Complete or cancel a focus session
+      tags:
+        - Focus
+      parameters:
+        - *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinishFocusInput"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FocusSession"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /app/version:
+    get:
+      operationId: getAppVersion
+      summary: Read published Android update metadata
+      tags:
+        - Releases
+      description: Selects the highest published Android build number. Returns 404 until a release is published.
+      security: []
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppVersion"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+components:
+  securitySchemes:
+    SupabaseJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        id: *a4
+        display_name:
+          anyOf:
+            - &a11
+              type: string
+            - type: "null"
+        timezone: *a11
+        created_at: &a12
+          type: string
+          format: date-time
+      required:
+        - id
+        - display_name
+        - timezone
+        - created_at
+      additionalProperties: false
+    Project:
+      type: object
+      properties:
+        id: *a4
+        user_id: *a4
+        created_at: *a12
+        name: *a11
+        position: &a13
+          type: integer
+      required:
+        - id
+        - user_id
+        - created_at
+        - name
+        - position
+      additionalProperties: false
+    Section:
+      type: object
+      properties:
+        id: *a4
+        user_id: *a4
+        created_at: *a12
+        name: *a11
+        position: *a13
+        project_id: *a4
+      required:
+        - id
+        - user_id
+        - created_at
+        - name
+        - position
+        - project_id
+      additionalProperties: false
+    Tag:
+      type: object
+      properties:
+        id: *a4
+        user_id: *a4
+        created_at: *a12
+        name: *a11
+      required:
+        - id
+        - user_id
+        - created_at
+        - name
+      additionalProperties: false
+    Task:
+      type: object
+      properties:
+        id: *a4
+        user_id: *a4
+        created_at: *a12
+        project_id:
+          anyOf:
+            - *a4
+            - type: "null"
+        section_id:
+          anyOf:
+            - *a4
+            - type: "null"
+        parent_task_id:
+          anyOf:
+            - *a4
+            - type: "null"
+        title: *a11
+        notes: &a14
+          anyOf:
+            - *a11
+            - type: "null"
+        priority: &a15
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+        position: *a13
+        due_at: &a16
+          anyOf:
+            - *a12
+            - type: "null"
+        all_day: &a17
+          type: boolean
+        timezone: *a11
+        recurrence_rule: &a18
+          anyOf:
+            - *a11
+            - type: "null"
+        recurrence_anchor_at: &a19
+          anyOf:
+            - *a12
+            - type: "null"
+        recurrence_local_time: &a20
+          anyOf:
+            - *a11
+            - type: "null"
+        completed_at: &a21
+          anyOf:
+            - *a12
+            - type: "null"
+        updated_at: *a12
+      required:
+        - id
+        - user_id
+        - created_at
+        - project_id
+        - section_id
+        - parent_task_id
+        - title
+        - notes
+        - priority
+        - position
+        - due_at
+        - all_day
+        - timezone
+        - recurrence_rule
+        - recurrence_anchor_at
+        - recurrence_local_time
+        - completed_at
+        - updated_at
+      additionalProperties: false
+    Subtask:
+      type: object
+      properties:
+        id: *a4
+        user_id: *a4
+        created_at: *a12
+        project_id:
+          type: "null"
+        section_id:
+          type: "null"
+        parent_task_id: *a4
+        title: *a11
+        notes: *a14
+        priority: *a15
+        position: *a13
+        due_at: *a16
+        all_day: *a17
+        timezone: *a11
+        recurrence_rule: *a18
+        recurrence_anchor_at: *a19
+        recurrence_local_time: *a20
+        completed_at: *a21
+        updated_at: *a12
+      required:
+        - id
+        - user_id
+        - created_at
+        - project_id
+        - section_id
+        - parent_task_id
+        - title
+        - notes
+        - priority
+        - position
+        - due_at
+        - all_day
+        - timezone
+        - recurrence_rule
+        - recurrence_anchor_at
+        - recurrence_local_time
+        - completed_at
+        - updated_at
+      additionalProperties: false
+    TaskTag:
+      type: object
+      properties:
+        user_id: *a4
+        task_id: *a4
+        tag_id: *a4
+      required:
+        - user_id
+        - task_id
+        - tag_id
+      additionalProperties: false
+    TaskCompletion:
+      type: object
+      properties:
+        task:
+          $ref: "#/components/schemas/Task"
+        completed_at: *a12
+        occurrence_due_at:
+          anyOf:
+            - *a12
+            - type: "null"
+      required:
+        - task
+        - completed_at
+        - occurrence_due_at
+      additionalProperties: false
+    ParsedTask:
+      type: object
+      properties:
+        title: *a11
+        due_at:
+          anyOf:
+            - *a12
+            - type: "null"
+        all_day: *a17
+        timezone: *a11
+        recurrence_rule:
+          anyOf:
+            - *a11
+            - type: "null"
+        recurrence_local_time:
+          anyOf:
+            - *a11
+            - type: "null"
+        project:
+          anyOf:
+            - *a11
+            - type: "null"
+        tags:
+          type: array
+          items: *a11
+        priority:
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+      required:
+        - title
+        - due_at
+        - all_day
+        - timezone
+        - recurrence_rule
+        - recurrence_local_time
+        - project
+        - tags
+        - priority
+      additionalProperties: false
+    RescheduleResult:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 0
+      required:
+        - count
+      additionalProperties: false
+    Habit:
+      type: object
+      properties:
+        id: *a4
+        user_id: *a4
+        created_at: *a12
+        name: *a11
+        cadence:
+          enum:
+            - daily
+            - weekly
+        target_count: *a13
+        timezone: *a11
+        start_date: *a9
+        archived_at:
+          anyOf:
+            - *a12
+            - type: "null"
+      required:
+        - id
+        - user_id
+        - created_at
+        - name
+        - cadence
+        - target_count
+        - timezone
+        - start_date
+        - archived_at
+      additionalProperties: false
+    HabitLog:
+      type: object
+      properties:
+        user_id: *a4
+        habit_id: *a4
+        log_date: *a9
+        status:
+          enum:
+            - completed
+            - frozen
+            - skipped
+        count: *a13
+        created_at: *a12
+      required:
+        - user_id
+        - habit_id
+        - log_date
+        - status
+        - count
+        - created_at
+      additionalProperties: false
+    HabitStats:
+      type: object
+      properties:
+        as_of: *a9
+        current_streak: *a13
+        longest_streak: *a13
+        completed_periods: *a13
+        evaluated_periods: *a13
+        completion_rate:
+          anyOf:
+            - type: number
+              minimum: 0
+              maximum: 1
+            - type: "null"
+        current_period_count: *a13
+      required:
+        - as_of
+        - current_streak
+        - longest_streak
+        - completed_periods
+        - evaluated_periods
+        - completion_rate
+        - current_period_count
+      additionalProperties: false
+    FocusSession:
+      type: object
+      properties:
+        id: *a4
+        user_id: *a4
+        created_at: *a12
+        task_id:
+          anyOf:
+            - *a4
+            - type: "null"
+        habit_id:
+          anyOf:
+            - *a4
+            - type: "null"
+        started_at: *a12
+        ended_at:
+          anyOf:
+            - *a12
+            - type: "null"
+        planned_seconds: *a13
+        status:
+          enum:
+            - running
+            - completed
+            - cancelled
+      required:
+        - id
+        - user_id
+        - created_at
+        - task_id
+        - habit_id
+        - started_at
+        - ended_at
+        - planned_seconds
+        - status
+      additionalProperties: false
+    AppVersion:
+      type: object
+      properties:
+        latestVersion: *a11
+        versionCode: *a13
+        minSupportedVersion: *a11
+        releaseNotes: *a11
+        apkDownloadUrl: &a22
+          type: string
+          format: uri
+        iosStoreOrTestFlightUrl:
+          anyOf:
+            - *a22
+            - type: "null"
+      required:
+        - latestVersion
+        - versionCode
+        - minSupportedVersion
+        - releaseNotes
+        - apkDownloadUrl
+        - iosStoreOrTestFlightUrl
+      additionalProperties: false
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: *a11
+            message: *a11
+            fields:
+              type: array
+              items: *a11
+          required:
+            - code
+            - message
+          additionalProperties: false
+      required:
+        - error
+      additionalProperties: false
+    UserPatch:
+      type: object
+      properties:
+        display_name:
+          anyOf:
+            - type: string
+              maxLength: 120
+            - type: "null"
+        timezone:
+          type: string
+          maxLength: 100
+          pattern: ^[A-Za-z][A-Za-z0-9_+/-]*$
+      additionalProperties: false
+    ProjectInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        position:
+          type: integer
+          minimum: -2147483648
+          maximum: 2147483647
+      required:
+        - name
+      additionalProperties: false
+    ProjectPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        position:
+          type: integer
+          minimum: -2147483648
+          maximum: 2147483647
+      additionalProperties: false
+    SectionInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        position:
+          type: integer
+          minimum: -2147483648
+          maximum: 2147483647
+        project_id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      required:
+        - name
+        - project_id
+      additionalProperties: false
+    SectionPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        position:
+          type: integer
+          minimum: -2147483648
+          maximum: 2147483647
+      additionalProperties: false
+    TagInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+      required:
+        - name
+      additionalProperties: false
+    TaskInput:
+      type: object
+      properties:
+        project_id:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+        section_id:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        notes:
+          anyOf:
+            - type: string
+              maxLength: 10000
+            - type: "null"
+        priority:
+          anyOf:
+            - type: number
+              const: 1
+            - type: number
+              const: 2
+            - type: number
+              const: 3
+            - type: number
+              const: 4
+        position:
+          type: integer
+          minimum: -2147483648
+          maximum: 2147483647
+        due_at:
+          anyOf:
+            - type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+            - type: "null"
+        all_day:
+          type: boolean
+        timezone:
+          type: string
+          maxLength: 100
+          pattern: ^[A-Za-z][A-Za-z0-9_+/-]*$
+        recurrence_local_time:
+          anyOf:
+            - type: string
+              format: time
+              pattern: ^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$
+            - type: "null"
+        recurrence_rule:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: "null"
+        id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        parent_task_id:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+      required:
+        - title
+      additionalProperties: false
+    TaskPatch:
+      type: object
+      properties:
+        project_id:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+        section_id:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        notes:
+          anyOf:
+            - type: string
+              maxLength: 10000
+            - type: "null"
+        priority:
+          anyOf:
+            - type: number
+              const: 1
+            - type: number
+              const: 2
+            - type: number
+              const: 3
+            - type: number
+              const: 4
+        position:
+          type: integer
+          minimum: -2147483648
+          maximum: 2147483647
+        due_at:
+          anyOf:
+            - type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+            - type: "null"
+        all_day:
+          type: boolean
+        timezone:
+          type: string
+          maxLength: 100
+          pattern: ^[A-Za-z][A-Za-z0-9_+/-]*$
+        recurrence_local_time:
+          anyOf:
+            - type: string
+              format: time
+              pattern: ^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$
+            - type: "null"
+        recurrence_rule:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: "null"
+      additionalProperties: false
+    ParseTaskInput:
+      type: object
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        timezone:
+          type: string
+          maxLength: 100
+          pattern: ^[A-Za-z][A-Za-z0-9_+/-]*$
+        now:
+          type: string
+          format: date-time
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+      required:
+        - text
+        - timezone
+      additionalProperties: false
+    CompleteTaskInput:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        expected_updated_at:
+          type: string
+          format: date-time
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+      required:
+        - request_id
+        - expected_updated_at
+      additionalProperties: false
+    HabitInput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        cadence:
+          type: string
+          enum:
+            - daily
+            - weekly
+        target_count:
+          type: integer
+          minimum: 1
+          maximum: 100
+        timezone:
+          type: string
+          maxLength: 100
+          pattern: ^[A-Za-z][A-Za-z0-9_+/-]*$
+        start_date:
+          type: string
+          format: date
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))$
+      required:
+        - name
+        - cadence
+        - timezone
+      additionalProperties: false
+    HabitPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        archive:
+          type: boolean
+          const: true
+      additionalProperties: false
+    HabitLogInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - completed
+            - skipped
+            - frozen
+        count:
+          type: integer
+          minimum: 0
+          maximum: 100
+      required:
+        - status
+      additionalProperties: false
+    FocusInput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        task_id:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+        habit_id:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
+        started_at:
+          type: string
+          format: date-time
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+        planned_seconds:
+          type: integer
+          minimum: 60
+          maximum: 28800
+      additionalProperties: false
+    FinishFocusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - completed
+            - cancelled
+        ended_at:
+          type: string
+          format: date-time
+          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+      required:
+        - status
+      additionalProperties: false
+    ProjectPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    SectionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Section"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    TagPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    TaskPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Task"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    SubtaskPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subtask"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    TaskTagPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskTag"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    HabitPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Habit"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    HabitLogPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HabitLog"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    FocusSessionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FocusSession"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
