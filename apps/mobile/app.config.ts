@@ -28,6 +28,11 @@ const config: ExpoConfig = {
     },
     // Lets the in-app updater hand a downloaded APK to the system installer.
     permissions: ['android.permission.REQUEST_INSTALL_PACKAGES'],
+    // Updates download into the app's own cache, so shared storage and overlay access are never needed.
+    blockedPermissions: [
+      'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.WRITE_EXTERNAL_STORAGE',
+      'android.permission.SYSTEM_ALERT_WINDOW',
+    ],
     predictiveBackGestureEnabled: false,
   },
   web: { output: 'single', favicon: './assets/images/favicon.png' },

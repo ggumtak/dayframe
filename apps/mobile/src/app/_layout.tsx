@@ -20,9 +20,11 @@ import { SessionProvider, useSession } from '@/data/session';
 import { QuickAddProvider, TAB_BAR_HEIGHT } from '@/features/quick-add/QuickAdd';
 import { UpdateProvider } from '@/features/update/useUpdate';
 import { isConfigured } from '@/lib/env';
+import { runSelfCheck } from '@/lib/selfCheck';
 import { ThemeProvider, useTheme } from '@/theme';
 
 void SplashScreen.preventAutoHideAsync();
+if (process.env.EXPO_PUBLIC_SELF_CHECK === '1') runSelfCheck();
 
 function Routes({ signedIn }: { signedIn: boolean }) {
   const { colors } = useTheme();
