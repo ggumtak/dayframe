@@ -151,6 +151,9 @@ operation("/tasks/{id}/tags", "get", "listTaskTags", "List assigned tags", "Task
 const tagId = path("tagId", uuid, "Tag identifier in the signed-in user's account.");
 operation("/tasks/{id}/tags/{tagId}", "put", "attachTaskTag", "Attach a tag", "Tasks", { status: 204, parameters: [id, tagId] });
 operation("/tasks/{id}/tags/{tagId}", "delete", "detachTaskTag", "Detach a tag", "Tasks", { status: 204, parameters: [id, tagId] });
+operation("/task-tags", "get", "listAllTaskTags", "List tag links across every task", "Tasks",
+  { result: paged("TaskTag"), parameters: [...page, query("tag_id", uuid, "Only links to this tag.")],
+    description: "Lets a client label task lists or filter by tag without one request per task." });
 resource("/habits", "Habit", "habit", "Habits", { input: "HabitInput", patch: "HabitPatch", remove: true });
 operation("/habits/{id}/stats", "get", "getHabitStats", "Get habit streak and completion statistics", "Habits",
   { result: "HabitStats", parameters: [id, query("through", date, "Inclusive habit-local cutoff date. Defaults to today.")] });

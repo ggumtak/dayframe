@@ -174,6 +174,14 @@ export async function authenticatedRoute(
     return { data: await db.rest<RescheduleResult>("rpc/reschedule_overdue", {}, "POST", {}) };
   }
 
+  if (resource === "task-tags" && parts.length === 1) {
+    if (method !== "GET") throw unsupported();
+    const tag = params.get("tag_id");
+    return { data: await list<TaskTag>(db, "task_tags", params, {
+      order: "task_id.asc,tag_id.asc", ...(tag === null ? {} : { tag_id: uuidFilter(validate(schema.uuid, tag)) }),
+    }) };
+  }
+
   if (!Object.hasOwn(resourceNames, resource) || parts.length > 4) throw notFound();
   const table = resourceNames[resource];
   if (parts.length === 1) {

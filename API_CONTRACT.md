@@ -19,6 +19,7 @@ Errors use `{ "error": { "code": "INVALID_INPUT", "message": "...", "fields": ["
 | `/subtasks`, `/subtasks/{id}` | `GET` | Read-only view for tasks with a parent |
 | `/tasks/parse` | `POST` | Preview Korean or English quick entry |
 | `/tasks/{id}/tags`, `/tasks/{id}/tags/{tagId}` | Collection `GET`. Link `PUT`, `DELETE` | List, attach or remove a tag |
+| `/task-tags` | `GET` | Every tag link in the account, optionally filtered with `tag_id` |
 | `/tasks/{id}/complete`, `/tasks/{id}/reopen` | `POST` | Complete an occurrence or reopen a completed one-off task |
 | `/tasks/reschedule-overdue` | `POST` | Move prior-date open tasks to today in their own time zone |
 

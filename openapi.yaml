@@ -1815,6 +1815,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /task-tags:
+    get:
+      operationId: listAllTaskTags
+      summary: List tag links across every task
+      tags:
+        - Tasks
+      description: Lets a client label task lists or filter by tag without one request per task.
+      parameters:
+        - *a2
+        - *a3
+        - name: tag_id
+          in: query
+          schema: *a4
+          description: Only links to this tag.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskTagPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /habits:
     get:
       operationId: listHabits

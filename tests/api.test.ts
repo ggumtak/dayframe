@@ -95,6 +95,25 @@ test("pagination computes nextOffset and database errors never expose SQL detail
   assert.ok(!JSON.stringify(error).includes("SQL"));
 });
 
+test("tag links are listed across tasks with an optional tag filter", async () => {
+  const seen: URL[] = [];
+  const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/auth/v1/user") return Response.json({ id: userId });
+    seen.push(url);
+    return Response.json([{ user_id: userId, task_id: habitId, tag_id: habitId }]);
+  } });
+  const all = await handler(request("task-tags?limit=100"));
+  assert.deepEqual(await all.json(), { items: [{ user_id: userId, task_id: habitId, tag_id: habitId }], nextOffset: null });
+  assert.equal(seen[0].pathname, "/rest/v1/task_tags");
+  assert.equal(seen[0].searchParams.get("order"), "task_id.asc,tag_id.asc");
+  assert.equal(seen[0].searchParams.get("tag_id"), null);
+  await handler(request("task-tags?tag_id=" + habitId));
+  assert.equal(seen[1].searchParams.get("tag_id"), "eq." + habitId);
+  assert.equal((await handler(request("task-tags?tag_id=nope"))).status, 400);
+  assert.equal((await handler(request("task-tags", "POST", {}))).status, 405);
+});
+
 test("invalid JSON, oversized streaming input and malformed methods receive stable error codes", async () => {
   const handler = createHandler({ url: upstream, key: "anon-key", fetch: async () => Response.json({ id: userId }) });
   const path = "https://edge.invalid/api/v1/tasks/parse";
