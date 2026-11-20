@@ -50,4 +50,13 @@ adb shell cat /sdcard/window.xml > "$out/window-after-tap.xml"
 adb exec-out screencap -p > "$out/after-tap.png"
 grep -q 'content-desc="이미 계정이 있나요? 로그인"' "$out/window-after-tap.xml" || fail "Tapping the sign-up toggle did not update the screen."
 
+# The updater's download path needs the network, so a miss here is reported without failing the run.
+for _ in $(seq 1 10); do
+  adb logcat -d > "$out/logcat.txt"
+  if grep -q "DAYFRAME_SELF_CHECK_DOWNLOAD" "$out/logcat.txt"; then break; fi
+  sleep 2
+done
+grep "DAYFRAME_SELF_CHECK_DOWNLOAD" "$out/logcat.txt" | tail -1 || true
+grep -q "DAYFRAME_SELF_CHECK_DOWNLOAD ok" "$out/logcat.txt" || echo "::warning::The on-device download check did not complete; see the smoke-test artifact."
+
 echo "Smoke test passed."

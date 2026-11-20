@@ -1,3 +1,6 @@
+import { Platform } from 'react-native';
+
+import ApkInstaller from '../../modules/apk-installer';
 import { deviceTimeZone, formatDue, Temporal } from './dates';
 import { uuid } from './ids';
 import { analyzeTask, nextOccurrence } from './shared';
@@ -21,6 +24,9 @@ export function runSelfCheck(): void {
     formatting: () => formatDue({ due_at: '2026-11-23T10:00:00Z', timezone: 'Asia/Seoul', all_day: false })?.endsWith('오후 7:00') === true,
     deviceZone: () => Temporal.Now.plainDateISO(deviceTimeZone()).year > 2000,
     ids: () => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(uuid()),
+    // The updater's native module must survive code shrinking and answer across the bridge.
+    apkInstaller: () => Platform.OS !== 'android' || (!!ApkInstaller
+      && typeof ApkInstaller.canInstallPackages() === 'boolean' && ApkInstaller.inspect('file:///missing.apk') === null),
   };
   const failed: string[] = [];
   for (const [name, check] of Object.entries(checks)) {
@@ -31,4 +37,23 @@ export function runSelfCheck(): void {
     }
   }
   console.log('DAYFRAME_SELF_CHECK ' + (failed.length ? 'fail: ' + failed.join(', ') : 'ok'));
+  if (Platform.OS === 'android') void checkDownload();
+}
+
+/** Runs the updater's download path (redirect, progress events, shareable content URI) against a small public file. */
+async function checkDownload(): Promise<void> {
+  try {
+    const { File, Paths } = await import('expo-file-system');
+    const target = new File(Paths.cache, 'dayframe-self-check.bin');
+    if (target.exists) target.delete();
+    let events = 0;
+    const file = await File.downloadFileAsync('https://github.com/expo/expo/raw/main/LICENSE', target, {
+      idempotent: true, onProgress: () => { events += 1; },
+    });
+    const ok = file.exists && file.size > 0 && file.contentUri.startsWith('content://');
+    console.log(`DAYFRAME_SELF_CHECK_DOWNLOAD ${ok ? 'ok' : 'fail'} bytes=${file.size} progressEvents=${events}`);
+    file.delete();
+  } catch (error) {
+    console.log('DAYFRAME_SELF_CHECK_DOWNLOAD fail: ' + (error instanceof Error ? error.message : String(error)));
+  }
 }

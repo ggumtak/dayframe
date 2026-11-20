@@ -212,9 +212,8 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
   }), []);
   const close = useCallback(() => setActive(null), []);
 
-  const inTabs = segments[0] === '(tabs)';
-  // Detail and settings screens add in their own way; the focus timer keeps its space clear.
-  const showButton = inTabs && segments[1] !== 'focus';
+  // Detail and settings screens add in their own way; every tab keeps the button.
+  const showButton = segments[0] === '(tabs)';
 
   return (
     <QuickAddContext.Provider value={value}>
