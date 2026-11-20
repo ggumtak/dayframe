@@ -1,0 +1,259 @@
+name: Build Android APK
+
+# Tags (v1.2.3) build a signed APK and publish it as a GitHub Release, which is where the app's
+# "Update now" button downloads from. Pull requests and manual runs build the same APK as an artifact only.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/shared/**'
+      - 'supabase/functions/api/**'
+      - '.github/workflows/build-android-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      EXPO_PUBLIC_GITHUB_REPO: ${{ github.repository }}
+      EXPO_NO_TELEMETRY: '1'
+      # Non-release builds also run on the x86_64 emulator and log an on-device self-check for the smoke test.
+      EXPO_PUBLIC_SELF_CHECK: ${{ github.ref_type != 'tag' && '1' || '' }}
+      ANDROID_ABIS: ${{ github.ref_type == 'tag' && 'armeabi-v7a,arm64-v8a' || 'armeabi-v7a,arm64-v8a,x86_64' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Resolve version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(node -p "require('./package.json').version")"
+          fi
+          if [[ ! "$version" =~ ^([0-9]+)\.([0-9]{1,2})\.([0-9]{1,2})$ ]]; then
+            echo "::error::Version '$version' must look like 1.2.3 (minor and patch below 100)."
+            exit 1
+          fi
+          # Android needs an ever-increasing integer: v1.2.3 becomes 10203.
+          code=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          echo "ANDROID_VERSION_CODE=$code" >> "$GITHUB_ENV"
+          echo "Building $version (versionCode $code)"
+
+      - name: Check the server configuration
+        run: |
+          # release.config.json carries the public Supabase URL and publishable key that get baked into the app.
+          configured="$(node -p "const c = require('./release.config.json'); /^https:\/\/.+/.test(c.supabaseUrl) && c.supabaseKey.length > 0")"
+          if [[ "$configured" == "true" ]]; then
+            echo "Using the Supabase project from apps/mobile/release.config.json"
+          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "::error::apps/mobile/release.config.json does not name a Supabase project, so a released app could not sign anyone in."
+            exit 1
+          else
+            echo "::notice::No Supabase project configured yet; building with a placeholder so the app still starts."
+            echo "EXPO_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co" >> "$GITHUB_ENV"
+            echo "EXPO_PUBLIC_SUPABASE_KEY=placeholder" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Prepare the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          signing="$RUNNER_TEMP/signing"
+          mkdir -p "$signing"
+          if [[ -n "$KEYSTORE_BASE64" ]]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > "$signing/release.jks"
+            echo "SIGNING=release" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+            # No secrets on this run: sign with a throwaway key so the signing path is still exercised.
+            KEYSTORE_PASSWORD=throwaway
+            KEY_PASSWORD=throwaway
+            KEY_ALIAS=ci
+            keytool -genkeypair -keystore "$signing/release.jks" -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+              -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 30 -dname "CN=Dayframe CI"
+            echo "SIGNING=throwaway" >> "$GITHUB_ENV"
+          elif [[ "$(node -p "require('./release.config.json').allowDebugSignedRelease === true")" == "true" ]]; then
+            echo "SIGNING=debug" >> "$GITHUB_ENV"
+            echo "::warning::This release is signed with the public debug key (allowDebugSignedRelease). Installs made from it cannot later be updated by a build signed with a private key."
+            exit 0
+          else
+            echo "::error::No ANDROID_KEYSTORE_* secrets are set. A release must be signed with a private key: the public debug key lets anyone sign an update, and installs signed with one key cannot be updated by another. Add the four secrets, or set allowDebugSignedRelease in apps/mobile/release.config.json to accept that."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_PASSWORD" > "$signing/store-password"
+          printf '%s' "$KEY_ALIAS" > "$signing/key-alias"
+          printf '%s' "$KEY_PASSWORD" > "$signing/key-password"
+
+      - name: Build the release APK
+        working-directory: apps/mobile/android
+        run: |
+          signing="$RUNNER_TEMP/signing"
+          args=(assembleRelease --no-daemon "-PreactNativeArchitectures=$ANDROID_ABIS")
+          if [[ -f "$signing/release.jks" ]]; then
+            # These properties make the Android Gradle Plugin sign the release with the given key.
+            args+=(
+              "-Pandroid.injected.signing.store.file=$signing/release.jks"
+              "-Pandroid.injected.signing.store.password=$(< "$signing/store-password")"
+              "-Pandroid.injected.signing.key.alias=$(< "$signing/key-alias")"
+              "-Pandroid.injected.signing.key.password=$(< "$signing/key-password")"
+            )
+          fi
+          ./gradlew "${args[@]}"
+
+      - name: Verify the APK
+        run: |
+          signing="$RUNNER_TEMP/signing"
+          apk="$GITHUB_WORKSPACE/dayframe.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$apk"
+          build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$build_tools/apksigner" verify --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
+          "$build_tools/aapt2" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
+          head -1 "$RUNNER_TEMP/badging.txt"
+          grep -q "^package: name='com.ggumtak.dayframe' versionCode='$ANDROID_VERSION_CODE' versionName='$APP_VERSION'" "$RUNNER_TEMP/badging.txt"
+          grep -q "^uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'" "$RUNNER_TEMP/badging.txt"
+          if [[ -f "$signing/release.jks" ]]; then
+            expected="$(keytool -list -v -keystore "$signing/release.jks" -storepass "$(< "$signing/store-password")" \
+              -alias "$(< "$signing/key-alias")" | grep 'SHA256:' | head -1 | sed 's/.*SHA256: //; s/://g' | tr 'A-F' 'a-f')"
+            actual="$(grep 'certificate SHA-256 digest' "$RUNNER_TEMP/certs.txt" | head -1 | sed 's/.*: //')"
+            if [[ -z "$expected" || "$expected" != "$actual" ]]; then
+              echo "::error::The APK is signed with '$actual', not the configured key '$expected'."
+              exit 1
+            fi
+          fi
+          rm -rf "$signing"
+          (cd "$GITHUB_WORKSPACE" && sha256sum dayframe.apk > dayframe.apk.sha256)
+          {
+            echo "### Dayframe $APP_VERSION (versionCode $ANDROID_VERSION_CODE)"
+            echo "- Signing: \`$SIGNING\`"
+            echo "- Size: $(du -h "$apk" | cut -f1)"
+            echo "- SHA-256: \`$(cut -d' ' -f1 "$apk.sha256")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dayframe-apk
+          path: |
+            dayframe.apk
+            dayframe.apk.sha256
+          retention-days: 14
+
+
+  smoke:
+    name: Emulator smoke test
+    needs: build
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dayframe-apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch the app on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: bash .github/scripts/android-smoke-test.sh dayframe.apk smoke
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test
+          path: smoke
+          retention-days: 14
+
+  release:
+    name: Publish release
+    needs: build
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dayframe-apk
+
+      - name: Resolve version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$version" =~ ^([0-9]+)\.([0-9]{1,2})\.([0-9]{1,2})$ ]]
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          echo "ANDROID_VERSION_CODE=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))" >> "$GITHUB_ENV"
+
+      - name: Publish the GitHub Release
+        run: |
+          sha256sum --check dayframe.apk.sha256
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dayframe.apk dayframe.apk.sha256 --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dayframe.apk dayframe.apk.sha256 \
+              --title "Dayframe $APP_VERSION" --generate-notes --verify-tag
+          fi
+
+      # Optional: lets the backend's /app/version report this release (and a minimum supported version).
+      # Without it the app still finds the update through the GitHub Releases API.
+      - name: Record the release in Supabase
+        if: env.SUPABASE_SERVICE_ROLE_KEY != '' && env.SUPABASE_URL != ''
+        run: |
+          notes="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)"
+          jq -n --arg version "$APP_VERSION" --argjson code "$ANDROID_VERSION_CODE" --arg notes "$notes" \
+            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/dayframe.apk" \
+            '{latest_version: $version, version_code: $code, min_supported_version: "1.0.0", release_notes: $notes,
+              apk_download_url: $url, published_at: (now | todate)}' > release.json
+          curl --fail-with-body -sS -X POST "$SUPABASE_URL/rest/v1/app_releases?on_conflict=version_code" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" -H "Prefer: resolution=merge-duplicates" --data @release.json
