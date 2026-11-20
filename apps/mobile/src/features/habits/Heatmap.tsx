@@ -20,7 +20,7 @@ export function Heatmap({ habit, logs, today }: { habit: Habit; logs: HabitLog[]
 
   const columns = Array.from({ length: WEEKS }, (_, week) => Array.from({ length: 7 }, (_, weekday) => {
     const date = start.add({ days: week * 7 + weekday });
-    if (weekday === 0 && (week === 0 || date.day <= 7)) months.push({ column: week, label: date.month + '월' });
+    if (weekday === 0 && date.day <= 7) months.push({ column: week, label: date.month + '월' });
     const log = byDate.get(date.toString());
     const outside = Temporal.PlainDate.compare(date, today) > 0 || Temporal.PlainDate.compare(date, first) < 0;
     const color = outside ? 'transparent'

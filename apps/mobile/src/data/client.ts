@@ -12,9 +12,10 @@ import { showToast } from '@/lib/toast';
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 
 // Writes pause while the device is offline and resume, in order, when it reconnects.
-onlineManager.setEventListener((setOnline) =>
-  NetInfo.addEventListener((state) => setOnline(state.isConnected !== false)));
+// The browser already reports connectivity to TanStack Query; native needs NetInfo to do it.
 if (Platform.OS !== 'web') {
+  onlineManager.setEventListener((setOnline) =>
+    NetInfo.addEventListener((state) => setOnline(state.isConnected !== false)));
   AppState.addEventListener('change', (state) => focusManager.setFocused(state === 'active'));
 }
 

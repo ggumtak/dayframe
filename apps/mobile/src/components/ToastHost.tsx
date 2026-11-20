@@ -9,7 +9,7 @@ import { elevation, radius, space, type, useTheme } from '@/theme';
 const DURATION = 4200;
 
 /** Renders the newest toast above the tab bar. A replaced or expired toast runs its `onDismiss`. */
-export function ToastHost({ bottomOffset = 0 }: { bottomOffset?: number }) {
+export function ToastHost({ bottomOffset = 0, rightInset = 0 }: { bottomOffset?: number; rightInset?: number }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const [toast, setToast] = useState<Toast | null>(null);
@@ -41,7 +41,7 @@ export function ToastHost({ bottomOffset = 0 }: { bottomOffset?: number }) {
   const background = isDark ? colors.surfaceMuted : colors.text;
   const foreground = isDark ? colors.text : colors.background;
   return (
-    <View pointerEvents="box-none" style={[styles.wrap, { bottom: insets.bottom + bottomOffset + space.md }]}>
+    <View pointerEvents="box-none" style={[styles.wrap, { bottom: insets.bottom + bottomOffset + space.lg, right: space.lg + rightInset }]}>
       <Animated.View
         key={toast.id} entering={FadeInDown.duration(180)} exiting={FadeOutDown.duration(160)}
         accessibilityLiveRegion="polite" accessibilityRole="alert"
@@ -67,9 +67,9 @@ export function ToastHost({ bottomOffset = 0 }: { bottomOffset?: number }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { position: 'absolute', left: space.lg, right: space.lg, alignItems: 'center' },
+  wrap: { position: 'absolute', left: space.lg, right: space.lg, alignItems: 'flex-start' },
   toast: {
     flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.md, paddingHorizontal: space.lg,
-    minHeight: 48, paddingVertical: space.sm, maxWidth: 520, width: '100%',
+    minHeight: 58, paddingVertical: space.sm, maxWidth: 520, width: '100%',
   },
 });

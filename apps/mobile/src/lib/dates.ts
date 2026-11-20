@@ -122,6 +122,7 @@ export function formatDuration(seconds: number): string {
 }
 
 export function formatMinutes(totalSeconds: number): string {
+  if (totalSeconds < 60) return '1분 미만';
   const minutes = Math.round(totalSeconds / 60);
   return minutes < 60 ? minutes + '분' : Math.floor(minutes / 60) + '시간' + (minutes % 60 ? ' ' + (minutes % 60) + '분' : '');
 }

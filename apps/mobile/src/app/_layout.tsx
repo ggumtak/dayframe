@@ -71,7 +71,8 @@ function App() {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <UpdateProvider>
         {signedIn ? <QuickAddProvider><Routes signedIn /></QuickAddProvider> : <Routes signedIn={false} />}
-        <ToastHost bottomOffset={signedIn ? TAB_BAR_HEIGHT : 0} />
+        {/* Leaves room for the floating add button, which sits to the right at the same height. */}
+        <ToastHost bottomOffset={signedIn ? TAB_BAR_HEIGHT : 0} rightInset={signedIn ? 70 : 0} />
       </UpdateProvider>
     </NavigationTheme>
   );
