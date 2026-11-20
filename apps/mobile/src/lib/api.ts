@@ -1,4 +1,4 @@
-import { accessToken, auth } from './auth';
+import { accessToken, refreshedToken } from './auth';
 import { apiBase, env } from './env';
 import type {
   ApiError, AppVersion, CompleteTaskInput, FinishFocusInput, FocusInput, FocusSession, Habit, HabitInput, HabitLog,
@@ -21,9 +21,14 @@ export class ApiFailure extends Error {
   }
 }
 
-/** True when a retry cannot succeed, so an offline queue should drop the write. */
+/** True when the server answered and a retry cannot change that answer, so a queued write should be dropped. */
 export function isPermanentFailure(error: unknown): boolean {
-  return error instanceof ApiFailure && error.status >= 400 && error.status < 500 && error.status !== 401 && error.status !== 429;
+  return error instanceof ApiFailure && error.status >= 400 && error.status < 500 && error.status !== 429;
+}
+
+/** True when no answer arrived at all: the write is still valid and should wait for the network. */
+export function isUnreachable(error: unknown): boolean {
+  return !(error instanceof ApiFailure);
 }
 
 const messages: Record<string, string> = {
@@ -34,11 +39,14 @@ const messages: Record<string, string> = {
   CONFLICT: '이미 존재하거나 진행 중인 항목이 있습니다.',
   STALE_RESOURCE: '다른 기기에서 변경되었습니다. 새로고침 후 다시 시도해 주세요.',
   UNAUTHORIZED: '로그인이 만료되었습니다. 다시 로그인해 주세요.',
-  NETWORK: '서버에 연결할 수 없습니다. 연결되면 자동으로 다시 시도합니다.',
+  SERVER: '서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도해 주세요.',
+  NETWORK: '서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.',
 };
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof ApiFailure) return messages[error.code] ?? '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+  if (error instanceof ApiFailure) {
+    return messages[error.code] ?? (error.status >= 500 ? messages.SERVER : '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  }
   return messages.NETWORK;
 }
 
@@ -67,8 +75,7 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
   let response = await send(path, options, token);
   if (response.status === 401 && !options.anonymous) {
     // The token can expire between the local check and the server's; refresh once and retry.
-    const { data } = await auth.refreshSession();
-    token = data.session?.access_token ?? null;
+    token = await refreshedToken();
     if (token) response = await send(path, options, token);
   }
   if (response.status === 204) return undefined as T;

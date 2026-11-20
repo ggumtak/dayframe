@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Button, Icon, Screen, Txt } from '@/components/ui';
 import { auth, authMessage } from '@/lib/auth';
@@ -40,7 +40,7 @@ export default function SignIn() {
   const field = [styles.field, type.body, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }];
   return (
     <Screen>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={[styles.logo, { backgroundColor: colors.accent }]}>
             <Icon name="check-square" size={30} color={colors.onAccent} />

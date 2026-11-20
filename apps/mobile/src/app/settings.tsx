@@ -20,7 +20,7 @@ const examples: [string, string][] = [
 
 export default function Settings() {
   const { mode, setMode } = useTheme();
-  const { session, signOut } = useSession();
+  const { account, signOut } = useSession();
   const { data: profile } = useProfile();
   const [confirm, setConfirm] = useState(false);
 
@@ -55,7 +55,7 @@ export default function Settings() {
         <View style={{ gap: space.sm }}>
           <Txt variant="section" tone="muted">계정</Txt>
           <Card style={{ paddingVertical: space.xs }}>
-            <Row icon="mail" label="이메일" detail={session?.user.email ?? ''} />
+            <Row icon="mail" label="이메일" detail={account?.email ?? ''} />
             <Row icon="globe" label="시간대" detail={profile?.timezone ?? deviceTimeZone()} />
             <Row icon="github" label="소스와 릴리스" detail={env.githubRepo} onPress={() => void Linking.openURL('https://github.com/' + env.githubRepo + '/releases')} />
             <Row icon="log-out" label="로그아웃" tone="danger" onPress={() => setConfirm(true)} />

@@ -1,14 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AuthClient } from '@supabase/auth-js';
+import { AuthClient, isAuthRetryableFetchError } from '@supabase/auth-js';
 import { AppState } from 'react-native';
 
 import { env } from './env';
+
+export const AUTH_STORAGE_KEY = 'dayframe-auth';
 
 /** Supabase Auth without the rest of the SDK: the app talks to its own REST API for data. */
 export const auth = new AuthClient({
   url: (env.supabaseUrl || 'http://localhost') + '/auth/v1',
   headers: { apikey: env.supabaseKey, Authorization: 'Bearer ' + env.supabaseKey },
-  storageKey: 'dayframe-auth',
+  storageKey: AUTH_STORAGE_KEY,
   storage: AsyncStorage,
   autoRefreshToken: true,
   persistSession: true,
@@ -21,10 +23,31 @@ AppState.addEventListener('change', (state) => {
   else void auth.stopAutoRefresh();
 });
 
-/** A valid access token, refreshed first when it is close to expiry. */
+/** Thrown when the session could not be checked because the auth server was unreachable. */
+export class AuthUnreachable extends Error {
+  constructor() {
+    super('The auth server could not be reached');
+    this.name = 'AuthUnreachable';
+  }
+}
+
+/**
+ * A valid access token, refreshed first when it is close to expiry. Null means there is no session.
+ * A refresh that fails for lack of a connection throws instead, so callers retry rather than sign out.
+ */
 export async function accessToken(): Promise<string | null> {
-  const { data } = await auth.getSession();
-  return data.session?.access_token ?? null;
+  const { data, error } = await auth.getSession();
+  if (data.session) return data.session.access_token;
+  if (error && isAuthRetryableFetchError(error)) throw new AuthUnreachable();
+  return null;
+}
+
+/** Forces a refresh after the API rejected a token. Same contract as `accessToken`. */
+export async function refreshedToken(): Promise<string | null> {
+  const { data, error } = await auth.refreshSession();
+  if (data.session) return data.session.access_token;
+  if (error && isAuthRetryableFetchError(error)) throw new AuthUnreachable();
+  return null;
 }
 
 /** Korean copy for the Supabase Auth failures a user can act on. */

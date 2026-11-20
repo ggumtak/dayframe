@@ -5,6 +5,7 @@ import { RefreshControl, ScrollView, View } from 'react-native';
 import { Button, EmptyState, Header, IconButton, Loading, ProgressBar, Screen, Txt } from '@/components/ui';
 import { periodProgress, useHabitDetails, useHabits } from '@/data/habits';
 import { HabitCard } from '@/features/habits/HabitCard';
+import { useMinute } from '@/lib/clock';
 import { today } from '@/lib/dates';
 import { space, useTheme } from '@/theme';
 
@@ -12,6 +13,8 @@ export default function Habits() {
   const { colors } = useTheme();
   const { data, isLoading, refetch } = useHabits();
   const [refreshing, setRefreshing] = useState(false);
+  // Re-renders the cards when the date rolls over, so a check-in always lands on the current day.
+  useMinute();
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
   const details = useHabitDetails(habits);
   const done = habits.filter((habit) =>

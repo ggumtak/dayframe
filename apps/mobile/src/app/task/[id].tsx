@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
 import { Button, Card, Chip, EmptyState, Icon, IconButton, Loading, Screen, SectionTitle, Txt } from '@/components/ui';
@@ -87,6 +87,18 @@ function TaskEditor({ task }: { task: Task }) {
   const saveNotes = () => {
     if (notes !== (task.notes ?? '')) flow.update(task.id, { notes: notes.trim() ? notes : null });
   };
+  // Leaving the screen does not blur a focused field on a phone, so unsaved text is also saved on the way out.
+  const unsaved = useRef({ title, notes, task, update: flow.update });
+  useEffect(() => {
+    unsaved.current = { title, notes, task, update: flow.update };
+  });
+  useEffect(() => () => {
+    const { title: lastTitle, notes: lastNotes, task: last, update } = unsaved.current;
+    const patch: TaskPatch = {};
+    if (lastTitle.trim() && lastTitle.trim() !== last.title) patch.title = lastTitle.trim();
+    if (lastNotes !== (last.notes ?? '')) patch.notes = lastNotes.trim() ? lastNotes : null;
+    if (Object.keys(patch).length) update(last.id, patch);
+  }, []);
   const applySchedule = () => {
     if (!schedule?.patch) return;
     flow.update(task.id, schedule.patch);
@@ -121,7 +133,7 @@ function TaskEditor({ task }: { task: Task }) {
         <View style={{ flex: 1 }} />
         <IconButton
           name="clock" label="이 할 일로 집중 시작" color={colors.textMuted}
-          onPress={() => router.navigate({ pathname: '/focus', params: { taskId: task.id } })} />
+          onPress={() => router.navigate({ pathname: '/focus', params: { taskId: task.id, at: String(Date.now()) } })} />
         <IconButton
           name="trash-2" label="삭제" color={colors.danger}
           onPress={() => {
@@ -129,7 +141,7 @@ function TaskEditor({ task }: { task: Task }) {
             router.back();
           }} />
       </View>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ paddingBottom: space.xxl * 2 }} keyboardShouldPersistTaps="handled">
           {parent ? (
             <Pressable

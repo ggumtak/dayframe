@@ -9,6 +9,7 @@ import { useFocusActions, useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
+import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, formatDuration, formatMinutes, formatTime, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { FocusSession } from '@/lib/shared';
@@ -28,7 +29,7 @@ function elapsedSeconds(session: FocusSession, now: number): number {
 
 export default function Focus() {
   const { colors } = useTheme();
-  const params = useLocalSearchParams<{ taskId?: string; habitId?: string }>();
+  const params = useLocalSearchParams<{ taskId?: string; habitId?: string; at?: string }>();
   const { data: sessions } = useFocusSessions();
   const { data: habits } = useHabits();
   const { tasks, byId } = useTaskIndex();
@@ -41,13 +42,15 @@ export default function Focus() {
   const [now, setNow] = useState(() => Date.now());
   const finished = useRef(new Set<string>());
   const timeZone = deviceTimeZone();
+  useMinute();
 
   const running = sessions?.find((session) => session.status === 'running') ?? null;
   const ticking = !!running || breakEndsAt !== null;
 
   // Arriving from a task or habit attaches it to the next session.
-  const link = params.taskId ? 'task:' + params.taskId : params.habitId ? 'habit:' + params.habitId : '';
-  const [appliedLink, setAppliedLink] = useState('');
+  // `at` differs on every arrival, so coming back from the same task attaches it again.
+  const link = (params.taskId ? 'task:' + params.taskId : params.habitId ? 'habit:' + params.habitId : '') + '@' + (params.at ?? '');
+  const [appliedLink, setAppliedLink] = useState('@');
   if (link !== appliedLink) {
     setAppliedLink(link);
     if (params.taskId) setTarget({ kind: 'task', id: params.taskId });
@@ -115,14 +118,15 @@ export default function Focus() {
     if (status === 'completed') showToast(`집중 ${formatMinutes(elapsed)} 기록했습니다.`);
   };
 
-  const todayStats = useMemo(() => {
-    const day = Temporal.Now.plainDateISO(timeZone);
-    const done = (sessions ?? []).filter((session) => session.status === 'completed' && session.ended_at
-      && Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone).toPlainDate().equals(day));
-    const seconds = done.reduce((sum, session) =>
-      sum + (new Date(session.ended_at!).getTime() - new Date(session.started_at).getTime()) / 1000, 0);
-    return { count: done.length, seconds };
-  }, [sessions, timeZone]);
+  // Totalled on every render: the timer and `useMinute` keep this screen current across midnight.
+  const day = Temporal.Now.plainDateISO(timeZone);
+  const doneToday = (sessions ?? []).filter((session) => session.status === 'completed' && session.ended_at
+    && Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone).toPlainDate().equals(day));
+  const todayStats = {
+    count: doneToday.length,
+    seconds: doneToday.reduce((sum, session) =>
+      sum + (new Date(session.ended_at!).getTime() - new Date(session.started_at).getTime()) / 1000, 0),
+  };
 
   const candidates = useMemo(() => tasks
     .filter((task) => ['overdue', 'today'].includes(dueBucket(task))).sort(bySchedule).slice(0, 12), [tasks]);

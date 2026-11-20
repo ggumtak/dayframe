@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, TextInput, View } from 'react-native';
 
 import { Button, Header, IconButton, Screen, Segmented, Txt } from '@/components/ui';
 import { useHabitActions } from '@/data/habits';
@@ -30,7 +30,7 @@ export default function NewHabit() {
   return (
     <Screen>
       <Header title="새 습관" right={<IconButton name="x" label="닫기" onPress={() => router.back()} color={colors.textMuted} />} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }} keyboardShouldPersistTaps="handled">
           <TextInput
             value={name} onChangeText={setName} placeholder="습관 이름" placeholderTextColor={colors.textFaint} autoFocus maxLength={120}

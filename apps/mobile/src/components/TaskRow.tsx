@@ -3,7 +3,7 @@ import { memo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
-import { describeRecurrence, dueBucket, formatDue, isPastDue } from '@/lib/dates';
+import { describeRecurrence, dueBucket, dueMinutes, formatDue, formatTime, isPastDue } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Task } from '@/lib/shared';
 import { priorityColor, space, type, useTheme } from '@/theme';
@@ -57,9 +57,10 @@ export const TaskRow = memo(function TaskRow({
   };
 
   const meta: { key: string; icon?: 'calendar' | 'repeat' | 'hash' | 'tag' | 'git-merge'; text: string; color: string }[] = [];
-  if (due && !(hideDate && task.all_day)) {
+  const minutes = dueMinutes(task);
+  if (due && !(hideDate && minutes === null)) {
     meta.push({
-      key: 'due', icon: 'calendar', text: hideDate ? due.split(' ').slice(1).join(' ') : due,
+      key: 'due', icon: 'calendar', text: hideDate && minutes !== null ? formatTime(minutes) : due,
       color: late ? colors.danger : bucket === 'today' ? colors.success : colors.textMuted,
     });
   }

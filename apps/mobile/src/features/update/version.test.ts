@@ -38,13 +38,19 @@ test('a release below the minimum supported version is required', () => {
   assert.equal(isRequired({ minSupportedVersion: '1.1.0' }, { version: null, build: null }), false);
 });
 
-test('only GitHub release assets are trusted for download', () => {
-  assert.equal(isTrustedApkUrl('https://github.com/ggumtak/dayframe/releases/download/v1.2.0/dayframe.apk'), true);
-  assert.equal(isTrustedApkUrl('http://github.com/ggumtak/dayframe/releases/download/v1.2.0/dayframe.apk'), false);
-  assert.equal(isTrustedApkUrl('https://github.com.evil.example/a/b/releases/download/v1/x.apk'), false);
-  assert.equal(isTrustedApkUrl('https://github.com/a/b/releases/download/v1/x.apk?redirect=https://evil.example'), false);
-  assert.equal(isTrustedApkUrl('https://example.com/dayframe.apk'), false);
-  assert.equal(isTrustedApkUrl(null), false);
+const repo = 'ggumtak/dayframe';
+
+test('only APK assets of the app\'s own repository are trusted for download', () => {
+  assert.equal(isTrustedApkUrl('https://github.com/ggumtak/dayframe/releases/download/v1.2.0/dayframe.apk', repo), true);
+  assert.equal(isTrustedApkUrl('http://github.com/ggumtak/dayframe/releases/download/v1.2.0/dayframe.apk', repo), false);
+  assert.equal(isTrustedApkUrl('https://github.com/someone/else/releases/download/v1.2.0/dayframe.apk', repo), false);
+  assert.equal(isTrustedApkUrl('https://github.com/ggumtak/dayframe-evil/releases/download/v1/x.apk', repo), false);
+  assert.equal(isTrustedApkUrl('https://github.com.evil.example/ggumtak/dayframe/releases/download/v1/x.apk', repo), false);
+  assert.equal(isTrustedApkUrl('https://github.com/ggumtak/dayframe/releases/download/v1/x.apk?next=https://evil.example', repo), false);
+  assert.equal(isTrustedApkUrl('https://github.com/ggumtak/dayframe/releases/download/v1/../../x.apk', repo), false);
+  assert.equal(isTrustedApkUrl('https://example.com/dayframe.apk', repo), false);
+  assert.equal(isTrustedApkUrl(null, repo), false);
+  assert.equal(isTrustedApkUrl('https://github.com/ggumtak/dayframe/releases/download/v1/x.apk', ''), false);
 });
 
 test('GitHub latest-release payloads map to release info', () => {
@@ -53,13 +59,14 @@ test('GitHub latest-release payloads map to release info', () => {
       { name: 'dayframe.apk.sha256', browser_download_url: 'https://github.com/ggumtak/dayframe/releases/download/v1.4.2/dayframe.apk.sha256' },
       { name: 'dayframe.apk', browser_download_url: 'https://github.com/ggumtak/dayframe/releases/download/v1.4.2/dayframe.apk' },
     ],
-  });
+  }, repo);
   assert.deepEqual(release, {
     version: '1.4.2', versionCode: 10402, minSupportedVersion: null, notes: 'Faster sync', iosUrl: null, source: 'github',
     apkUrl: 'https://github.com/ggumtak/dayframe/releases/download/v1.4.2/dayframe.apk',
   });
-  assert.equal(fromGithubRelease({ tag_name: 'v1.5.0', assets: [] })?.apkUrl, null);
-  assert.equal(fromGithubRelease({ tag_name: 'v1.5.0', prerelease: true }), null);
-  assert.equal(fromGithubRelease({ tag_name: 'weekly' }), null);
-  assert.equal(fromGithubRelease(null), null);
+  assert.equal(fromGithubRelease({ tag_name: 'v1.5.0', assets: [{ name: 'x.apk', browser_download_url: 'https://github.com/other/repo/releases/download/v1.5.0/x.apk' }] }, repo)?.apkUrl, null);
+  assert.equal(fromGithubRelease({ tag_name: 'v1.5.0', assets: [] }, repo)?.apkUrl, null);
+  assert.equal(fromGithubRelease({ tag_name: 'v1.5.0', prerelease: true }, repo), null);
+  assert.equal(fromGithubRelease({ tag_name: 'weekly' }, repo), null);
+  assert.equal(fromGithubRelease(null, repo), null);
 });

@@ -68,11 +68,12 @@ jobs:
 
       - name: Check the server configuration
         run: |
-          # apps/mobile/.env carries the public Supabase URL and publishable key that get baked into the app.
-          if grep -qs '^EXPO_PUBLIC_SUPABASE_URL=https://' .env && grep -qs '^EXPO_PUBLIC_SUPABASE_KEY=.' .env; then
-            echo "Using the Supabase project from apps/mobile/.env"
+          # release.config.json carries the public Supabase URL and publishable key that get baked into the app.
+          configured="$(node -p "const c = require('./release.config.json'); /^https:\/\/.+/.test(c.supabaseUrl) && c.supabaseKey.length > 0")"
+          if [[ "$configured" == "true" ]]; then
+            echo "Using the Supabase project from apps/mobile/release.config.json"
           elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            echo "::error::apps/mobile/.env does not name a Supabase project, so a released app could not sign anyone in."
+            echo "::error::apps/mobile/release.config.json does not name a Supabase project, so a released app could not sign anyone in."
             exit 1
           else
             echo "::notice::No Supabase project configured yet; building with a placeholder so the app still starts."
@@ -106,10 +107,13 @@ jobs:
             keytool -genkeypair -keystore "$signing/release.jks" -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
               -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 30 -dname "CN=Dayframe CI"
             echo "SIGNING=throwaway" >> "$GITHUB_ENV"
-          else
+          elif [[ "$(node -p "require('./release.config.json').allowDebugSignedRelease === true")" == "true" ]]; then
             echo "SIGNING=debug" >> "$GITHUB_ENV"
-            echo "::warning::No ANDROID_KEYSTORE_* secrets are set, so this release is signed with the public debug key. Add a private key before sharing the app: an install signed with one key cannot be updated by a build signed with another."
+            echo "::warning::This release is signed with the public debug key (allowDebugSignedRelease). Installs made from it cannot later be updated by a build signed with a private key."
             exit 0
+          else
+            echo "::error::No ANDROID_KEYSTORE_* secrets are set. A release must be signed with a private key: the public debug key lets anyone sign an update, and installs signed with one key cannot be updated by another. Add the four secrets, or set allowDebugSignedRelease in apps/mobile/release.config.json to accept that."
+            exit 1
           fi
           printf '%s' "$KEYSTORE_PASSWORD" > "$signing/store-password"
           printf '%s' "$KEY_ALIAS" > "$signing/key-alias"

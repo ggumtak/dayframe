@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, TextInput, View } from 'react-native';
 
 import { type DayMark, MonthCalendar } from '@/components/MonthCalendar';
 import { Button, Card, EmptyState, Header, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
@@ -73,6 +73,7 @@ export default function HabitDetail() {
       <Header
         title={habit.name} subtitle={(habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${habit.start_date} 시작`}
         left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl }} keyboardShouldPersistTaps="handled">
         <View style={{ flexDirection: 'row', gap: space.sm }}>
           <Stat label="현재 연속" value={(stats?.current_streak ?? 0) + unit} />
@@ -104,7 +105,7 @@ export default function HabitDetail() {
         )}
 
         <Card style={{ paddingVertical: space.xs }}>
-          <Row icon="clock" label="이 습관으로 집중 시작" onPress={() => router.navigate({ pathname: '/focus', params: { habitId: habit.id } })} />
+          <Row icon="clock" label="이 습관으로 집중 시작" onPress={() => router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } })} />
           <Row icon="edit-2" label="이름 바꾸기" onPress={() => setName(habit.name)} />
           <Row
             icon="archive" label="보관하기" detail="기록은 남습니다"
@@ -116,6 +117,7 @@ export default function HabitDetail() {
           <Row icon="trash-2" label="삭제" tone="danger" onPress={() => setConfirm(true)} />
         </Card>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="습관을 삭제할까요?">
         <Txt tone="muted" style={{ marginBottom: space.lg }}>모든 기록이 함께 지워지며 되돌릴 수 없습니다. 기록을 남기려면 보관을 선택하세요.</Txt>

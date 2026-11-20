@@ -40,8 +40,8 @@ git tag v1.2.3 && git push origin v1.2.3
 
 배포 전에 한 번만 준비할 것:
 
-- **서버 주소**: `apps/mobile/.env`에 Supabase URL과 공개(publishable) 키를 적습니다. 없으면 태그 빌드가 중단됩니다.
-- **서명 키**: 저장소 Secrets에 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`를 등록합니다. 없으면 공개된 디버그 키로 서명되며 경고가 표시됩니다. 한 키로 설치한 앱은 다른 키로 서명한 APK로 업데이트할 수 없으므로, 친구들에게 배포하기 전에 정해야 합니다.
+- **서버 주소**: `apps/mobile/release.config.json`에 Supabase URL과 공개(publishable) 키를 적습니다. 비어 있으면 태그 빌드가 중단됩니다.
+- **서명 키**: 저장소 Secrets에 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`를 등록합니다. 없으면 태그 빌드가 중단됩니다. 한 키로 설치한 앱은 다른 키로 서명한 APK로 업데이트할 수 없으므로, 이 키는 잃어버리지 않게 따로 보관해야 합니다.
 
 ## 검사
 

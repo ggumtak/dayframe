@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { RefreshControl } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { EmptyState, Header, Loading, Screen, SectionTitle } from '@/components/ui';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
 import { TaskList } from '@/features/tasks/TaskList';
+import { useMinute } from '@/lib/clock';
 import { dueBucket, dueDate, formatDate, today, weekdayName } from '@/lib/dates';
 import type { Task } from '@/lib/shared';
 import { useTheme } from '@/theme';
@@ -13,18 +14,18 @@ export default function Upcoming() {
   const { colors } = useTheme();
   const { tasks, isLoading, refetch } = useTaskIndex();
   const [refreshing, setRefreshing] = useState(false);
+  useMinute();
 
-  const days = useMemo(() => {
-    const groups = new Map<string, { title: string; tasks: Task[] }>();
-    for (const task of tasks.filter((item) => dueBucket(item) === 'upcoming').sort(bySchedule)) {
-      const date = dueDate(task)!;
-      const key = date.toString();
-      const label = formatDate(date, today(task.timezone));
-      const title = /^\d/.test(label) ? label : `${label} · ${date.month}월 ${date.day}일 ${weekdayName(date)}`;
-      groups.set(key, { title, tasks: [...(groups.get(key)?.tasks ?? []), task] });
-    }
-    return [...groups.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, group]) => ({ key, ...group }));
-  }, [tasks]);
+  // Grouped on every render: `useMinute` re-renders this screen when the date rolls over.
+  const groups = new Map<string, { title: string; tasks: Task[] }>();
+  for (const task of tasks.filter((item) => dueBucket(item) === 'upcoming').sort(bySchedule)) {
+    const date = dueDate(task)!;
+    const key = date.toString();
+    const label = formatDate(date, today(task.timezone));
+    const title = /^\d/.test(label) ? label : `${label} · ${date.month}월 ${date.day}일 ${weekdayName(date)}`;
+    groups.set(key, { title, tasks: [...(groups.get(key)?.tasks ?? []), task] });
+  }
+  const days = [...groups.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, group]) => ({ key, ...group }));
 
   const refresh = async () => {
     setRefreshing(true);

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { RefreshControl, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
@@ -12,6 +12,7 @@ import { Timeline } from '@/features/tasks/Timeline';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { UpdateBanner } from '@/features/update/UpdateBanner';
+import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { showToast } from '@/lib/toast';
@@ -25,14 +26,14 @@ export default function Today() {
   const quickAdd = useQuickAdd();
   const [view, setView] = useState<'list' | 'timeline'>('list');
   const [refreshing, setRefreshing] = useState(false);
+  useMinute();
   const timeZone = deviceTimeZone();
   const date = today(timeZone);
   useScreenDefaults({ dueToday: true });
 
-  const { overdue, due } = useMemo(() => ({
-    overdue: tasks.filter((task) => dueBucket(task) === 'overdue').sort(bySchedule),
-    due: tasks.filter((task) => dueBucket(task) === 'today').sort(bySchedule),
-  }), [tasks]);
+  // Bucketed on every render: `useMinute` re-renders this screen when the date rolls over.
+  const overdue = tasks.filter((task) => dueBucket(task) === 'overdue').sort(bySchedule);
+  const due = tasks.filter((task) => dueBucket(task) === 'today').sort(bySchedule);
 
   const refresh = async () => {
     setRefreshing(true);

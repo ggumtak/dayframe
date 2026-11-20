@@ -3,6 +3,8 @@ import { File, Paths } from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Linking, Platform } from 'react-native';
 
+import { env } from '@/lib/env';
+
 import ApkInstaller from '../../../modules/apk-installer';
 import { isTrustedApkUrl, type ReleaseInfo, UpdateError } from './version';
 
@@ -26,7 +28,7 @@ export function openInstallPermissionSettings(): void {
 export async function downloadApk(
   release: ReleaseInfo, onProgress: (fraction: number | null) => void, signal: AbortSignal,
 ): Promise<File> {
-  if (!isTrustedApkUrl(release.apkUrl)) throw new UpdateError('untrusted', 'Release has no trusted APK link');
+  if (!isTrustedApkUrl(release.apkUrl, env.githubRepo)) throw new UpdateError('untrusted', 'Release has no trusted APK link');
   const target = new File(Paths.cache, 'dayframe-update.apk');
   try {
     if (target.exists) target.delete();

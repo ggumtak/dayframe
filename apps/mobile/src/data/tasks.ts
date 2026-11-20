@@ -1,12 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 import { api, ApiFailure } from '@/lib/api';
 import { deviceTimeZone, dueBucket, dueMinutes, instantFor, sameInstant, Temporal, today } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
 import { nextOccurrence, type Project, type Tag, type Task, type TaskInput, type TaskPatch, type TaskTag, type User } from '@/lib/shared';
 
-import { queryClient } from './client';
+import { hold, queryClient, settle } from './client';
 import { keys, writes } from './keys';
 
 // One shared scope makes every write run in the order the user made it, online or after a reconnect.
@@ -71,7 +71,8 @@ queryClient.setMutationDefaults(writes.createTask, {
     for (const name of vars.tagNames ?? []) await api.attachTag(task.id, (await ensureTag(name)).id);
     return task;
   },
-  onMutate: (vars: CreateTaskVars) => {
+  onMutate: async (vars: CreateTaskVars) => {
+    await hold(keys.tasks);
     const now = new Date().toISOString();
     const { input } = vars;
     const project = vars.projectName
@@ -91,7 +92,7 @@ queryClient.setMutationDefaults(writes.createTask, {
     editTasks((tasks) => [...tasks.filter((task) => task.id !== vars.id), draft]);
   },
   onSuccess: (task: Task) => editTasks((tasks) => tasks.map((item) => (item.id === task.id ? task : item))),
-  onSettled: () => refresh(keys.tasks, keys.taskTags, keys.projects, keys.tags),
+  onSettled: () => settle(keys.tasks, keys.taskTags, keys.projects, keys.tags),
 });
 
 export interface UpdateTaskVars { id: string; patch: TaskPatch }
@@ -99,11 +100,12 @@ export interface UpdateTaskVars { id: string; patch: TaskPatch }
 queryClient.setMutationDefaults(writes.updateTask, {
   scope,
   mutationFn: (vars: UpdateTaskVars) => api.updateTask(vars.id, vars.patch),
-  onMutate: (vars: UpdateTaskVars) => {
+  onMutate: async (vars: UpdateTaskVars) => {
+    await hold(keys.tasks);
     editTasks((tasks) => tasks.map((task) => (task.id === vars.id ? { ...task, ...vars.patch } : task)));
   },
   onSuccess: (task: Task) => editTasks((tasks) => tasks.map((item) => (item.id === task.id ? task : item))),
-  onSettled: () => refresh(keys.tasks),
+  onSettled: () => settle(keys.tasks),
 });
 
 export interface CompleteTaskVars {
@@ -130,7 +132,8 @@ queryClient.setMutationDefaults(writes.completeTask, {
       return api.completeTask(vars.id, { ...input, expected_updated_at: fresh.updated_at });
     }
   },
-  onMutate: (vars: CompleteTaskVars) => {
+  onMutate: async (vars: CompleteTaskVars) => {
+    await hold(keys.tasks);
     editTasks((tasks) => tasks.flatMap((task) => {
       if (task.id !== vars.id) return [task];
       if (!task.recurrence_rule || !task.recurrence_anchor_at) return [];
@@ -146,18 +149,42 @@ queryClient.setMutationDefaults(writes.completeTask, {
       }
     }));
   },
-  onSettled: () => refresh(keys.tasks),
+  onSettled: () => settle(keys.tasks),
 });
 
 queryClient.setMutationDefaults(writes.reopenTask, {
   scope,
-  mutationFn: (id: string) => api.reopenTask(id),
+  mutationFn: (task: Task) => api.reopenTask(task.id),
+  // Put the task back at once; the completion it undoes may still be waiting in the queue.
+  onMutate: async (task: Task) => {
+    await hold(keys.tasks);
+    editTasks((tasks) => [...tasks.filter((item) => item.id !== task.id), { ...task, completed_at: null }]);
+  },
   onSuccess: (task: Task) => editTasks((tasks) => [...tasks.filter((item) => item.id !== task.id), task]),
-  onSettled: () => refresh(keys.tasks),
+  onSettled: () => settle(keys.tasks),
 });
 
+// Tasks the user has just deleted are hidden while the "undo" toast is up, and only then deleted.
+const hiddenIds = new Set<string>();
+const hiddenListeners = new Set<() => void>();
+let hiddenVersion = 0;
+function setHidden(ids: Iterable<string>, hidden: boolean) {
+  for (const id of ids) {
+    if (hidden) hiddenIds.add(id);
+    else hiddenIds.delete(id);
+  }
+  hiddenVersion += 1;
+  hiddenListeners.forEach((listener) => listener());
+}
+export const hideTasks = (ids: Iterable<string>) => setHidden(ids, true);
+export const unhideTasks = (ids: Iterable<string>) => setHidden(ids, false);
+const subscribeHidden = (listener: () => void) => {
+  hiddenListeners.add(listener);
+  return () => { hiddenListeners.delete(listener); };
+};
+
 /** A task together with every task nested beneath it. */
-function withDescendants(tasks: Task[], id: string): Set<string> {
+export function withDescendants(tasks: Task[], id: string): Set<string> {
   const ids = new Set([id]);
   for (let grew = true; grew;) {
     grew = false;
@@ -174,13 +201,14 @@ function withDescendants(tasks: Task[], id: string): Set<string> {
 queryClient.setMutationDefaults(writes.deleteTask, {
   scope,
   mutationFn: (id: string) => api.deleteTask(id),
-  onMutate: (id: string) => {
-    editTasks((tasks) => {
-      const removed = withDescendants(tasks, id);
-      return tasks.filter((task) => !removed.has(task.id));
-    });
+  onMutate: async (id: string) => {
+    await hold(keys.tasks);
+    const removed = withDescendants(queryClient.getQueryData<Task[]>(keys.tasks) ?? [], id);
+    editTasks((tasks) => tasks.filter((task) => !removed.has(task.id)));
+    // From here the cache itself no longer holds them; if the delete fails they come back visibly.
+    unhideTasks(removed);
   },
-  onSettled: () => refresh(keys.tasks, keys.taskTags),
+  onSettled: () => settle(keys.tasks, keys.taskTags),
 });
 
 export type ReorderVars = { id: string; position: number }[];
@@ -190,23 +218,25 @@ queryClient.setMutationDefaults(writes.reorderTasks, {
   mutationFn: async (vars: ReorderVars) => {
     for (const { id, position } of vars) await api.updateTask(id, { position });
   },
-  onMutate: (vars: ReorderVars) => {
+  onMutate: async (vars: ReorderVars) => {
+    await hold(keys.tasks);
     const positions = new Map(vars.map((item) => [item.id, item.position]));
     editTasks((tasks) => tasks.map((task) => (positions.has(task.id) ? { ...task, position: positions.get(task.id)! } : task)));
   },
-  onSettled: () => refresh(keys.tasks),
+  onSettled: () => settle(keys.tasks),
 });
 
 queryClient.setMutationDefaults(writes.rescheduleOverdue, {
   scope,
   mutationFn: () => api.rescheduleOverdue(),
-  onMutate: () => {
+  onMutate: async () => {
+    await hold(keys.tasks);
     // Mirrors the server: keep each task's wall time and move only its date.
     editTasks((tasks) => tasks.map((task) => (dueBucket(task) === 'overdue'
       ? { ...task, due_at: instantFor(today(task.timezone), dueMinutes(task), task.timezone) }
       : task)));
   },
-  onSettled: () => refresh(keys.tasks),
+  onSettled: () => settle(keys.tasks),
 });
 
 export interface SetTaskTagsVars { taskId: string; attach: string[]; detach: string[] }
@@ -217,13 +247,14 @@ queryClient.setMutationDefaults(writes.setTaskTags, {
     for (const tagId of vars.detach) await api.detachTag(vars.taskId, tagId);
     for (const tagId of vars.attach) await api.attachTag(vars.taskId, tagId);
   },
-  onMutate: (vars: SetTaskTagsVars) => {
+  onMutate: async (vars: SetTaskTagsVars) => {
+    await hold(keys.taskTags);
     queryClient.setQueryData<TaskTag[]>(keys.taskTags, (links) => links && [
       ...links.filter((link) => link.task_id !== vars.taskId || !vars.detach.includes(link.tag_id)),
       ...vars.attach.map((tag_id) => ({ user_id: '', task_id: vars.taskId, tag_id })),
     ]);
   },
-  onSettled: () => refresh(keys.taskTags),
+  onSettled: () => settle(keys.taskTags),
 });
 
 /** Creates the tag if needed and attaches it. Needs a connection, since a new tag has no ID to queue against. */
@@ -233,7 +264,15 @@ export async function attachTagByName(taskId: string, name: string): Promise<voi
   await refresh(keys.tags, keys.taskTags);
 }
 
-export const useTasks = () => useQuery({ queryKey: keys.tasks, queryFn: api.openTasks });
+/** Open tasks, minus any that are hidden behind a pending "undo delete". */
+export function useTasks() {
+  const version = useSyncExternalStore(subscribeHidden, () => hiddenVersion, () => hiddenVersion);
+  const query = useQuery({ queryKey: keys.tasks, queryFn: api.openTasks });
+  const all = query.data;
+  // `version` changes whenever the hidden set does.
+  const data = useMemo(() => (version >= 0 ? all?.filter((task) => !hiddenIds.has(task.id)) : all), [all, version]);
+  return { ...query, data };
+}
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: api.projects });
 export const useTags = () => useQuery({ queryKey: keys.tags, queryFn: api.tags });
 export const useTaskTags = () => useQuery({ queryKey: keys.taskTags, queryFn: api.taskTags });
@@ -296,7 +335,7 @@ export function useTaskActions() {
   const create = useMutation<Task, Error, CreateTaskVars>({ mutationKey: writes.createTask });
   const update = useMutation<Task, Error, UpdateTaskVars>({ mutationKey: writes.updateTask });
   const complete = useMutation<unknown, Error, CompleteTaskVars>({ mutationKey: writes.completeTask });
-  const reopen = useMutation<Task, Error, string>({ mutationKey: writes.reopenTask });
+  const reopen = useMutation<Task, Error, Task>({ mutationKey: writes.reopenTask });
   const remove = useMutation<void, Error, string>({ mutationKey: writes.deleteTask });
   const reorder = useMutation<void, Error, ReorderVars>({ mutationKey: writes.reorderTasks });
   const rescheduleOverdue = useMutation<unknown, Error, void>({ mutationKey: writes.rescheduleOverdue });
@@ -311,7 +350,7 @@ export function useTaskActions() {
     complete: (task: Task) => complete.mutate({
       id: task.id, request_id: uuid(), expected_updated_at: task.updated_at, occurrence_due_at: task.due_at,
     }),
-    reopen: (id: string) => reopen.mutate(id),
+    reopen: (task: Task) => reopen.mutate(task),
     remove: (id: string) => remove.mutate(id),
     reorder: (vars: ReorderVars) => reorder.mutate(vars),
     rescheduleOverdue: () => rescheduleOverdue.mutate(),

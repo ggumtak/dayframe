@@ -8,6 +8,7 @@ import { Icon, type IconName, Txt } from '@/components/ui';
 import { useProfile } from '@/data/session';
 import { useTasks } from '@/data/tasks';
 import { TAB_BAR_HEIGHT } from '@/features/quick-add/QuickAdd';
+import { useMinute } from '@/lib/clock';
 import { dueBucket } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { useTheme } from '@/theme';
@@ -19,6 +20,7 @@ function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProp
   const insets = useSafeAreaInsets();
   const online = useSyncExternalStore((notify) => onlineManager.subscribe(notify), () => onlineManager.isOnline(), () => true);
   const { data: tasks } = useTasks();
+  useMinute();
   const dueNow = (tasks ?? []).filter((task) => ['overdue', 'today'].includes(dueBucket(task))).length;
 
   return (

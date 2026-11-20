@@ -44,9 +44,11 @@ export function isRequired(release: Pick<ReleaseInfo, 'minSupportedVersion'>, in
     && compareVersions(installed.version, release.minSupportedVersion) < 0;
 }
 
-/** Only release assets hosted on GitHub are ever downloaded and offered for install. */
-export function isTrustedApkUrl(url: string | null | undefined): url is string {
-  return /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/releases\/download\/[\w.%-]+\/[\w.%-]+\.apk$/.test(url ?? '');
+/** Only APK assets of the app's own GitHub repository (`owner/name`) are ever downloaded and offered for install. */
+export function isTrustedApkUrl(url: string | null | undefined, repo: string): url is string {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return false;
+  const prefix = 'https://github.com/' + repo + '/releases/download/';
+  return !!url && url.startsWith(prefix) && /^[\w.%-]+\/[\w.%-]+\.apk$/.test(url.slice(prefix.length));
 }
 
 interface GithubRelease {
@@ -58,11 +60,11 @@ interface GithubRelease {
 }
 
 /** Maps GitHub's "latest release" payload. Null when it is not a usable published version. */
-export function fromGithubRelease(payload: unknown): ReleaseInfo | null {
+export function fromGithubRelease(payload: unknown, repo: string): ReleaseInfo | null {
   const release = (payload ?? {}) as GithubRelease;
   if (release.draft || release.prerelease || !parseVersion(release.tag_name)) return null;
   const version = parseVersion(release.tag_name)!.join('.');
-  const apk = release.assets?.find((asset) => asset.name?.toLowerCase().endsWith('.apk') && isTrustedApkUrl(asset.browser_download_url));
+  const apk = release.assets?.find((asset) => asset.name?.toLowerCase().endsWith('.apk') && isTrustedApkUrl(asset.browser_download_url, repo));
   return {
     version, versionCode: versionCodeOf(version), minSupportedVersion: null, notes: (release.body ?? '').trim(),
     apkUrl: apk?.browser_download_url ?? null, iosUrl: null, source: 'github',

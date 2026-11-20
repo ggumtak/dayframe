@@ -15,7 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ToastHost } from '@/components/ToastHost';
 import { EmptyState } from '@/components/ui';
-import { persistOptions, queryClient } from '@/data/client';
+import { persistOptions, queryClient, resumeWrites } from '@/data/client';
 import { SessionProvider, useSession } from '@/data/session';
 import { QuickAddProvider, TAB_BAR_HEIGHT } from '@/features/quick-add/QuickAdd';
 import { UpdateProvider } from '@/features/update/useUpdate';
@@ -46,7 +46,7 @@ function Routes({ signedIn }: { signedIn: boolean }) {
 
 function App() {
   const { colors, isDark } = useTheme();
-  const { session, isLoading } = useSession();
+  const { account, isLoading } = useSession();
 
   useEffect(() => {
     if (!isLoading) void SplashScreen.hideAsync();
@@ -63,7 +63,7 @@ function App() {
   }
   if (isLoading) return <View style={{ flex: 1, backgroundColor: colors.background }} />;
 
-  const signedIn = !!session;
+  const signedIn = !!account;
   const base = isDark ? DarkTheme : DefaultTheme;
   return (
     <NavigationTheme
@@ -85,10 +85,7 @@ export default function RootLayout() {
         <ThemeProvider>
           <PersistQueryClientProvider
             client={queryClient} persistOptions={persistOptions}
-            onSuccess={() => {
-              // Send anything written offline last time, then refresh what the screens show.
-              void queryClient.resumePausedMutations().then(() => queryClient.invalidateQueries());
-            }}>
+            onSuccess={() => void resumeWrites()}>
             <SessionProvider>
               <App />
             </SessionProvider>

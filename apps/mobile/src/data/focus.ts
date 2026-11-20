@@ -4,7 +4,7 @@ import { api } from '@/lib/api';
 import { uuid } from '@/lib/ids';
 import type { FocusSession } from '@/lib/shared';
 
-import { queryClient } from './client';
+import { hold, queryClient, settle } from './client';
 import { keys, writes } from './keys';
 
 const scope = { id: 'dayframe-writes' };
@@ -22,14 +22,15 @@ export interface StartFocusVars {
 queryClient.setMutationDefaults(writes.startFocus, {
   scope,
   mutationFn: (vars: StartFocusVars) => api.startFocus(vars),
-  onMutate: (vars: StartFocusVars) => {
+  onMutate: async (vars: StartFocusVars) => {
+    await hold(keys.focus);
     const draft: FocusSession = {
       id: vars.id, user_id: '', created_at: vars.started_at, task_id: vars.task_id ?? null, habit_id: vars.habit_id ?? null,
       started_at: vars.started_at, ended_at: null, planned_seconds: vars.planned_seconds, status: 'running',
     };
     editSessions((sessions) => [draft, ...sessions.filter((session) => session.id !== vars.id)]);
   },
-  onSettled: () => queryClient.invalidateQueries({ queryKey: keys.focus }),
+  onSettled: () => settle(keys.focus),
 });
 
 export interface FinishFocusVars { id: string; status: 'completed' | 'cancelled'; ended_at: string }
@@ -37,11 +38,12 @@ export interface FinishFocusVars { id: string; status: 'completed' | 'cancelled'
 queryClient.setMutationDefaults(writes.finishFocus, {
   scope,
   mutationFn: ({ id, ...input }: FinishFocusVars) => api.finishFocus(id, input),
-  onMutate: (vars: FinishFocusVars) => {
+  onMutate: async (vars: FinishFocusVars) => {
+    await hold(keys.focus);
     editSessions((sessions) => sessions.map((session) => (session.id === vars.id
       ? { ...session, status: vars.status, ended_at: vars.ended_at } : session)));
   },
-  onSettled: () => queryClient.invalidateQueries({ queryKey: keys.focus }),
+  onSettled: () => settle(keys.focus),
 });
 
 export const useFocusSessions = () => useQuery({ queryKey: keys.focus, queryFn: api.focusSessions });

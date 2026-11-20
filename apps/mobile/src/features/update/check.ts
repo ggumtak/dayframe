@@ -21,7 +21,7 @@ async function fromBackend(): Promise<ReleaseInfo | null> {
   const release = await api.appVersion();
   return {
     version: release.latestVersion, versionCode: release.versionCode, minSupportedVersion: release.minSupportedVersion,
-    notes: release.releaseNotes.trim(), apkUrl: isTrustedApkUrl(release.apkDownloadUrl) ? release.apkDownloadUrl : null,
+    notes: release.releaseNotes.trim(), apkUrl: isTrustedApkUrl(release.apkDownloadUrl, env.githubRepo) ? release.apkDownloadUrl : null,
     iosUrl: release.iosStoreOrTestFlightUrl, source: 'backend',
   };
 }
@@ -33,7 +33,7 @@ async function fromGithub(): Promise<ReleaseInfo | null> {
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error('GitHub releases responded with ' + response.status);
-  return fromGithubRelease(await response.json());
+  return fromGithubRelease(await response.json(), env.githubRepo);
 }
 
 /**

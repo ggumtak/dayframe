@@ -6,7 +6,7 @@ import { Temporal, today, weekStart } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
 import type { Habit, HabitInput, HabitLog, HabitLogStatus, HabitStats } from '@/lib/shared';
 
-import { queryClient } from './client';
+import { hold, queryClient, settle } from './client';
 import { keys, writes } from './keys';
 
 const scope = { id: 'dayframe-writes' };
@@ -16,7 +16,8 @@ export type CreateHabitVars = HabitInput & { id: string };
 queryClient.setMutationDefaults(writes.createHabit, {
   scope,
   mutationFn: (vars: CreateHabitVars) => api.createHabit(vars),
-  onMutate: (vars: CreateHabitVars) => {
+  onMutate: async (vars: CreateHabitVars) => {
+    await hold(keys.habits);
     const draft: Habit = {
       id: vars.id, user_id: '', created_at: new Date().toISOString(), name: vars.name, cadence: vars.cadence,
       target_count: vars.target_count ?? 1, timezone: vars.timezone,
@@ -25,7 +26,7 @@ queryClient.setMutationDefaults(writes.createHabit, {
     queryClient.setQueryData<Habit[]>(keys.habits, (habits) => [draft, ...(habits ?? [])]);
     queryClient.setQueryData<HabitLog[]>(keys.habitLogs(vars.id), []);
   },
-  onSettled: () => queryClient.invalidateQueries({ queryKey: keys.habits }),
+  onSettled: () => settle(keys.habits),
 });
 
 export interface UpdateHabitVars { id: string; name?: string; archive?: true }
@@ -33,21 +34,23 @@ export interface UpdateHabitVars { id: string; name?: string; archive?: true }
 queryClient.setMutationDefaults(writes.updateHabit, {
   scope,
   mutationFn: ({ id, ...patch }: UpdateHabitVars) => api.updateHabit(id, patch),
-  onMutate: (vars: UpdateHabitVars) => {
+  onMutate: async (vars: UpdateHabitVars) => {
+    await hold(keys.habits);
     queryClient.setQueryData<Habit[]>(keys.habits, (habits) => habits?.map((habit) => (habit.id !== vars.id ? habit : {
       ...habit, name: vars.name ?? habit.name, archived_at: vars.archive ? new Date().toISOString() : habit.archived_at,
     })));
   },
-  onSettled: () => queryClient.invalidateQueries({ queryKey: keys.habits }),
+  onSettled: () => settle(keys.habits),
 });
 
 queryClient.setMutationDefaults(writes.deleteHabit, {
   scope,
   mutationFn: (id: string) => api.deleteHabit(id),
-  onMutate: (id: string) => {
+  onMutate: async (id: string) => {
+    await hold(keys.habits);
     queryClient.setQueryData<Habit[]>(keys.habits, (habits) => habits?.filter((habit) => habit.id !== id));
   },
-  onSettled: () => queryClient.invalidateQueries({ queryKey: keys.habits }),
+  onSettled: () => settle(keys.habits),
 });
 
 /** Sets one day's total. A null status clears the day. */
@@ -69,7 +72,8 @@ queryClient.setMutationDefaults(writes.setHabitLog, {
   mutationFn: (vars: SetHabitLogVars) => (vars.status === null
     ? api.deleteHabitLog(vars.habitId, vars.date)
     : api.setHabitLog(vars.habitId, vars.date, { status: vars.status, count: vars.count })),
-  onMutate: (vars: SetHabitLogVars) => {
+  onMutate: async (vars: SetHabitLogVars) => {
+    await hold(keys.habitLogs(vars.habitId), keys.habitStats(vars.habitId));
     const habit = queryClient.getQueryData<Habit[]>(keys.habits)?.find((item) => item.id === vars.habitId);
     const before = queryClient.getQueryData<HabitLog[]>(keys.habitLogs(vars.habitId)) ?? [];
     const rest = before.filter((log) => log.log_date !== vars.date);
@@ -91,10 +95,8 @@ queryClient.setMutationDefaults(writes.setHabitLog, {
       };
     });
   },
-  onSettled: (_data: unknown, _error: unknown, vars: SetHabitLogVars) => Promise.all([
-    queryClient.invalidateQueries({ queryKey: keys.habitLogs(vars.habitId) }),
-    queryClient.invalidateQueries({ queryKey: keys.habitStats(vars.habitId) }),
-  ]),
+  onSettled: (_data: unknown, _error: unknown, vars: SetHabitLogVars) =>
+    settle(keys.habitLogs(vars.habitId), keys.habitStats(vars.habitId)),
 });
 
 export const useHabits = () => useQuery({ queryKey: keys.habits, queryFn: api.habits });
@@ -120,7 +122,10 @@ export function useHabitActions() {
   const remove = useMutation<void, Error, string>({ mutationKey: writes.deleteHabit });
   const setLog = useMutation<unknown, Error, SetHabitLogVars>({ mutationKey: writes.setHabitLog });
   return {
-    create: (input: HabitInput) => create.mutate({ ...input, id: uuid() }),
+    // The start date is fixed now, so check-ins made offline still fall inside the habit once it syncs.
+    create: (input: HabitInput) => create.mutate({
+      ...input, id: uuid(), start_date: input.start_date ?? today(input.timezone).toString(),
+    }),
     rename: (id: string, name: string) => update.mutate({ id, name }),
     archive: (id: string) => update.mutate({ id, archive: true }),
     remove: (id: string) => remove.mutate(id),
