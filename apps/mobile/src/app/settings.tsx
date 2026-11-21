@@ -4,6 +4,7 @@ import { Linking, ScrollView, View } from 'react-native';
 
 import { Button, Card, Header, Icon, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useProfile, useSession } from '@/data/session';
+import { RemindersCard } from '@/features/reminders/RemindersCard';
 import { UpdateCard } from '@/features/update/UpdateCard';
 import { deviceTimeZone } from '@/lib/dates';
 import { env } from '@/lib/env';
@@ -31,6 +32,11 @@ export default function Settings() {
         <View style={{ gap: space.sm }}>
           <Txt variant="section" tone="muted">앱 업데이트</Txt>
           <UpdateCard />
+        </View>
+
+        <View style={{ gap: space.sm }}>
+          <Txt variant="section" tone="muted">알림과 위젯</Txt>
+          <RemindersCard />
         </View>
 
         <View style={{ gap: space.sm }}>

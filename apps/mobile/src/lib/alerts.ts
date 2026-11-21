@@ -9,13 +9,6 @@ const CHANNEL = 'focus-timer';
 const supported = Platform.OS === 'android';
 let prepared: Promise<boolean> | undefined;
 
-if (supported) {
-  // The timer screen may be open when the round ends; the banner and sound are the alarm either way.
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
-  });
-}
-
 async function prepare(): Promise<boolean> {
   await Notifications.setNotificationChannelAsync(CHANNEL, {
     name: '집중 타이머', importance: AndroidImportance.HIGH, vibrationPattern: [0, 300, 200, 300],

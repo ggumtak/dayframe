@@ -9,6 +9,8 @@ package="com.ggumtak.dayframe"
 mkdir -p "$out"
 
 adb install -r "$apk"
+# Android 13+ asks before showing notifications; grant it so the alert check can run unattended.
+adb shell pm grant "$package" android.permission.POST_NOTIFICATIONS || true
 adb logcat -c
 adb shell am start -W -n "$package/.MainActivity"
 
@@ -58,5 +60,22 @@ for _ in $(seq 1 10); do
 done
 grep "DAYFRAME_SELF_CHECK_DOWNLOAD" "$out/logcat.txt" | tail -1 || true
 grep -q "DAYFRAME_SELF_CHECK_DOWNLOAD ok" "$out/logcat.txt" || echo "::warning::The on-device download check did not complete; see the smoke-test artifact."
+
+# Alerts and the home-screen widget: a task alert scheduled by the app's own code must appear, and the
+# widget must be registered with the system.
+for _ in $(seq 1 15); do
+  adb logcat -d > "$out/logcat.txt"
+  if grep -q "DAYFRAME_SELF_CHECK_BACKGROUND" "$out/logcat.txt"; then break; fi
+  sleep 2
+done
+grep "DAYFRAME_SELF_CHECK_BACKGROUND" "$out/logcat.txt" | tail -1 || true
+adb shell dumpsys notification --noredact > "$out/notifications.txt" || true
+adb shell dumpsys appwidget > "$out/appwidget.txt" || true
+adb exec-out screencap -p > "$out/after-alert.png"
+grep -q "DAYFRAME_SELF_CHECK_BACKGROUND ok" "$out/logcat.txt" || fail "The on-device alert and widget check did not pass."
+grep -q "Dayframe 알림 점검" "$out/notifications.txt" || fail "The test alert is not in the notification shade."
+grep -q "com.ggumtak.dayframe" "$out/appwidget.txt" || fail "The home-screen widget is not registered."
+echo "--- Widget providers"
+grep -A2 "com.ggumtak.dayframe" "$out/appwidget.txt" | head -6 || true
 
 echo "Smoke test passed."

@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 
 import ApkInstaller from '../../modules/apk-installer';
+import { defaultReminderSettings, planReminders, reminderId } from '../features/reminders/plan';
+import { widgetRows } from '../features/widget/items';
 import { deviceTimeZone, formatDue, Temporal } from './dates';
 import { uuid } from './ids';
 import { analyzeTask, nextOccurrence } from './shared';
@@ -24,6 +26,14 @@ export function runSelfCheck(): void {
     formatting: () => formatDue({ due_at: '2026-11-23T10:00:00Z', timezone: 'Asia/Seoul', all_day: false })?.endsWith('오후 7:00') === true,
     deviceZone: () => Temporal.Now.plainDateISO(deviceTimeZone()).year > 2000,
     ids: () => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(uuid()),
+    reminderPlan: () => planReminders([{
+      id: '11111111-1111-4111-8111-111111111111', title: 'x', due_at: '2026-11-21T10:00:00Z', all_day: false, timezone: 'Asia/Seoul',
+      completed_at: null, recurrence_rule: 'FREQ=DAILY',
+    }], defaultReminderSettings, Date.parse('2026-11-21T09:00:00Z'), (_task, after) =>
+      nextOccurrence('FREQ=DAILY', 'Asia/Seoul', '2026-11-21T10:00:00Z', Temporal.Instant.from(after), false)).length === 4,
+    widgetRows: () => widgetRows([{
+      id: 'a', title: '운동', due_at: '2026-11-21T10:00:00Z', all_day: false, timezone: 'Asia/Seoul', priority: 2, updated_at: '', recurrence_rule: null,
+    }], Date.parse('2026-11-21T09:00:00Z'))[0]?.when === '오후 7:00',
     // The updater's native module must survive code shrinking and answer across the bridge.
     apkInstaller: () => Platform.OS !== 'android' || (!!ApkInstaller
       && typeof ApkInstaller.canInstallPackages() === 'boolean' && ApkInstaller.inspect('file:///missing.apk') === null),
@@ -37,7 +47,10 @@ export function runSelfCheck(): void {
     }
   }
   console.log('DAYFRAME_SELF_CHECK ' + (failed.length ? 'fail: ' + failed.join(', ') : 'ok'));
-  if (Platform.OS === 'android') void checkDownload();
+  if (Platform.OS === 'android') {
+    void checkDownload();
+    void checkBackground();
+  }
 }
 
 /** Runs the updater's download path (redirect, progress events, shareable content URI) against a small public file. */
@@ -56,4 +69,47 @@ async function checkDownload(): Promise<void> {
   } catch (error) {
     console.log('DAYFRAME_SELF_CHECK_DOWNLOAD fail: ' + (error instanceof Error ? error.message : String(error)));
   }
+}
+
+/**
+ * Proves on a real Android runtime what the phone needs from this build outside the app: a task alert is
+ * scheduled through the same code the app uses and appears, and the widget draws for each theme.
+ */
+async function checkBackground(): Promise<void> {
+  const failed: string[] = [];
+  try {
+    const { buildWidgetTree } = await import('react-native-android-widget/src/api/build-widget-tree');
+    const { todayWidget } = await import('../features/widget/TodayWidget');
+    const sample = { date: '11월 21일 토요일', signedIn: true, rows: [{ id: 'a', title: '운동', when: '오후 7:00', overdue: false, priority: 2 as const, occurrence: '2026-11-21T10:00:00Z' }] };
+    for (const props of [sample, { ...sample, rows: [] }, { ...sample, signedIn: false }]) {
+      const widget = todayWidget(props);
+      buildWidgetTree(widget.light);
+      buildWidgetTree(widget.dark);
+    }
+  } catch (error) {
+    failed.push('widget (' + (error instanceof Error ? error.message : String(error)) + ')');
+  }
+  try {
+    const Notifications = await import('expo-notifications');
+    const { prepareReminders, reminderContent } = await import('../features/reminders/notify');
+    await prepareReminders();
+    const due = new Date(Date.now() + 4000).toISOString();
+    const task = {
+      id: '22222222-2222-4222-8222-222222222222', title: 'Dayframe 알림 점검', due_at: due, all_day: false, timezone: deviceTimeZone(),
+      notes: '자세한 알림 확인', recurrence_rule: 'FREQ=DAILY',
+    } as Parameters<typeof reminderContent>[0];
+    const id = reminderId(task.id, due);
+    await Notifications.scheduleNotificationAsync({
+      identifier: id,
+      content: reminderContent(task, due, defaultReminderSettings, { projectName: () => '점검', openSubtasks: () => 2 }),
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: Date.parse(due), channelId: 'task-reminders' },
+    });
+    const scheduled = (await Notifications.getAllScheduledNotificationsAsync()).some((item) => item.identifier === id);
+    await new Promise((resolve) => setTimeout(resolve, 9000));
+    const shown = (await Notifications.getPresentedNotificationsAsync()).some((item) => item.request.identifier === id);
+    if (!scheduled || !shown) failed.push(`notification (scheduled=${scheduled} shown=${shown})`);
+  } catch (error) {
+    failed.push('notification (' + (error instanceof Error ? error.message : String(error)) + ')');
+  }
+  console.log('DAYFRAME_SELF_CHECK_BACKGROUND ' + (failed.length ? 'fail: ' + failed.join(', ') : 'ok'));
 }

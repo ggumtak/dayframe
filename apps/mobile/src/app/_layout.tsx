@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/ui';
 import { persistOptions, queryClient, resumeWrites } from '@/data/client';
 import { SessionProvider, useSession } from '@/data/session';
 import { QuickAddProvider, TAB_BAR_HEIGHT } from '@/features/quick-add/QuickAdd';
+import { BackgroundSync } from '@/features/reminders/BackgroundSync';
 import { UpdateProvider } from '@/features/update/useUpdate';
 import { isConfigured } from '@/lib/env';
 import { runSelfCheck } from '@/lib/selfCheck';
@@ -37,6 +38,7 @@ function Routes({ signedIn }: { signedIn: boolean }) {
         <Stack.Screen name="habit/new" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings" />
         <Stack.Screen name="ai" />
+        <Stack.Screen name="add" options={{ animation: 'none' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="sign-in" />
@@ -71,7 +73,7 @@ function App() {
       value={{ ...base, colors: { ...base.colors, background: colors.background, card: colors.surface, text: colors.text, border: colors.border, primary: colors.accent } }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <UpdateProvider>
-        {signedIn ? <QuickAddProvider><Routes signedIn /></QuickAddProvider> : <Routes signedIn={false} />}
+        {signedIn ? <QuickAddProvider><Routes signedIn /><BackgroundSync /></QuickAddProvider> : <Routes signedIn={false} />}
         {/* Leaves room for the floating add button, which sits to the right at the same height. */}
         <ToastHost bottomOffset={signedIn ? TAB_BAR_HEIGHT : 0} rightInset={signedIn ? 70 : 0} />
       </UpdateProvider>
