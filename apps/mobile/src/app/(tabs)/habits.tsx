@@ -30,7 +30,12 @@ export default function Habits() {
     <Screen>
       <Header
         title="습관" subtitle={habits.length ? `${habits.length}개 중 ${done}개 달성` : undefined}
-        right={<IconButton name="plus" label="습관 추가" onPress={() => router.push('/habit/new')} color={colors.accent} />} />
+        right={(
+          <View style={{ flexDirection: 'row' }}>
+            <IconButton name="star" label="추천 루틴" onPress={() => router.push('/routines')} color={colors.accent} />
+            <IconButton name="plus" label="습관 추가" onPress={() => router.push('/habit/new')} color={colors.accent} />
+          </View>
+        )} />
       {isLoading ? <Loading /> : (
         <ScrollView
           contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.md, flexGrow: 1 }}
@@ -48,7 +53,12 @@ export default function Habits() {
           ) : (
             <EmptyState
               icon="repeat" title="습관을 만들어 보세요" message="매일 또는 매주 반복할 일을 정하고, 체크할 때마다 연속 기록이 쌓입니다."
-              action={<Button label="첫 습관 만들기" icon="plus" onPress={() => router.push('/habit/new')} style={{ marginTop: space.md }} />} />
+              action={(
+                <View style={{ gap: space.sm, marginTop: space.md, alignSelf: 'stretch' }}>
+                  <Button label="추천 루틴에서 고르기" icon="star" onPress={() => router.push('/routines')} />
+                  <Button label="직접 만들기" kind="secondary" icon="plus" onPress={() => router.push('/habit/new')} />
+                </View>
+              )} />
           )}
         </ScrollView>
       )}

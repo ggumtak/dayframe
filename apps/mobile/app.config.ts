@@ -44,6 +44,20 @@ const config: ExpoConfig = {
       dark: { backgroundColor: '#15171A', image: './assets/images/splash-icon.png' },
     }],
     'expo-localization',
+    ['expo-font', {
+      android: {
+        fonts: [{
+          fontFamily: 'Pretendard',
+          fontDefinitions: [
+            { path: './assets/fonts/Pretendard-Regular.otf', weight: 400 },
+            { path: './assets/fonts/Pretendard-Medium.otf', weight: 500 },
+            { path: './assets/fonts/Pretendard-SemiBold.otf', weight: 600 },
+            { path: './assets/fonts/Pretendard-Bold.otf', weight: 700 },
+            { path: './assets/fonts/Pretendard-ExtraBold.otf', weight: 800 },
+          ],
+        }],
+      },
+    }],
     ['expo-notifications', { color: '#3574F0' }],
     ['react-native-android-widget', {
       widgets: [{

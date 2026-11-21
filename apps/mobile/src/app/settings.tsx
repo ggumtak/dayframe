@@ -10,15 +10,6 @@ import { deviceTimeZone } from '@/lib/dates';
 import { env } from '@/lib/env';
 import { space, type ThemeMode, useTheme } from '@/theme';
 
-const examples: [string, string][] = [
-  ['내일 저녁 7시 운동', '날짜와 시간'],
-  ['매주 월수금 오전 8시 수영', '요일 반복'],
-  ['평일마다 영단어 30개', '평일 반복'],
-  ['11월 25일까지 보고서 #회사 p1', '마감일 · 프로젝트 · 우선순위'],
-  ['장보기 @집 @주말', '태그'],
-  ['every Mon 9am standup', '영어도 됩니다'],
-];
-
 export default function Settings() {
   const { colors, mode, setMode } = useTheme();
   const { account, signOut } = useSession();
@@ -35,7 +26,7 @@ export default function Settings() {
         </View>
 
         <View style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted">알림과 위젯</Txt>
+          <Txt variant="section" tone="muted">알림</Txt>
           <RemindersCard />
         </View>
 
@@ -57,14 +48,12 @@ export default function Settings() {
         </View>
 
         <View style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted">빠른 입력 예시</Txt>
-          <Card style={{ gap: space.md }}>
-            {examples.map(([text, label]) => (
-              <View key={text} style={{ gap: 2 }}>
-                <Txt>{text}</Txt>
-                <Txt variant="small" tone="muted">{label}</Txt>
-              </View>
-            ))}
+          <Txt variant="section" tone="muted">루틴</Txt>
+          <Card style={{ paddingVertical: space.xs }}>
+            <Row
+              icon="star" label="추천 루틴" detail="눌러서 습관에 추가"
+              trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
+              onPress={() => router.push('/routines')} />
           </Card>
         </View>
 

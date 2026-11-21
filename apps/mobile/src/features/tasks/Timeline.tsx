@@ -3,9 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextStyle, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Txt } from '@/components/ui';
+import { Button, Sheet, Txt } from '@/components/ui';
+import { useDeleteFocus } from '@/data/focus';
 import { dueMinutes, formatTime, Temporal } from '@/lib/dates';
 import type { FocusSession, Task } from '@/lib/shared';
+import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, type, useTheme } from '@/theme';
 
 const HOUR = 64;
@@ -54,6 +56,8 @@ export function Timeline({ tasks, sessions, timeZone, onComplete, onAddAt }: {
   const nowMinutes = now.hour * 60 + now.minute;
   const placed = useMemo(() => place(tasks), [tasks]);
   const allDay = tasks.filter((task) => task.all_day);
+  const [picked, setPicked] = useState<{ id: string; start: number; end: number; spent: number } | null>(null);
+  const deleteFocus = useDeleteFocus();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Temporal.Now.zonedDateTimeISO(timeZone)), 60_000);
@@ -65,7 +69,8 @@ export function Timeline({ tasks, sessions, timeZone, onComplete, onAddAt }: {
     const start = Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone);
     if (Temporal.PlainDate.compare(start.toPlainDate(), now.toPlainDate()) !== 0) return [];
     const minutes = Math.max(10, Temporal.Instant.from(session.started_at).until(Temporal.Instant.from(session.ended_at)).total('minutes'));
-    return [{ id: session.id, start: start.hour * 60 + start.minute, minutes }];
+    const end = Temporal.Instant.from(session.ended_at).toZonedDateTimeISO(timeZone);
+    return [{ id: session.id, start: start.hour * 60 + start.minute, minutes, end: end.hour * 60 + end.minute, spent: Math.round(Temporal.Instant.from(session.started_at).until(Temporal.Instant.from(session.ended_at)).total('minutes')) }];
   }), [sessions, timeZone, now]);
 
   return (
@@ -101,8 +106,9 @@ export function Timeline({ tasks, sessions, timeZone, onComplete, onAddAt }: {
           ))}
 
           {focusBlocks.map((block) => (
-            <View
-              key={block.id} pointerEvents="none"
+            <Pressable
+              key={block.id} accessibilityRole="button" accessibilityLabel={`집중 기록 ${formatTime(block.start)}, ${block.spent}분`}
+              onPress={() => setPicked(block)}
               style={[styles.focus, { top: (block.start / 60) * HOUR, height: (block.minutes / 60) * HOUR, backgroundColor: colors.accentSoft, borderLeftColor: colors.accent }]} />
           ))}
 
@@ -133,6 +139,22 @@ export function Timeline({ tasks, sessions, timeZone, onComplete, onAddAt }: {
           </View>
         </View>
       </ScrollView>
+      <Sheet visible={!!picked} onClose={() => setPicked(null)} title="집중 기록">
+        {picked ? (
+          <View style={{ gap: space.sm }}>
+            <Txt tone="muted">{formatTime(picked.start) + ' – ' + formatTime(picked.end) + ' · ' + (picked.spent < 1 ? '1분 미만' : picked.spent + '분')}</Txt>
+            <Txt variant="small" tone="faint" style={{ marginBottom: space.md }}>타임라인의 파란 막대는 끝낸 집중 시간입니다. 시험으로 켠 기록이라면 지워도 됩니다.</Txt>
+            <Button
+              label="이 기록 삭제" kind="danger" icon="trash-2"
+              onPress={() => {
+                deleteFocus.mutate(picked.id);
+                setPicked(null);
+                showToast('집중 기록을 지웠습니다.');
+              }} />
+            <Button label="닫기" kind="secondary" onPress={() => setPicked(null)} />
+          </View>
+        ) : null}
+      </Sheet>
     </View>
   );
 }
