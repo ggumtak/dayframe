@@ -3,16 +3,24 @@ import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 import { AndroidImportance, AndroidNotificationVisibility } from 'expo-notifications';
 
+import { nextCheckIn } from '@/features/habits/checkIn';
 import { widgetTaskChanged } from '@/features/widget/render';
+import { api } from '@/lib/api';
 import { describeRecurrence, formatTime, Temporal } from '@/lib/dates';
 import { nextOccurrence, type Task } from '@/lib/shared';
 
 import { cancelOccurrence } from './cancel';
 import { completeOccurrence } from './complete';
-import { parseReminderId, planReminders, type PlannedReminder, REMINDER_PREFIX, type ReminderSettings, SNOOZE_PREFIX } from './plan';
+import type { ReminderOverrides } from './overrides';
+import {
+  HABIT_PREFIX, parseHabitReminderId, parseReminderId, planHabitReminders, planReminders, type PlannedReminder, REMINDER_PREFIX,
+  type ReminderSettings, SNOOZE_PREFIX,
+} from './plan';
 
 const CHANNEL = 'task-reminders';
 const CATEGORY = 'task-actions';
+const HABIT_CATEGORY = 'habit-actions';
+export const LOG_HABIT = 'log';
 export const COMPLETE = 'complete';
 export const SNOOZE = 'snooze';
 const SNOOZE_MINUTES = 10;
@@ -30,6 +38,9 @@ export function prepareReminders(): Promise<void> {
     await Notifications.setNotificationCategoryAsync(CATEGORY, [
       { identifier: COMPLETE, buttonTitle: '완료', options: { opensAppToForeground: false } },
       { identifier: SNOOZE, buttonTitle: SNOOZE_MINUTES + '분 뒤에', options: { opensAppToForeground: false } },
+    ]);
+    await Notifications.setNotificationCategoryAsync(HABIT_CATEGORY, [
+      { identifier: LOG_HABIT, buttonTitle: '기록하기', options: { opensAppToForeground: false } },
     ]);
   })().catch(() => { prepared = undefined; });
   return prepared;
@@ -63,10 +74,12 @@ function leadText(minutes: number): string {
 }
 
 /** What the alert says. Brief: the title and the time. Detailed: also the repeat, project, notes and subtasks, with buttons. */
-export function reminderContent(task: Task, occurrence: string, settings: ReminderSettings, context: ReminderContext): Notifications.NotificationContentInput {
+export function reminderContent(
+  task: Task, occurrence: string, settings: ReminderSettings, context: ReminderContext, lead = settings.leadMinutes,
+): Notifications.NotificationContentInput {
   const due = Temporal.Instant.from(occurrence).toZonedDateTimeISO(task.timezone);
   const time = task.all_day ? '오늘 · 종일' : formatTime(due.hour * 60 + due.minute);
-  const when = !task.all_day && settings.leadMinutes ? leadText(settings.leadMinutes) + ' · ' + time : time;
+  const when = !task.all_day && lead ? leadText(lead) + ' · ' + time : time;
   const base = { title: task.title, sound: true, priority: 'high', color: '#3574F0', data: { url: 'dayframe:///task/' + task.id } };
   if (settings.style === 'brief') return { ...base, body: when };
   const facts = [when, describeRecurrence(task.recurrence_rule), context.projectName(task) ? '#' + context.projectName(task) : null];
@@ -78,33 +91,52 @@ export function reminderContent(task: Task, occurrence: string, settings: Remind
   return { ...base, body: lines.join('\n'), categoryIdentifier: CATEGORY };
 }
 
-function signature(item: PlannedReminder, content: Notifications.NotificationContentInput): string {
+function signature(item: { at: number }, content: Notifications.NotificationContentInput): string {
   return [item.at, content.title, content.body, content.categoryIdentifier ?? ''].join('|');
 }
+
+/** A habit with an alert time, as the app knows it right now. */
+export interface HabitReminderInfo { id: string; name: string; time: string; timezone: string; doneToday: boolean; progress: string }
 
 /**
  * Makes the device's scheduled alerts match the task list: new and changed ones are scheduled,
  * the rest withdrawn. Alerts the system already holds unchanged are left alone.
  */
-export async function syncReminders(tasks: Task[], settings: ReminderSettings, context: ReminderContext): Promise<void> {
+export async function syncReminders(
+  tasks: Task[], settings: ReminderSettings, context: ReminderContext,
+  extra: { overrides?: ReminderOverrides; habits?: HabitReminderInfo[] } = {},
+): Promise<void> {
   await prepareReminders();
   const byId = new Map(tasks.map((task) => [task.id, task]));
+  const own = extra.overrides?.tasks ?? {};
   const granted = (await reminderPermission()) === 'granted';
-  const planned = granted ? planReminders(tasks, settings, Date.now(), (task, after) => {
+  const planned: (PlannedReminder & { lead?: number })[] = granted ? planReminders(tasks, settings, Date.now(), (task, after) => {
     const full = byId.get(task.id)!;
     return nextOccurrence(full.recurrence_rule!, full.timezone, full.recurrence_anchor_at ?? full.due_at!, Temporal.Instant.from(after),
       full.all_day, full.recurrence_local_time);
-  }) : [];
-  const wanted = new Map(planned.map((item) => {
-    const content = reminderContent(byId.get(item.taskId)!, item.occurrence, settings, context);
-    return [item.id, { item, content, signature: signature(item, content) }] as const;
-  }));
+  }, { leadFor: (task) => own[task.id] }) : [];
+  const wanted = new Map<string, { item: { at: number }; content: Notifications.NotificationContentInput; signature: string; channel: string }>(
+    planned.map((item) => {
+      const lead = own[item.taskId];
+      const content = reminderContent(byId.get(item.taskId)!, item.occurrence, settings, context, typeof lead === 'number' ? lead : settings.leadMinutes);
+      return [item.id, { item, content, signature: signature(item, content), channel: CHANNEL }] as const;
+    }));
+  // Habit alerts follow their own times and are not affected by the task alert switch.
+  const habits = new Map((extra.habits ?? []).map((habit) => [habit.id, habit]));
+  for (const item of granted ? planHabitReminders(extra.habits ?? [], Date.now()) : []) {
+    const habit = habits.get(item.habitId)!;
+    const content: Notifications.NotificationContentInput = {
+      title: habit.name, body: item.date === Temporal.Now.plainDateISO(habit.timezone).toString() ? habit.progress : '오늘의 습관을 기록할 시간입니다.',
+      sound: true, priority: 'high', color: '#1F9D63', categoryIdentifier: HABIT_CATEGORY, data: { url: 'dayframe:///habit/' + habit.id },
+    };
+    wanted.set(item.id, { item, content, signature: signature(item, content), channel: CHANNEL });
+  }
 
   const scheduled = await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
   const kept = new Set<string>();
   for (const request of scheduled) {
     const id = request.identifier;
-    if (id.startsWith(REMINDER_PREFIX)) {
+    if (id.startsWith(REMINDER_PREFIX) || id.startsWith(HABIT_PREFIX)) {
       const want = wanted.get(id);
       if (want && request.content.data?.signature === want.signature) kept.add(id);
       else await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
@@ -117,12 +149,12 @@ export async function syncReminders(tasks: Task[], settings: ReminderSettings, c
       }
     }
   }
-  for (const [id, { item, content, signature: sig }] of wanted) {
+  for (const [id, { item, content, signature: sig, channel }] of wanted) {
     if (kept.has(id)) continue;
     await Notifications.scheduleNotificationAsync({
       identifier: id,
       content: { ...content, data: { ...content.data, signature: sig } },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: item.at, channelId: CHANNEL },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: item.at, channelId: channel },
     }).catch(() => {});
   }
 }
@@ -131,7 +163,7 @@ export async function syncReminders(tasks: Task[], settings: ReminderSettings, c
 export async function clearReminders(): Promise<void> {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
   await Promise.all(scheduled
-    .filter((request) => request.identifier.startsWith(REMINDER_PREFIX) || request.identifier.startsWith(SNOOZE_PREFIX))
+    .filter((request) => [REMINDER_PREFIX, SNOOZE_PREFIX, HABIT_PREFIX].some((prefix) => request.identifier.startsWith(prefix)))
     .map((request) => Notifications.cancelScheduledNotificationAsync(request.identifier).catch(() => {})));
 }
 
@@ -145,6 +177,12 @@ type Response = Pick<Notifications.NotificationResponse, 'actionIdentifier'> & {
  */
 export async function handleReminderAction(response: Response): Promise<void> {
   const id = response.notification.request.identifier;
+  const habit = parseHabitReminderId(id);
+  if (habit) {
+    await Notifications.dismissNotificationAsync(id).catch(() => {});
+    if (response.actionIdentifier === LOG_HABIT) await logHabitFromAlert(habit.habitId, habit.date);
+    return;
+  }
   const parsed = parseReminderId(id);
   if (!parsed) return;
   await Notifications.dismissNotificationAsync(id).catch(() => {});
@@ -178,11 +216,13 @@ export async function handleReminderAction(response: Response): Promise<void> {
  * Listens while the app runs: a tap on an alert opens its task, and a button pressed while the app is in
  * front is handled here (in the background the task registered in `src/background.ts` handles it instead).
  */
-export function listenForReminders(open: (taskId: string) => void, changed: () => void): () => void {
+export function listenForReminders(open: (target: { taskId: string } | { habitId: string }) => void, changed: () => void): () => void {
   const respond = (response: Notifications.NotificationResponse) => {
-    const parsed = parseReminderId(response.notification.request.identifier);
-    if (!parsed) return;
-    if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) open(parsed.taskId);
+    const id = response.notification.request.identifier;
+    const task = parseReminderId(id);
+    const habit = parseHabitReminderId(id);
+    if (!task && !habit) return;
+    if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) open(task ? { taskId: task.taskId } : { habitId: habit!.habitId });
     else if (AppState.currentState === 'active') void handleReminderAction(response).then(changed);
   };
   const subscription = Notifications.addNotificationResponseReceivedListener(respond);
@@ -193,4 +233,29 @@ export function listenForReminders(open: (taskId: string) => void, changed: () =
     respond(launch);
   }
   return () => subscription.remove();
+}
+
+/** The 기록하기 button: one check-in for that day, by the same rule as a tap in the app. */
+async function logHabitFromAlert(habitId: string, date: string): Promise<void> {
+  try {
+    const [habits, logs] = await Promise.all([api.habits(), api.habitLogs(habitId)]);
+    const habit = habits.find((item) => item.id === habitId);
+    if (!habit) return;
+    const day = Temporal.PlainDate.from(date);
+    const weekStart = day.subtract({ days: day.dayOfWeek - 1 });
+    const inPeriod = logs.filter((log) => (habit.cadence === 'weekly'
+      ? Temporal.PlainDate.compare(Temporal.PlainDate.from(log.log_date), weekStart) >= 0 && Temporal.PlainDate.compare(Temporal.PlainDate.from(log.log_date), day) <= 0
+      : log.log_date === date));
+    const todayCount = logs.find((log) => log.log_date === date)?.count ?? 0;
+    const progress = inPeriod.reduce((sum, log) => sum + log.count, 0);
+    // Already done for the period: the alert never undoes a check.
+    if (progress >= habit.target_count) return;
+    const next = nextCheckIn(habit, todayCount, progress);
+    if (next.status) await api.setHabitLog(habitId, date, { status: next.status, count: next.count });
+  } catch {
+    await Notifications.scheduleNotificationAsync({
+      content: { title: '기록하지 못했습니다', body: '연결이 없습니다. 앱에서 다시 기록해 주세요.', data: { url: 'dayframe:///habit/' + habitId } },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: CHANNEL },
+    }).catch(() => {});
+  }
 }

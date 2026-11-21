@@ -10,7 +10,8 @@ import { saveWidget } from '@/features/widget/render';
 import { deviceTimeZone, Temporal, today } from '@/lib/dates';
 import type { Task } from '@/lib/shared';
 
-import { listenForReminders, requestReminderPermission, syncReminders } from './notify';
+import { type HabitReminderInfo, listenForReminders, requestReminderPermission, syncReminders } from './notify';
+import { useReminderOverrides } from './overrides';
 import { useReminderSettings } from './settings';
 
 /**
@@ -21,6 +22,7 @@ export function BackgroundSync() {
   const { tasks, children, isLoading } = useTaskIndex();
   const { data: projects } = useProjects();
   const settings = useReminderSettings();
+  const overrides = useReminderOverrides();
   const { data: allHabits } = useHabits();
   const habits = useMemo(() => (allHabits ?? []).filter((habit) => !habit.archived_at), [allHabits]);
   const details = useHabitDetails(habits);
@@ -57,22 +59,33 @@ export function BackgroundSync() {
     timer.current = setTimeout(() => {
       const names = new Map((projects ?? []).map((project) => [project.id, project.name]));
       void saveWidget(tasks, { habits: widgetHabits, focus: widgetFocus });
+      const habitAlerts: HabitReminderInfo[] = widgetHabits.flatMap((habit) => {
+        const time = overrides.habits[habit.id];
+        if (!time) return [];
+        const weekly = habit.cadence === 'weekly';
+        return [{
+          id: habit.id, name: habit.name, time, timezone: habit.timezone, doneToday: habit.progress >= habit.target_count,
+          progress: (weekly ? '이번 주 ' : '오늘 ') + habit.progress + '/' + habit.target_count + '회 · 눌러서 기록',
+        }];
+      });
       void syncReminders(tasks, settings, {
         projectName: (task: Task) => (task.project_id ? names.get(task.project_id) : undefined),
         openSubtasks: (task: Task) => children.get(task.id)?.length ?? 0,
-      });
+      }, { overrides, habits: habitAlerts });
     }, 800);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [tasks, children, projects, settings, isLoading, widgetHabits, widgetFocus]);
+  }, [tasks, children, projects, settings, overrides, isLoading, widgetHabits, widgetFocus]);
 
   useEffect(() => {
     if (settings.enabled) void requestReminderPermission();
   }, [settings.enabled]);
 
   useEffect(() => listenForReminders(
-    (taskId) => router.push({ pathname: '/task/[id]', params: { id: taskId } }),
+    (target) => ('taskId' in target
+      ? router.push({ pathname: '/task/[id]', params: { id: target.taskId } })
+      : router.push({ pathname: '/habit/[id]', params: { id: target.habitId } })),
     () => void queryClient.invalidateQueries(),
   ), []);
 

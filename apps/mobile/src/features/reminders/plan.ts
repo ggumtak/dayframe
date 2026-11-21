@@ -45,16 +45,19 @@ export function parseReminderId(id: string): { taskId: string; occurrence: strin
 export function planReminders(
   tasks: ReminderTask[], settings: ReminderSettings, now: number,
   upcoming: (task: ReminderTask, after: string) => string | null,
-  options: { horizonDays?: number; limit?: number; perTask?: number } = {},
+  options: { horizonDays?: number; limit?: number; perTask?: number; leadFor?: (task: ReminderTask) => number | 'off' | undefined } = {},
 ): PlannedReminder[] {
   if (!settings.enabled) return [];
   const horizon = now + (options.horizonDays ?? 7) * 86_400_000;
   const planned: PlannedReminder[] = [];
   for (const task of tasks) {
     if (task.completed_at || !task.due_at) continue;
+    const own = options.leadFor?.(task);
+    if (own === 'off') continue;
+    const lead = own ?? settings.leadMinutes;
     let occurrence: string | null = task.due_at;
     for (let count = 0; occurrence && count < (task.recurrence_rule ? options.perTask ?? 4 : 1); count++) {
-      const at = alertTime(task, occurrence, settings);
+      const at = alertTime(task, occurrence, settings, lead);
       if (at !== null && at > horizon) break;
       if (at !== null && at > now) planned.push({ id: reminderId(task.id, occurrence), taskId: task.id, occurrence, at });
       occurrence = task.recurrence_rule ? safely(() => upcoming(task, occurrence!)) : null;
@@ -63,8 +66,8 @@ export function planReminders(
   return planned.sort((a, b) => a.at - b.at).slice(0, options.limit ?? 60);
 }
 
-function alertTime(task: ReminderTask, occurrence: string, settings: ReminderSettings): number | null {
-  if (!task.all_day) return Date.parse(occurrence) - settings.leadMinutes * 60_000;
+function alertTime(task: ReminderTask, occurrence: string, settings: ReminderSettings, lead: number): number | null {
+  if (!task.all_day) return Date.parse(occurrence) - lead * 60_000;
   if (settings.allDayHour === null) return null;
   const day = Temporal.Instant.from(occurrence).toZonedDateTimeISO(task.timezone).toPlainDate();
   return day.toZonedDateTime({ timeZone: task.timezone, plainTime: { hour: settings.allDayHour } }).epochMilliseconds;
@@ -87,4 +90,30 @@ export function stableUuid(text: string): string {
     hex += (hash >>> 0).toString(16).padStart(8, '0');
   }
   return [hex.slice(0, 8), hex.slice(8, 12), '4' + hex.slice(13, 16), '8' + hex.slice(17, 20), hex.slice(20, 32)].join('-');
+}
+
+export const HABIT_PREFIX = 'habit-';
+export interface HabitReminderInput { id: string; time: string; timezone: string; doneToday: boolean }
+export interface PlannedHabitReminder { id: string; habitId: string; date: string; at: number }
+
+/** A habit's alert for each of the coming days at its chosen time, skipping today once it is done. */
+export function planHabitReminders(habits: HabitReminderInput[], now: number, days = 7): PlannedHabitReminder[] {
+  const planned: PlannedHabitReminder[] = [];
+  for (const habit of habits) {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(habit.time);
+    if (!match) continue;
+    const today = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(habit.timezone).toPlainDate();
+    for (let offset = habit.doneToday ? 1 : 0; offset < days; offset++) {
+      const date = today.add({ days: offset });
+      const at = date.toZonedDateTime({ timeZone: habit.timezone, plainTime: { hour: Number(match[1]), minute: Number(match[2]) } }).epochMilliseconds;
+      if (at <= now) continue;
+      planned.push({ id: HABIT_PREFIX + habit.id + '-' + date.toString(), habitId: habit.id, date: date.toString(), at });
+    }
+  }
+  return planned;
+}
+
+export function parseHabitReminderId(id: string): { habitId: string; date: string } | null {
+  const match = /^habit-([0-9a-f-]{36})-(\d{4}-\d{2}-\d{2})$/.exec(id);
+  return match ? { habitId: match[1], date: match[2] } : null;
 }

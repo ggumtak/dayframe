@@ -68,7 +68,7 @@ export function RemindersCard() {
       {settings.enabled ? (
         <>
           <View style={{ gap: space.sm }}>
-            <Txt variant="smallStrong" tone="muted">알림 시점</Txt>
+            <Txt variant="smallStrong" tone="muted">알림 시점 (할 일마다 바꾸려면 할 일 상세 → 알림)</Txt>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
               {leads.map((item) => (
                 <Chip key={item.value} label={item.label} selected={settings.leadMinutes === item.value} onPress={() => setReminderSettings({ leadMinutes: item.value })} />
