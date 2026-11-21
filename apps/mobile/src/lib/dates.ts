@@ -98,8 +98,13 @@ export function formatDue(task: Pick<Task, 'due_at' | 'timezone' | 'all_day'>): 
 export function describeRecurrence(rule: string | null): string | null {
   if (!rule) return null;
   try {
-    const { frequency, interval, weekdays } = recurrence(rule);
+    const { frequency, interval, weekdays, lastDay } = recurrence(rule);
     if (frequency === 'DAILY') return interval === 1 ? '매일' : interval + '일마다';
+    if (frequency === 'YEARLY') return interval === 1 ? '매년' : interval + '년마다';
+    if (frequency === 'MONTHLY') {
+      const every = interval === 1 ? '매월' : interval + '개월마다';
+      return lastDay ? every + ' 말일' : every;
+    }
     const every = interval === 1 ? '매주' : interval === 2 ? '격주' : interval + '주마다';
     const days = weekdays.join(',');
     if (days === 'MO,TU,WE,TH,FR') return interval === 1 ? '평일' : every + ' 평일';

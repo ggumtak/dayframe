@@ -95,6 +95,90 @@ test("pagination computes nextOffset and database errors never expose SQL detail
   assert.ok(!JSON.stringify(error).includes("SQL"));
 });
 
+test("calendar requests combine normalized due bounds and state filters", async () => {
+  const calls: URL[] = [];
+  const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/auth/v1/user") return Response.json({ id: userId });
+    calls.push(url);
+    return Response.json([]);
+  } });
+  const from = "due_from=2027-02-01T00%3A00%3A00%2B09%3A00";
+  const before = "due_before=2027-03-01T00%3A00%3A00%2B09%3A00";
+  assert.equal((await handler(request("tasks?state=open&" + from + "&" + before))).status, 200);
+  assert.equal(calls[0].searchParams.get("and"), "(due_at.gte.2027-01-31T15:00:00Z,due_at.lt.2027-02-28T15:00:00Z)");
+  assert.equal(calls[0].searchParams.get("completed_at"), "is.null");
+  assert.equal(calls[0].searchParams.get("order"), "due_at.asc,priority.asc,position.asc,id.asc");
+  assert.equal((await handler(request("subtasks?" + before))).status, 200);
+  assert.equal(calls[1].searchParams.get("and"), "(due_at.lt.2027-02-28T15:00:00Z)");
+  for (const invalid of ["due_from=2027-02-01", from + "&due_before=2027-01-31T15:00:00Z"]) {
+    assert.equal((await handler(request("tasks?" + invalid))).status, 400);
+  }
+  assert.equal(calls.length, 2);
+});
+
+test("one-time moves leave the series intact, retry safely and reject stale occurrences", async () => {
+  const updates: unknown[] = [];
+  const oldDue = "2027-01-31T00:00:00Z";
+  const newDue = "2027-02-01T00:00:00Z";
+  const nextDue = "2027-02-28T00:00:00Z";
+  let current = oldDue;
+  const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/auth/v1/user") return Response.json({ id: userId });
+    if (init?.method === "PATCH") {
+      const patch = JSON.parse(String(init.body));
+      updates.push(patch);
+      const guard = url.searchParams.get("due_at");
+      if (guard) {
+        assert.equal(guard, "eq." + oldDue);
+        assert.equal(url.searchParams.get("completed_at"), "is.null");
+        assert.equal(url.searchParams.get("recurrence_rule"), "not.is.null");
+        if (guard !== "eq." + current) return Response.json([]);
+      }
+      current = patch.due_at;
+    }
+    return Response.json([{ id: habitId, due_at: current, recurrence_rule: "FREQ=MONTHLY", completed_at: null }]);
+  } });
+  const path = "tasks/" + habitId;
+  const move = { due_at: newDue, expected_due_at: oldDue, preserve_recurrence: true };
+  assert.equal((await handler(request(path, "PATCH", move))).status, 200);
+  assert.equal((await handler(request(path, "PATCH", move))).status, 200);
+  current = nextDue;
+  const stale = await handler(request(path, "PATCH", move));
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).error.code, "STALE_RESOURCE");
+  assert.equal(current, nextDue);
+  assert.equal((await handler(request(path, "PATCH", { due_at: newDue }))).status, 200);
+  assert.equal((await handler(request(path, "PATCH", { due_at: newDue, preserve_recurrence: true }))).status, 400);
+  assert.equal((await handler(request(path, "PATCH", { ...move, due_at: null }))).status, 400);
+  assert.equal((await handler(request(path, "PATCH", { ...move, all_day: true }))).status, 400);
+  assert.deepEqual(updates, [{ due_at: newDue }, { due_at: newDue }, { due_at: newDue },
+    { due_at: newDue, recurrence_anchor_at: newDue }]);
+});
+
+test("completing a monthly task sends the next valid date to the database", async () => {
+  const due_at = "2099-01-31T10:00:00Z";
+  const revision = "2026-11-22T09:00:00.123456Z";
+  const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input, init) => {
+    switch (new URL(String(input)).pathname) {
+      case "/auth/v1/user": return Response.json({ id: userId });
+      case "/rest/v1/task_completions": return Response.json([]);
+      case "/rest/v1/tasks": return Response.json([{ due_at, recurrence_anchor_at: due_at, all_day: false,
+        recurrence_rule: "FREQ=MONTHLY", timezone: "Asia/Seoul", recurrence_local_time: "19:00:00", updated_at: revision }]);
+      case "/rest/v1/rpc/complete_task": {
+        const payload = JSON.parse(String(init?.body));
+        assert.deepEqual(payload, { p_task: habitId, p_request: userId, p_revision: revision, p_next_due: "2099-03-31T10:00:00Z" });
+        return Response.json({ occurrence_due_at: due_at });
+      }
+      default: throw new Error("Unexpected request");
+    }
+  } });
+  const result = await handler(request("tasks/" + habitId + "/complete", "POST", { request_id: userId, expected_updated_at: revision }));
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).occurrence_due_at, due_at);
+});
+
 test("tag links are listed across tasks with an optional tag filter", async () => {
   const seen: URL[] = [];
   const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input) => {
