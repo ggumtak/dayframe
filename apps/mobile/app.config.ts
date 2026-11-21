@@ -18,12 +18,15 @@ const config: ExpoConfig = {
     package: 'com.ggumtak.dayframe',
     versionCode,
     adaptiveIcon: {
-      backgroundColor: '#5B5BD6',
+      backgroundColor: '#3574F0',
       foregroundImage: './assets/images/android-icon-foreground.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
     },
     // Lets the in-app updater hand a downloaded APK to the system installer.
-    permissions: ['android.permission.REQUEST_INSTALL_PACKAGES'],
+    // The exact-alarm permissions let a focus timer's alert arrive on time while the phone sleeps.
+    permissions: [
+      'android.permission.REQUEST_INSTALL_PACKAGES', 'android.permission.USE_EXACT_ALARM', 'android.permission.SCHEDULE_EXACT_ALARM',
+    ],
     // Updates download into the app's own cache, so shared storage and overlay access are never needed.
     blockedPermissions: [
       'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.WRITE_EXTERNAL_STORAGE',
@@ -35,12 +38,13 @@ const config: ExpoConfig = {
   plugins: [
     'expo-router',
     ['expo-splash-screen', {
-      backgroundColor: '#FAFAF8',
+      backgroundColor: '#FFFFFF',
       image: './assets/images/splash-icon.png',
       imageWidth: 96,
-      dark: { backgroundColor: '#0F0F10', image: './assets/images/splash-icon.png' },
+      dark: { backgroundColor: '#15171A', image: './assets/images/splash-icon.png' },
     }],
     'expo-localization',
+    ['expo-notifications', { color: '#3574F0' }],
   ],
 };
 

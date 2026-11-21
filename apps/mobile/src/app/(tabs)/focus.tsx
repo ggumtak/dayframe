@@ -9,6 +9,7 @@ import { useFocusActions, useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
+import { cancelAlert, prepareAlerts, scheduleAlert } from '@/lib/alerts';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, formatDuration, formatMinutes, formatTime, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -83,6 +84,11 @@ export default function Focus() {
     const long = (roundsBefore + 1) % ROUNDS === 0;
     const seconds = (long ? rhythm.longRest : rhythm.rest) * 60;
     setRest({ endsAt: from + seconds * 1000, seconds, long });
+    void scheduleAlert('rest', from + seconds * 1000, '휴식이 끝났습니다', '다음 집중을 시작해 보세요.');
+  };
+  const endRest = () => {
+    setRest(null);
+    void cancelAlert('rest');
   };
 
   const nameOf = (session: Pick<FocusSession, 'task_id' | 'habit_id'>) => (session.task_id
@@ -131,7 +137,10 @@ export default function Focus() {
 
   const start = () => {
     haptic.medium();
-    setRest(null);
+    endRest();
+    // Scheduled with the system, so the round's end is announced even when the phone is locked.
+    const rhythm = modeFor(minutes * 60);
+    void prepareAlerts().then(() => scheduleAlert('focus', Date.now() + minutes * 60_000, `집중 ${minutes}분 완료`, `${rhythm.rest}분 쉬어 가세요.`));
     actions.start({
       planned_seconds: minutes * 60,
       ...(target?.kind === 'task' ? { task_id: target.id } : target?.kind === 'habit' ? { habit_id: target.id } : {}),
@@ -141,6 +150,7 @@ export default function Focus() {
   const stop = (status: 'completed' | 'cancelled') => {
     if (!running) return;
     finished.current.add(running.id);
+    void cancelAlert('focus');
     haptic.light();
     actions.finish({ id: running.id, status, ended_at: new Date().toISOString() });
     if (status === 'completed') {
@@ -218,7 +228,7 @@ export default function Focus() {
             </View>
             <View style={{ alignSelf: 'stretch', gap: space.sm }}>
               <Button label={onBreak ? '휴식 건너뛰고 집중 시작' : '집중 시작'} icon="play" onPress={start} />
-              {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={() => setRest(null)} /> : null}
+              {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={endRest} /> : null}
             </View>
           </>
         )}
