@@ -23,12 +23,18 @@ const left = "(?<![\\p{L}\\p{N}_])";
 const right = "(?![\\p{L}\\p{N}_])";
 const koRight = "(?=$|\\s|[,.!?]|(?:" + koPeriod + ")\\s*\\d|\\d{1,2}(?:[:시]))";
 
+const morningWords = /아침|새벽|기상|출근|모닝|morning|breakfast/iu;
+const eveningWords = /저녁|밤|야간|퇴근|회식|야식|evening|night|dinner/iu;
+
 function weekday(word: string): Weekday {
   return koreanDays[word[0]] ?? englishDays[word.toLowerCase().slice(0, 3)];
 }
 
-/** Parses quick entry and reports where each recognized token sits in the NFC-normalized text. */
-export function analyzeTask(input: ParseTaskInput): TaskAnalysis {
+/**
+ * Parses quick entry and reports where each recognized token sits in the NFC-normalized text.
+ * `draft` accepts an entry that has no title yet, so a field can mark "오늘 7시" before the title is typed.
+ */
+export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } = {}): TaskAnalysis {
   const now = input.now ? Temporal.Instant.from(input.now) : Temporal.Now.instant();
   const localNow = now.toZonedDateTimeISO(input.timezone);
   const today = localNow.toPlainDate();
@@ -139,10 +145,17 @@ export function analyzeTask(input: ParseTaskInput): TaskAnalysis {
   consume(new RegExp(left + "(\\d{4}-\\d{2}-\\d{2})" + right, "gu"), "date",
     (value) => setDate(Temporal.PlainDate.from(value!)));
 
-  const clock: { time?: Temporal.PlainTime; nextDay?: boolean } = {};
+  // `open` marks an hour written without 오전/오후 or am/pm; it is stored as the morning reading until
+  // the rest of the entry is known.
+  const clock: { time?: Temporal.PlainTime; nextDay?: boolean; open?: boolean } = {};
   function setTime(hourValue: string, minuteValue: string | undefined, period?: string) {
     if (clock.time) throw new InvalidSchedule("Use one due time per task");
     let hour = Number(hourValue);
+    // "07:30" and "19시" are already 24-hour times; "7시" and "7:30" could be either half of the day.
+    if (!period && hour >= 1 && hour <= 12 && !hourValue.startsWith("0")) {
+      clock.open = true;
+      hour %= 12;
+    }
     if (period) {
       if (hour < 1 || hour > 12) throw new InvalidSchedule("Use 1–12 with AM/PM or 오전/오후");
       const word = period.toLowerCase();
@@ -167,9 +180,23 @@ export function analyzeTask(input: ParseTaskInput): TaskAnalysis {
   consume(new RegExp(left + "(정오|자정)(?:까지)?" + koRight + "|" + left + "(?:at\\s+)?(noon|midnight)" + right, "giu"), "time",
     (kr, en) => setTime(kr === "정오" || en?.toLowerCase() === "noon" ? "12" : "0", undefined));
 
-  const { time } = clock;
   const title = remaining.replace(/\s+/g, " ").trim();
-  if (!title || title.length > 500) throw new InvalidSchedule("Task title must have 1–500 characters");
+  if ((!title && !options.draft) || title.length > 500) throw new InvalidSchedule("Task title must have 1–500 characters");
+  const time = clock.time && clock.open && isAfternoon(clock.time) ? clock.time.add({ hours: 12 }) : clock.time;
+  /** Picks the half of the day a person most likely means by an hour written without 오전/오후. */
+  function isAfternoon(morning: Temporal.PlainTime): boolean {
+    if (morningWords.test(title)) return false;
+    if (eveningWords.test(title)) return true;
+    // 1시–5시 and 12시 are almost never the small hours.
+    if (morning.hour < 6) return true;
+    // A repeating task or another day has no "now" to be near, so 6시–11시 reads as the morning.
+    if (rule || (explicitDate && !explicitDate.equals(today))) return false;
+    const current = localNow.toPlainTime();
+    if (Temporal.PlainTime.compare(morning, current) > 0) return false;
+    if (Temporal.PlainTime.compare(morning.add({ hours: 12 }), current) > 0) return true;
+    // Both have passed: "오늘 9시" stays today, a bare "9시" moves to tomorrow morning.
+    return explicitDate !== undefined;
+  }
   let due_at: string | null = null;
   if (explicitDate || time || rule) {
     let date = explicitDate ? explicitDate.add({ days: clock.nextDay ? 1 : 0 }) : today;

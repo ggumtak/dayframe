@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { compareVersions, fromGithubRelease, isNewer, isRequired, isTrustedApkUrl, parseVersion, versionCodeOf } from './version.ts';
+import { compareVersions, fromGithubRelease, isNewer, isRequired, isTrustedApkUrl, parseVersion, readableNotes, versionCodeOf } from './version.ts';
 
 test('versions parse and compare numerically', () => {
   assert.deepEqual(parseVersion('v1.2.3'), [1, 2, 3]);
@@ -69,4 +69,11 @@ test('GitHub latest-release payloads map to release info', () => {
   assert.equal(fromGithubRelease({ tag_name: 'v1.5.0', prerelease: true }, repo), null);
   assert.equal(fromGithubRelease({ tag_name: 'weekly' }, repo), null);
   assert.equal(fromGithubRelease(null, repo), null);
+});
+
+test('release notes lose GitHub scaffolding and keep what was written', () => {
+  const generated = "## What's Changed\n* Sign in automatically by @someone in https://github.com/o/r/pull/4\n\n\n**Full Changelog**: https://github.com/o/r/compare/v1.0.0...v1.0.1";
+  assert.equal(readableNotes(generated), '• Sign in automatically');
+  assert.equal(readableNotes('- 시간 인식 개선\n- **뽀모도로** 추가\n'), '• 시간 인식 개선\n• 뽀모도로 추가');
+  assert.equal(readableNotes(''), '');
 });

@@ -20,6 +20,8 @@ tags:
     description: Habit schedules, progress logs and statistics.
   - name: Focus
     description: Pomodoro and focus session history.
+  - name: Assistants
+    description: Connections that let an AI assistant act on the account through the Model Context Protocol.
   - name: Releases
     description: Public mobile update metadata.
 security:
@@ -2672,6 +2674,171 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /mcp-connections:
+    get:
+      operationId: listMcpConnections
+      summary: List AI assistant connections
+      tags:
+        - Assistants
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpConnectionPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    post:
+      operationId: createMcpConnection
+      summary: Create an AI assistant connection
+      tags:
+        - Assistants
+      description: Returns the connection URL once. Anyone holding that URL can read and change the account, so treat it
+        as a password. At most five per account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/McpConnectionInput"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewMcpConnection"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /mcp-connections/{id}:
+    delete:
+      operationId: deleteMcpConnection
+      summary: Remove an AI assistant connection
+      tags:
+        - Assistants
+      description: The connection's URL stops working immediately.
+      parameters:
+        - *a1
+      responses:
+        "204":
+          description: No response body.
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /app/version:
     get:
       operationId: getAppVersion
@@ -3097,6 +3264,40 @@ components:
         - apkDownloadUrl
         - iosStoreOrTestFlightUrl
       additionalProperties: false
+    McpConnection:
+      type: object
+      properties:
+        id: *a4
+        label: *a11
+        created_at: *a12
+        last_used_at:
+          anyOf:
+            - *a12
+            - type: "null"
+      required:
+        - id
+        - label
+        - created_at
+        - last_used_at
+      additionalProperties: false
+    NewMcpConnection:
+      type: object
+      properties:
+        id: *a4
+        label: *a11
+        created_at: *a12
+        last_used_at:
+          anyOf:
+            - *a12
+            - type: "null"
+        url: *a22
+      required:
+        - id
+        - label
+        - created_at
+        - last_used_at
+        - url
+      additionalProperties: false
     ApiError:
       type: object
       properties:
@@ -3468,6 +3669,14 @@ components:
       required:
         - status
       additionalProperties: false
+    McpConnectionInput:
+      type: object
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 60
+      additionalProperties: false
     ProjectPage:
       type: object
       properties:
@@ -3595,6 +3804,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FocusSession"
+        nextOffset:
+          anyOf:
+            - *a13
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    McpConnectionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpConnection"
         nextOffset:
           anyOf:
             - *a13

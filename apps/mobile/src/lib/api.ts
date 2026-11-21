@@ -2,7 +2,7 @@ import { accessToken, refreshedToken } from './auth';
 import { apiBase, env } from './env';
 import type {
   ApiError, AppVersion, CompleteTaskInput, FinishFocusInput, FocusInput, FocusSession, Habit, HabitInput, HabitLog,
-  HabitLogInput, HabitPatch, HabitStats, Page, Project, ProjectInput, RescheduleResult, Tag, Task, TaskCompletion,
+  HabitLogInput, HabitPatch, HabitStats, McpConnection, NewMcpConnection, Page, Project, ProjectInput, RescheduleResult, Tag, Task, TaskCompletion,
   TaskInput, TaskPatch, TaskTag, User, UserPatch,
 } from './shared';
 
@@ -140,6 +140,10 @@ export const api = {
   focusSessions: () => request<Page<FocusSession>>('/focus-sessions', { query: { limit: 100 } }).then((page) => page.items),
   startFocus: (input: FocusInput) => json<FocusSession>('/focus-sessions', 'POST', input),
   finishFocus: (id: string, input: FinishFocusInput) => json<FocusSession>('/focus-sessions/' + id + '/finish', 'POST', input),
+
+  mcpConnections: () => request<Page<McpConnection>>('/mcp-connections').then((page) => page.items),
+  createMcpConnection: (label: string) => json<NewMcpConnection>('/mcp-connections', 'POST', { label }),
+  deleteMcpConnection: (id: string) => request<void>('/mcp-connections/' + id, { method: 'DELETE' }),
 
   appVersion: () => request<AppVersion>('/app/version', { anonymous: true }),
 };

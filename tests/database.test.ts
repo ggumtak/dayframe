@@ -33,7 +33,7 @@ before(async () => {
       as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to anon, authenticated, service_role;
   `);
-  for (const file of ["20261121000000_core.sql", "20261121000100_operations.sql"]) {
+  for (const file of ["20261121000000_core.sql", "20261121000100_operations.sql", "20261122000000_mcp_connections.sql"]) {
     await db.exec(await readFile(new URL("../supabase/migrations/" + file, import.meta.url), "utf8"));
   }
   await db.query("insert into auth.users values ($1), ($2)", [alice, bob]);
@@ -162,4 +162,29 @@ test("release metadata exposes only published rows and prevents user writes", as
   await assert.rejects(db.query("select * from tasks"), { code: "42501" });
   await as("authenticated", alice);
   await assert.rejects(db.query("update app_releases set published_at=now()"), { code: "42501" });
+});
+
+test("AI connection tokens are write-only for their owner and readable only by the service role", async () => {
+  const hash = "ab".repeat(32);
+  await as("authenticated", alice);
+  await db.query("insert into mcp_connections(user_id, label, token_hash) values ($1, 'Claude', $2)", [alice, hash]);
+  const visible = await db.query<{ label: string }>("select id, label, created_at, last_used_at from mcp_connections");
+  assert.deepEqual(visible.rows.map((row) => row.label), ["Claude"]);
+  await assert.rejects(db.query("select token_hash from mcp_connections"), { code: "42501" });
+  await assert.rejects(db.query("update mcp_connections set label = 'x'"), { code: "42501" });
+  await assert.rejects(db.query("insert into mcp_connections(user_id, token_hash) values ($1, $2)", [bob, "cd".repeat(32)]), { code: "42501" });
+  await assert.rejects(db.query("insert into mcp_connections(user_id, token_hash) values ($1, 'short')", [alice]), { code: "23514" });
+
+  await as("authenticated", bob);
+  assert.equal((await db.query("select id from mcp_connections")).rows.length, 0);
+  assert.equal((await db.query("delete from mcp_connections returning id")).rows.length, 0);
+  await as("anon");
+  await assert.rejects(db.query("select id from mcp_connections"), { code: "42501" });
+
+  await as("service_role");
+  const found = await db.query<{ user_id: string }>("select id, user_id from mcp_connections where token_hash = $1", [hash]);
+  assert.equal(found.rows[0].user_id, alice);
+  await db.query("update mcp_connections set last_used_at = now() where token_hash = $1", [hash]);
+  await as("authenticated", alice);
+  assert.equal((await db.query("delete from mcp_connections returning id")).rows.length, 1);
 });

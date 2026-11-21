@@ -9,6 +9,7 @@ export const keys = {
   habitStats: (id: string) => ['habit-stats', id] as const,
   focus: ['focus-sessions'] as const,
   update: ['app-update'] as const,
+  connections: ['mcp-connections'] as const,
 };
 
 /** Mutation keys double as the lookup for defaults, so queued writes survive an app restart. */

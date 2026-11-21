@@ -25,7 +25,7 @@ npm test            # 업데이트 버전 비교 로직 단위 테스트
 
 | 경로 | 내용 |
 | --- | --- |
-| `src/app` | 화면(expo-router). `(tabs)`에 오늘·받은함·예정·습관·집중, 그 밖에 할 일 상세·습관 상세·설정·로그인 |
+| `src/app` | 화면(expo-router). `(tabs)`에 오늘·수신함·예정·습관·집중, 그 밖에 할 일 상세·습관 상세·설정·로그인 |
 | `src/features/quick-add` | 떠 있는 + 버튼과 입력 바, 입력 중 토큰 강조 |
 | `src/features/tasks` | 목록, 일정 변경 시트, 타임라인 |
 | `src/features/habits` | 체크인 카드, 히트맵 |

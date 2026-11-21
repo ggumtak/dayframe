@@ -1,10 +1,11 @@
 import { Temporal } from "@js-temporal/polyfill";
 import { z } from "zod";
 import type {
-  AppVersion, FocusSession, Habit, HabitLog, HabitStats, Page, Project, RescheduleResult, Section, Tag, Task,
-  TaskCompletion, TaskTag, User,
+  AppVersion, FocusSession, Habit, HabitLog, HabitStats, McpConnection, NewMcpConnection, Page, Project, RescheduleResult,
+  Section, Tag, Task, TaskCompletion, TaskTag, User,
 } from "../../../packages/shared/types.ts";
 import { ApiProblem, onlyResult, queryInteger, readJson, requireChanges, Supabase, validate } from "./http.ts";
+import { connectionUrl, hashToken, newToken } from "./mcp.ts";
 import { parseTask } from "./parser.ts";
 import { nextOccurrence } from "./schedule.ts";
 import * as schema from "./validation.ts";
@@ -146,8 +147,33 @@ export async function version(db: Supabase): Promise<RouteResult> {
   return { data, cache: true };
 }
 
+const connectionColumns = "id,label,created_at,last_used_at";
+
+async function mcpConnections(request: Request, db: Supabase, userId: string, parts: string[], baseUrl: string): Promise<RouteResult> {
+  const method = request.method;
+  if (parts.length === 1 && method === "GET") {
+    const items = await db.rest<McpConnection[]>("mcp_connections", { select: connectionColumns, order: "created_at.desc,id.asc" });
+    return { data: { items, nextOffset: null } };
+  }
+  if (parts.length === 1 && method === "POST") {
+    const input = await readJson(request, schema.mcpConnection);
+    const existing = await db.rest<Array<{ id: string }>>("mcp_connections", { select: "id" });
+    if (existing.length >= 5) throw new ApiProblem(409, "CONFLICT", "Remove a connection before adding another");
+    const token = newToken();
+    const row = { user_id: userId, token_hash: await hashToken(token), ...(input.label ? { label: input.label } : {}) };
+    const created = onlyResult(await db.rest<McpConnection[]>("mcp_connections", { select: connectionColumns }, "POST", row,
+      "missing=default,return=representation"));
+    const data: NewMcpConnection = { ...created, url: connectionUrl(baseUrl, token) };
+    return { status: 201, data };
+  }
+  if (parts.length === 2 && method === "DELETE") {
+    return remove(db, "mcp_connections", { id: uuidFilter(validate(schema.uuid, parts[1])) });
+  }
+  throw new ApiProblem(405, "METHOD_NOT_ALLOWED", "Method is unavailable for this route");
+}
+
 export async function authenticatedRoute(
-  request: Request, db: Supabase, userId: string, parts: string[], params: URLSearchParams,
+  request: Request, db: Supabase, userId: string, parts: string[], params: URLSearchParams, baseUrl = "",
 ): Promise<RouteResult> {
   const [resource, key, suffix, extra] = parts;
   const method = request.method;
@@ -173,6 +199,8 @@ export async function authenticatedRoute(
     if (method !== "POST") throw unsupported();
     return { data: await db.rest<RescheduleResult>("rpc/reschedule_overdue", {}, "POST", {}) };
   }
+
+  if (resource === "mcp-connections" && parts.length <= 2) return mcpConnections(request, db, userId, parts, baseUrl);
 
   if (resource === "task-tags" && parts.length === 1) {
     if (method !== "GET") throw unsupported();

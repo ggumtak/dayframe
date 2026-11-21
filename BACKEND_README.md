@@ -53,6 +53,8 @@ Enable email sign-in and configure email delivery in Supabase. For OAuth, enable
 
 A single Edge Function exposes the anonymous version route and the authenticated API. Every private route validates the session against Supabase Auth before data access and passes the same access token to PostgREST. PostgreSQL RLS enforces owner restrictions independently. The Edge Function and mobile client use publishable credentials. Write release metadata through the SQL editor or from a trusted CI environment with restricted secret access.
 
+The same function serves the AI assistant endpoint at `/functions/v1/api/mcp/<token>`. It needs the `SUPABASE_SERVICE_ROLE_KEY` that Supabase provides to every Edge Function, and uses it only to resolve a connection token to its owner and open a session for that owner. Data is always read and written with the owner's session.
+
 Projects have a membership relation reserved for future invitations. Owner-scoped primary and foreign keys prevent a user from joining their rows to another owner's projects, tasks, tags, habits or logs. Sharing can add membership-aware policies and invitation flows to the existing project relation. Keep private habits, focus history and account profiles owner-only.
 
 ## Publish an APK update

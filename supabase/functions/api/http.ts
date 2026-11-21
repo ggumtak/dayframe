@@ -71,7 +71,13 @@ export function requireChanges<T extends object>(patch: T): T {
   return patch;
 }
 
-export interface SupabaseConfig { url: string; key: string; fetch?: typeof fetch }
+export interface SupabaseConfig {
+  url: string;
+  key: string;
+  /** Service-role key. Only the AI-connection endpoint uses it, to resolve a connection token to its owner. */
+  serviceKey?: string;
+  fetch?: typeof fetch;
+}
 
 export class Supabase {
   private readonly fetcher: typeof fetch;

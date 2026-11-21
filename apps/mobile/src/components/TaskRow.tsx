@@ -65,7 +65,6 @@ export const TaskRow = memo(function TaskRow({
     });
   }
   if (repeat) meta.push({ key: 'repeat', icon: 'repeat', text: repeat, color: colors.textMuted });
-  if (projectName) meta.push({ key: 'project', icon: 'hash', text: projectName, color: colors.textMuted });
   for (const name of tagNames ?? []) meta.push({ key: 'tag-' + name, icon: 'tag', text: name, color: colors.accent });
   if (subtaskCount) meta.push({ key: 'subtasks', icon: 'git-merge', text: String(subtaskCount), color: colors.textMuted });
 
@@ -74,24 +73,34 @@ export const TaskRow = memo(function TaskRow({
       accessibilityRole="button" accessibilityLabel={task.title} accessibilityHint="눌러서 자세히 보기"
       onPress={() => onPress(task)}
       style={({ pressed }) => [styles.row, { backgroundColor: pressed ? colors.surfaceMuted : colors.background }]}>
-      <Checkbox
-        checked={checked} color={priorityColor(colors, task.priority)} onPress={finish}
-        label={task.title + ' 완료'} />
-      <View style={styles.body}>
+      <View style={styles.check}>
+        <Checkbox
+          checked={checked} color={priorityColor(colors, task.priority)} tinted={task.priority < 4} onPress={finish}
+          label={task.title + ' 완료'} />
+      </View>
+      <View style={[styles.body, { borderBottomColor: colors.border }]}>
         <Text
           numberOfLines={2}
           style={[type.body as TextStyle, { color: checked ? colors.textFaint : colors.text },
             checked && { textDecorationLine: 'line-through' }]}>
           {task.title}
         </Text>
-        {meta.length ? (
-          <View style={styles.meta}>
-            {meta.map((item) => (
-              <View key={item.key} style={styles.metaItem}>
-                {item.icon ? <Feather name={item.icon} size={11} color={item.color} /> : null}
-                <Text style={[type.small as TextStyle, { color: item.color }]} numberOfLines={1}>{item.text}</Text>
+        {meta.length || projectName ? (
+          <View style={styles.metaRow}>
+            <View style={styles.meta}>
+              {meta.map((item) => (
+                <View key={item.key} style={styles.metaItem}>
+                  {item.icon ? <Feather name={item.icon} size={11} color={item.color} /> : null}
+                  <Text style={[styles.metaText, { color: item.color }]} numberOfLines={1}>{item.text}</Text>
+                </View>
+              ))}
+            </View>
+            {projectName ? (
+              <View style={styles.metaItem}>
+                <Text style={[styles.metaText, { color: colors.textMuted }]} numberOfLines={1}>{projectName}</Text>
+                <Feather name="hash" size={11} color={colors.textFaint} />
               </View>
-            ))}
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -141,10 +150,14 @@ export const TaskRow = memo(function TaskRow({
 });
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, paddingHorizontal: space.lg, paddingVertical: 13 },
-  body: { flex: 1, gap: 4 },
-  meta: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 2 },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: 200 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: space.lg },
+  check: { paddingTop: 12, paddingRight: space.md },
+  // The divider starts at the text, as in a ruled list, so the checkboxes read as one column.
+  body: { flex: 1, gap: 3, paddingVertical: 11, paddingRight: space.lg, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 46 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  meta: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 2 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 190 },
+  metaText: { fontSize: 12, lineHeight: 16 },
   complete: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingLeft: space.xl },
   actions: { flexDirection: 'row' },
   action: { width: 76, alignItems: 'center', justifyContent: 'center', gap: 4 },
