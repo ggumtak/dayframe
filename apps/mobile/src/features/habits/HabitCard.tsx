@@ -11,6 +11,8 @@ import { haptic } from '@/lib/haptics';
 import type { Habit, HabitLog, HabitStats } from '@/lib/shared';
 import { radius, space, useTheme } from '@/theme';
 
+import { nextCheckIn } from './checkIn';
+
 const SIZE = 52;
 const STROKE = 4;
 
@@ -65,17 +67,10 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
   const streak = stats?.current_streak ?? 0;
 
   const checkIn = () => {
-    // Daily habits count up to the goal, then a tap undoes today. Weekly habits tick once per day.
-    const next = weekly ? (todayCount ? 0 : 1) : done ? 0 : todayCount + 1;
-    if (next === 0) {
-      haptic.light();
-      actions.setLog({ habitId: habit.id, date, status: null, count: 0 });
-    } else {
-      const reaches = (weekly ? progress + 1 : next) >= habit.target_count;
-      if (reaches) haptic.success();
-      else haptic.light();
-      actions.setLog({ habitId: habit.id, date, status: 'completed', count: next });
-    }
+    const next = nextCheckIn(habit, todayCount, progress);
+    if (next.reaches) haptic.success();
+    else haptic.light();
+    actions.setLog({ habitId: habit.id, date, status: next.status, count: next.count });
   };
 
   const mark = (status: 'skipped' | 'frozen' | null) => {

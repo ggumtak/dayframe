@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { snapshotTasks, widgetDate, widgetRows, type WidgetTask } from './items.ts';
+import { focusState, habitToday, snapshotTasks, upcomingRows, widgetDate, widgetRows, type WidgetTask } from './items.ts';
 
 const now = Date.parse('2026-11-21T09:00:00Z'); // Saturday 18:00 in Seoul
 let next = 0;
@@ -35,10 +35,40 @@ test('the snapshot drops finished and far-off tasks but keeps tomorrow for after
     task('done', '2026-11-21T10:00:00Z', { completed_at: '2026-11-21T08:00:00Z' }),
     task('tomorrow', '2026-11-22T01:00:00Z'),
     task('next week', '2026-11-28T01:00:00Z'),
+    task('next month', '2026-12-25T01:00:00Z'),
   ], now);
-  assert.deepEqual(kept.map((item) => item.title), ['tomorrow']);
+  assert.deepEqual(kept.map((item) => item.title), ['tomorrow', 'next week']);
   assert.equal('completed_at' in kept[0], false);
   // After midnight in Seoul, tomorrow's task becomes today's.
   assert.deepEqual(widgetRows(kept, Date.parse('2026-11-21T16:00:00Z')).map((row) => row.title), ['tomorrow']);
   assert.equal(widgetDate(now, 'Asia/Seoul'), '11월 21일 토요일');
+});
+
+test('the upcoming widget groups the next seven days under day headings', () => {
+  const tasks = snapshotTasks([
+    task('오늘 일', '2026-11-21T10:00:00Z'),
+    task('회의', '2026-11-22T01:00:00Z'),
+    task('장보기', '2026-11-21T15:00:00Z', { all_day: true }), // 11/22 all day
+    task('보고서', '2026-11-24T00:00:00Z', { priority: 1 }), // 11/24 09:00
+    task('다음 주 토', '2026-11-28T01:00:00Z'),
+  ], now);
+  assert.deepEqual(upcomingRows(tasks, now, 'Asia/Seoul').map((row) => (row.kind === 'day' ? '# ' + row.label + ' ' + row.count : row.title + ' ' + row.when)), [
+    '# 내일 · 11월 22일 2', '장보기 ', '회의 오전 10:00',
+    '# 화요일 · 11월 24일 1', '보고서 오전 9:00',
+    '# 토요일 · 11월 28일 1', '다음 주 토 오전 10:00',
+  ]);
+});
+
+test('habit and focus figures roll over with the day', () => {
+  const habit = { id: 'h', name: '물', cadence: 'daily' as const, target_count: 8, timezone: 'Asia/Seoul', date: '2026-11-21', todayCount: 5, progress: 5 };
+  assert.deepEqual(habitToday(habit, now), { date: '2026-11-21', todayCount: 5, progress: 5 });
+  assert.deepEqual(habitToday(habit, Date.parse('2026-11-21T16:00:00Z')), { date: '2026-11-22', todayCount: 0, progress: 0 });
+  const weekly = { ...habit, cadence: 'weekly' as const, target_count: 3, date: '2026-11-18', todayCount: 1, progress: 2 }; // Wed
+  assert.deepEqual(habitToday(weekly, now), { date: '2026-11-21', todayCount: 0, progress: 2 });
+  assert.equal(habitToday(weekly, Date.parse('2026-11-23T01:00:00Z')).progress, 0); // next Monday
+
+  const focus = { running: { id: 'f', startedAt: '2026-11-21T08:50:00Z', plannedSeconds: 1500 }, date: '2026-11-21', count: 2, seconds: 3000 };
+  assert.deepEqual(focusState(focus, now, 'Asia/Seoul'), { running: focus.running, endsAt: '오후 6:15', count: 2, minutes: 50 });
+  assert.equal(focusState(focus, Date.parse('2026-11-21T09:20:00Z'), 'Asia/Seoul').running, null);
+  assert.equal(focusState(focus, Date.parse('2026-11-21T16:00:00Z'), 'Asia/Seoul').count, 0);
 });
