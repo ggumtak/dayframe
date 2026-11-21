@@ -36,6 +36,8 @@ class ToolFailure extends Error {}
 
 // Per function instance. A cold start signs the owner in again, which costs two requests.
 const sessions = new Map<string, { token: string; expires: number }>();
+// Auth keeps one sign-in link per user, so two sessions opened at once would cancel each other out.
+const opening = new Map<string, Promise<string>>();
 const touched = new Map<string, number>();
 
 async function service<T>(config: SupabaseConfig, path: string, init: { method?: string; body?: Json; prefer?: string } = {}): Promise<T> {
@@ -67,9 +69,18 @@ async function findOwner(config: SupabaseConfig, token: string): Promise<string 
 }
 
 /** An access token for the connection's owner, minted through the Auth admin API. */
-async function ownerToken(config: SupabaseConfig, userId: string, fresh = false): Promise<string> {
+function ownerToken(config: SupabaseConfig, userId: string, fresh = false): Promise<string> {
   const cached = sessions.get(userId);
-  if (!fresh && cached && cached.expires - Date.now() > 60_000) return cached.token;
+  if (!fresh && cached && cached.expires - Date.now() > 60_000) return Promise.resolve(cached.token);
+  let pending = opening.get(userId);
+  if (!pending) {
+    pending = openSession(config, userId).finally(() => opening.delete(userId));
+    opening.set(userId, pending);
+  }
+  return pending;
+}
+
+async function openSession(config: SupabaseConfig, userId: string): Promise<string> {
   const user = await service<{ email?: string }>(config, "/auth/v1/admin/users/" + userId);
   if (!user.email) throw new Error("Connection owner has no email");
   const link = await service<{ hashed_token?: string; verification_type?: string }>(config, "/auth/v1/admin/generate_link",
@@ -101,6 +112,8 @@ function context(config: SupabaseConfig, userId: string, api: Api): Context {
     }));
   const self: Context = {
     async call<T>(method: string, path: string, body?: Json) {
+      // Every path is built from validated IDs; this keeps a missed check from reaching another route.
+      if (!/^[a-z-]+(?:\/[A-Za-z0-9-]+)*(?:\?[a-z_]+=[A-Za-z0-9-]+(?:&[a-z_]+=[A-Za-z0-9-]+)*)?$/.test(path)) throw new ToolFailure("Invalid reference");
       let response = await send(method, path, body, false);
       if (response.status === 401) response = await send(method, path, body, true);
       if (response.status === 204) return undefined as T;
@@ -177,6 +190,9 @@ function schedule(words: string, timezone: string) {
   const parsed = parseTask({ text: words + " " + placeholder, timezone });
   const leftover = parsed.title.replace(placeholder, "").trim();
   if (leftover) throw new ToolFailure("Could not understand this part of the schedule: " + leftover);
+  if (parsed.project || parsed.tags.length || parsed.priority !== 4) {
+    throw new ToolFailure("schedule takes only dates, times and repeats; use the priority and project fields for the rest");
+  }
   if (!parsed.due_at) throw new ToolFailure("No date or time found in the schedule");
   return {
     due_at: parsed.due_at, all_day: parsed.all_day, recurrence_rule: parsed.recurrence_rule,
@@ -210,7 +226,10 @@ export const tools: Tool[] = [
       limit: { type: "integer", minimum: 1, maximum: 200 },
     }),
     async run(api, args) {
-      const view = typeof args.view === "string" ? args.view : "today";
+      const view = args.view === undefined ? "today" : args.view;
+      if (!["today", "overdue", "upcoming", "inbox", "all"].includes(view as string)) {
+        throw new ToolFailure("view must be today, overdue, upcoming, inbox or all");
+      }
       const [tasks, lookup] = await Promise.all([api.all<Task>("tasks?state=open"), names(api)]);
       const wanted = typeof args.project === "string" ? lookup.projects.find((item) => sameName(item.name, args.project as string))?.id ?? "none" : null;
       const selected = tasks.filter((task) => {
@@ -274,6 +293,8 @@ export const tools: Tool[] = [
     }, ["task_id"]),
     async run(api, args) {
       const id = identifier(args.task_id, "task_id");
+      // Looked up first so a wrong ID fails before a project is created for it.
+      const current = await api.call<Task>("GET", "tasks/" + id);
       const patch: Json = {};
       if (args.title !== undefined) patch.title = text(args.title, "title", 500);
       if (typeof args.notes === "string") patch.notes = args.notes.trim() ? args.notes.slice(0, 10000) : null;
@@ -282,7 +303,7 @@ export const tools: Tool[] = [
         patch.priority = args.priority;
       }
       if (args.clear_schedule === true) Object.assign(patch, { due_at: null, all_day: false, recurrence_rule: null });
-      else if (args.schedule !== undefined) Object.assign(patch, schedule(text(args.schedule, "schedule", 200), (await api.call<Task>("GET", "tasks/" + id)).timezone));
+      else if (args.schedule !== undefined) Object.assign(patch, schedule(text(args.schedule, "schedule", 200), current.timezone));
       if (typeof args.project === "string") {
         Object.assign(patch, { project_id: args.project.trim() ? (await ensureProject(api, args.project)).id : null, section_id: null });
       }
@@ -385,8 +406,11 @@ export const tools: Tool[] = [
     }, ["habit_id"]),
     async run(api, args) {
       const id = identifier(args.habit_id, "habit_id");
+      if (args.date !== undefined && (typeof args.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.date))) {
+        throw new ToolFailure("date must be YYYY-MM-DD");
+      }
       const habit = await api.call<Habit>("GET", "habits/" + id);
-      const date = typeof args.date === "string" ? args.date : Temporal.Now.plainDateISO(habit.timezone).toString();
+      const date = Temporal.PlainDate.from(args.date ?? Temporal.Now.plainDateISO(habit.timezone), { overflow: "reject" }).toString();
       const status = typeof args.status === "string" ? args.status : "completed";
       if (status === "clear") {
         await api.call("DELETE", "habits/" + id + "/logs/" + date);
@@ -433,7 +457,9 @@ async function dispatch(message: Message, api: () => Context): Promise<Json> {
       const tool = tools.find((item) => item.name === message.params?.name);
       if (!tool) return fail(-32602, "Unknown tool");
       try {
-        const result = await tool.run(api(), (message.params?.arguments ?? {}) as Json);
+        // Some assistants send null for the optional arguments they leave out.
+        const given = Object.entries((message.params?.arguments ?? {}) as Json).filter(([, value]) => value !== null);
+        const result = await tool.run(api(), Object.fromEntries(given));
         return done({ content: [{ type: "text", text: JSON.stringify(result) }] });
       } catch (error) {
         // Bad input is reported to the assistant so it can correct itself; anything else stays generic.
@@ -467,11 +493,19 @@ export async function handleMcp(request: Request, config: SupabaseConfig, token:
   }
   let shared: Context | undefined;
   const messages = (Array.isArray(body) ? body : [body]) as Message[];
+  const invalid = (id: unknown = null) => ({ jsonrpc: "2.0", id, error: { code: -32600, message: "Invalid request" } });
+  if (messages.length === 0 || messages.length > 20) return reply(invalid(), 400);
   const replies: Json[] = [];
   for (const message of messages) {
-    const response = await dispatch(message ?? {}, () => shared ??= context(config, owner, api));
-    // Notifications carry no id and get no reply.
-    if (message && message.id !== undefined) replies.push(response);
+    if (typeof message !== "object" || message === null || Array.isArray(message)) {
+      replies.push(invalid());
+      continue;
+    }
+    // A reply to a request this server never made needs no answer.
+    if (message.method === undefined && ("result" in message || "error" in message)) continue;
+    const response = await dispatch(message, () => shared ??= context(config, owner, api));
+    // Notifications carry no id and get no reply, unless they are not valid requests at all.
+    if (message.id !== undefined || typeof message.method !== "string") replies.push(response);
   }
   if (!replies.length) return new Response(null, { status: 202, headers });
   return reply(Array.isArray(body) ? replies : replies[0]);

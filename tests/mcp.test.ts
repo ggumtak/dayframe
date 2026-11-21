@@ -5,15 +5,17 @@ import { createHandler } from "../supabase/functions/api/handler.ts";
 import { hashToken, tools } from "../supabase/functions/api/mcp.ts";
 
 const upstream = "https://project.supabase.invalid";
-const owner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const defaultOwner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const token = "A".repeat(43);
 const taskId = "33333333-3333-4333-8333-333333333333";
 const projectId = "11111111-1111-4111-8111-111111111111";
 
 /** A stand-in for Supabase Auth and PostgREST that records every data request the tools make. */
-async function backend(options: { tasks?: object[] } = {}) {
+async function backend(options: { tasks?: object[]; owner?: string } = {}) {
+  const owner = options.owner ?? defaultOwner;
   const hash = await hashToken(token);
   const calls: Array<{ method: string; path: string; query: URLSearchParams; body?: Record<string, unknown>; bearer: string }> = [];
+  let links = 0;
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const headers = new Headers(init?.headers);
@@ -26,10 +28,14 @@ async function backend(options: { tasks?: object[] } = {}) {
       return Response.json(url.searchParams.get("token_hash") === "eq." + hash ? [{ id: "c1", user_id: owner }] : []);
     }
     if (path === "/auth/v1/admin/users/" + owner && bearer === "service-key") return Response.json({ email: "me@example.com" });
+    // Like Supabase Auth, each new sign-in link replaces the one before it.
     if (path === "/auth/v1/admin/generate_link" && bearer === "service-key") {
-      return Response.json({ hashed_token: "hashed", verification_type: "magiclink" });
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return Response.json({ hashed_token: "hashed-" + ++links, verification_type: "magiclink" });
     }
-    if (path === "/auth/v1/verify" && body.token_hash === "hashed") return Response.json({ access_token: "owner-session", expires_in: 3600 });
+    if (path === "/auth/v1/verify") {
+      return body.token_hash === "hashed-" + links ? Response.json({ access_token: "owner-session", expires_in: 3600 }) : Response.json({}, { status: 403 });
+    }
     if (path === "/auth/v1/user") return bearer === "owner-session" ? Response.json({ id: owner }) : Response.json({}, { status: 401 });
     assert.equal(bearer, "owner-session", "data requests must run as the connection's owner, never as the service role");
     calls.push({ method, path, query: url.searchParams, body, bearer });
@@ -55,7 +61,7 @@ async function backend(options: { tasks?: object[] } = {}) {
     const { body } = await rpc("tools/call", { name, arguments: args });
     return { isError: body.result.isError === true, text: body.result.content[0].text as string };
   };
-  return { handler, calls, rpc, call };
+  return { handler, calls, rpc, call, links: () => links };
 }
 
 test("a connection URL is the only credential and unknown ones are refused without a sign-in challenge", async () => {
@@ -114,7 +120,7 @@ test("add_task parses natural language, creates the project and stores the task 
 });
 
 test("tool failures are returned to the assistant as readable errors", async () => {
-  const { calls, call } = await backend();
+  const { calls, call } = await backend({ tasks: [{ id: taskId, title: "보고서", timezone: "Asia/Seoul" }] });
   const conflict = await call("add_task", { text: "내일 모레 운동" });
   assert.deepEqual(conflict, { isError: true, text: "Use one due date per task" });
   assert.equal((await call("add_task", {})).isError, true);
@@ -148,7 +154,7 @@ test("connections are created with a one-time URL, listed without secrets and ca
   const stored: Array<Record<string, string>> = [];
   const handler = createHandler({ url: upstream, key: "anon-key", serviceKey: "service-key", fetch: async (input, init) => {
     const url = new URL(String(input));
-    if (url.pathname === "/auth/v1/user") return Response.json({ id: owner });
+    if (url.pathname === "/auth/v1/user") return Response.json({ id: defaultOwner });
     assert.equal(url.pathname, "/rest/v1/mcp_connections");
     if (init?.method === "POST") {
       assert.equal(url.searchParams.get("select"), "id,label,created_at,last_used_at");
@@ -165,10 +171,57 @@ test("connections are created with a one-time URL, listed without secrets and ca
   assert.equal(created.status, 201);
   const connection = await created.json();
   const secret = /^https:\/\/project\.supabase\.invalid\/functions\/v1\/api\/mcp\/([A-Za-z0-9_-]{43})$/.exec(connection.url)![1];
-  assert.deepEqual(stored[0], { user_id: owner, token_hash: await hashToken(secret), label: "Claude" });
+  assert.deepEqual(stored[0], { user_id: defaultOwner, token_hash: await hashToken(secret), label: "Claude" });
   assert.equal(JSON.stringify(connection).includes(stored[0].token_hash), false);
   for (let count = 1; count < 5; count++) assert.equal((await request("POST", {})).status, 201);
   assert.equal((await request("POST", {})).status, 409);
   assert.equal(new Set(stored.map((row) => row.token_hash)).size, 5);
   assert.equal((await request("POST", { label: "x", admin: true })).status, 400);
+});
+
+test("parallel requests share one owner session instead of cancelling each other's sign-in links", async () => {
+  // An owner no earlier test has opened a session for, as after a cold start.
+  const { call, links } = await backend({ owner: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
+  // list_tasks reads four collections at once; it is the first call an assistant makes after a cold start.
+  assert.equal((await call("list_tasks")).isError, false);
+  assert.equal(links(), 1);
+  assert.equal((await call("list_projects")).isError, false);
+  assert.equal(links(), 1);
+});
+
+test("tool arguments cannot steer a request to another route", async () => {
+  const { calls, call } = await backend();
+  const habit = "44444444-4444-4444-8444-444444444444";
+  for (const date of ["..", "../../../tasks/" + taskId, "2026-11-21/../..", "2026-1-1", 20261121]) {
+    const result = await call("log_habit", { habit_id: habit, status: "clear", date });
+    assert.deepEqual([result.isError, result.text], [true, "date must be YYYY-MM-DD"]);
+  }
+  assert.equal((await call("log_habit", { habit_id: habit, date: "2026-02-30" })).isError, true);
+  assert.equal((await call("delete_task", { task_id: "../" + "a".repeat(33) })).isError, true);
+  assert.deepEqual(calls.filter((item) => item.method !== "GET"), []);
+});
+
+test("null optional arguments count as omitted, and misuse is reported instead of guessed", async () => {
+  const task = {
+    id: taskId, title: "보고서", priority: 4, project_id: null, parent_task_id: null, notes: null, due_at: null, all_day: false,
+    recurrence_rule: null, timezone: "Asia/Seoul", position: 1024,
+  };
+  const { calls, call } = await backend({ tasks: [task] });
+  assert.equal((await call("add_task", { text: "우유 사기", notes: null, parent_task_id: null })).isError, false);
+  assert.equal((await call("list_tasks", { view: null, project: null, limit: null })).isError, false);
+  assert.match((await call("list_tasks", { view: "someday" })).text, /view must be/);
+  assert.match((await call("update_task", { task_id: taskId, schedule: "내일 p1 #업무" })).text, /only dates, times and repeats/);
+  assert.equal(calls.some((item) => item.path === "/rest/v1/projects" && item.method === "POST"), false);
+});
+
+test("requests that are not JSON-RPC get an error, not silence", async () => {
+  const { handler } = await backend();
+  const post = (body: unknown) => handler(new Request("https://edge.invalid/functions/v1/api/mcp/" + token, { method: "POST", body: JSON.stringify(body) }));
+  for (const body of [[], Array(21).fill({ jsonrpc: "2.0", id: 1, method: "ping" })]) assert.equal((await post(body)).status, 400);
+  for (const body of [{ jsonrpc: "2.0" }, 5, null, [1]]) {
+    const response = await post(body);
+    const payload = await response.json();
+    assert.equal((Array.isArray(payload) ? payload[0] : payload).error.code, -32600);
+  }
+  assert.equal((await post({ jsonrpc: "2.0", id: 7, result: {} })).status, 202);
 });
