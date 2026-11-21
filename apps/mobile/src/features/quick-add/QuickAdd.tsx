@@ -71,6 +71,19 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   const parsed = analysis?.task.title ? analysis.task : undefined;
   const draft = analysis?.task;
 
+  // Prefilled words such as "11월 24일 " are a start: typing continues after them, not before.
+  useEffect(() => {
+    const length = defaults.initialText?.length ?? 0;
+    if (!length) return;
+    const timer = setTimeout(() => {
+      // Native inputs have setSelection; on the web the element is a plain <textarea>.
+      const field = input.current as unknown as { setSelection?: (a: number, b: number) => void; setSelectionRange?: (a: number, b: number) => void } | null;
+      if (typeof field?.setSelection === 'function') field.setSelection(length, length);
+      else field?.setSelectionRange?.(length, length);
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [defaults.initialText]);
+
   useEffect(() => {
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
       onClose();
