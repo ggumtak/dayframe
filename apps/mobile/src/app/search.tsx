@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { EmptyState, Icon, IconButton, Screen, SectionTitle, Txt } from '@/components/ui';
 import { bySchedule, useProjects, useTagNames, useTaskIndex } from '@/data/tasks';
@@ -38,7 +38,7 @@ export default function Search() {
           <TextInput
             value={query} onChangeText={setQuery} autoFocus placeholder="할 일, 메모, #프로젝트, @태그" accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
-            style={{ flex: 1, color: colors.text, fontSize: 16, paddingVertical: 10 }} />
+            style={[{ flex: 1, color: colors.text, fontSize: 16, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
           {query ? <IconButton name="x" label="지우기" size={18} color={colors.textMuted} onPress={() => setQuery('')} /> : null}
         </View>
       </View>

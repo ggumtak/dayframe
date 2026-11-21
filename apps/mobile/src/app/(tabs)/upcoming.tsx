@@ -135,7 +135,7 @@ function MonthView({ tasks, selected, onSelect, refreshing, onRefresh }: {
       <View style={{ paddingHorizontal: space.md }}>
         <MonthCalendar initial={day} selected={day} today={now} dots={new Set(byDay.keys())} onSelect={(date) => onSelect(date.toString())} />
       </View>
-      <SectionTitle title={(/^\d/.test(label) ? label : `${label} · ${day.month}월 ${day.day}일`) + ' ' + weekdayName(day) + '요일'} count={list.length} />
+      <SectionTitle title={/^\d/.test(label) ? label : `${label} · ${day.month}월 ${day.day}일 ${weekdayName(day)}`} count={list.length} />
       {list.length ? <TaskList tasks={list} hideDate /> : (
         <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>이 날은 할 일이 없습니다.</Txt>
       )}
