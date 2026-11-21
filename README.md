@@ -32,16 +32,14 @@
 
 ## 새 버전 배포
 
-`v1.2.3` 형식의 태그를 올리면 [Build Android APK](.github/workflows/build-android-apk.yml) 워크플로가 APK를 빌드·서명해 GitHub Release에 올립니다. 설치된 앱은 이 Release를 보고 업데이트를 안내합니다.
+GitHub의 **Actions → Build Android APK → Run workflow**에서 `main`을 선택하고 버전(예: `1.0.1`)을 입력해 실행하면, [워크플로](.github/workflows/build-android-apk.yml)가 APK를 빌드·서명해 `v1.0.1` 태그와 GitHub Release를 만들고 `dayframe.apk`를 올립니다. 설치된 앱은 이 Release를 보고 업데이트를 안내합니다. `v1.0.1` 같은 태그를 직접 푸시해도 같은 결과가 됩니다.
 
-```sh
-git tag v1.2.3 && git push origin v1.2.3
-```
+버전은 이전보다 커야 합니다. 같은 서명 키로 서명된 더 높은 버전만 기존 앱 위에 설치됩니다.
 
 배포 전에 한 번만 준비할 것:
 
-- **서버 주소**: `apps/mobile/release.config.json`에 Supabase URL과 공개(publishable) 키를 적습니다. 비어 있으면 태그 빌드가 중단됩니다.
-- **서명 키**: 저장소 Secrets에 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`를 등록합니다. 없으면 태그 빌드가 중단됩니다. 한 키로 설치한 앱은 다른 키로 서명한 APK로 업데이트할 수 없으므로, 이 키는 잃어버리지 않게 따로 보관해야 합니다.
+- **서버 주소**: `apps/mobile/release.config.json`에 Supabase URL과 공개(publishable) 키를 적습니다. 비어 있으면 릴리스가 중단됩니다.
+- **서명 키**: 저장소 Secrets에 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`를 등록합니다. 없으면 릴리스가 중단됩니다. 한 키로 설치한 앱은 다른 키로 서명한 APK로 업데이트할 수 없으므로, 이 키는 잃어버리지 않게 따로 보관해야 합니다.
 
 ## 검사
 
