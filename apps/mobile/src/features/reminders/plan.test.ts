@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { defaultReminderSettings, parseReminderId, planReminders, reminderId, type ReminderTask, stableUuid } from './plan.ts';
+import {
+  defaultReminderSettings, parseHabitReminderId, parseReminderId, planHabitReminders, planReminders, reminderId, type ReminderTask, stableUuid,
+} from './plan.ts';
 
 const now = Date.parse('2026-11-21T09:00:00Z'); // Saturday 18:00 in Seoul
 const task = (id: string, extra: Partial<ReminderTask>): ReminderTask => ({
@@ -50,4 +52,23 @@ test('identifiers round-trip and request ids are stable UUIDs', () => {
   assert.equal(stableUuid(id), stableUuid(id));
   assert.notEqual(stableUuid(id), stableUuid(id + '1'));
   assert.match(stableUuid(id), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test('a task can ring earlier than the default, or not at all', () => {
+  const a = task('a', { due_at: '2026-11-21T10:00:00Z' });
+  const b = task('b', { due_at: '2026-11-21T11:00:00Z' });
+  const planned = planReminders([a, b], defaultReminderSettings, now, daily, { leadFor: (item) => (item.id === a.id ? 30 : item.id === b.id ? 'off' : undefined) });
+  assert.deepEqual(planned.map((item) => kst(item.at)), ['2026-11-21 18:30']);
+});
+
+test('habit alerts come daily at their time and skip today once done', () => {
+  const habit = { id: '33333333-3333-4333-8333-333333333333', time: '21:00', timezone: 'Asia/Seoul', doneThrough: null };
+  const planned = planHabitReminders([habit], now, 3);
+  assert.deepEqual(planned.map((item) => kst(item.at)), ['2026-11-21 21:00', '2026-11-22 21:00', '2026-11-23 21:00']);
+  assert.deepEqual(planHabitReminders([{ ...habit, doneThrough: '2026-11-21' }], now, 3).map((item) => item.date), ['2026-11-22', '2026-11-23']);
+  // A weekly goal met on Saturday also covers Sunday; Monday starts a new week.
+  assert.deepEqual(planHabitReminders([{ ...habit, doneThrough: '2026-11-22' }], now, 3).map((item) => item.date), ['2026-11-23']);
+  assert.deepEqual(planHabitReminders([{ ...habit, time: '07:00' }], now, 2).map((item) => item.date), ['2026-11-22']);
+  assert.deepEqual(parseHabitReminderId(planned[0].id), { habitId: habit.id, date: '2026-11-21' });
+  assert.equal(planHabitReminders([{ ...habit, time: 'soon' }], now).length, 0);
 });

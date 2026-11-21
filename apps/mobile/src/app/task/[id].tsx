@@ -7,6 +7,7 @@ import { Button, Card, Chip, EmptyState, Icon, IconButton, Loading, Screen, Sect
 import { attachTagByName, useProjects, useTags, useTaskIndex, useTaskTags } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { parseErrorMessage } from '@/features/quick-add/messages';
+import { TaskReminderChips } from '@/features/reminders/ReminderChips';
 import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
@@ -182,6 +183,15 @@ function TaskEditor({ task }: { task: Task }) {
             {schedule?.label ? <Txt variant="small" tone="success">{schedule.label}</Txt> : null}
             {schedule?.error ? <Txt variant="small" tone="danger">{schedule.error}</Txt> : null}
           </View>
+
+          {task.due_at ? (
+            <>
+              <SectionTitle title="알림" />
+              <View style={styles.block}>
+                <TaskReminderChips taskId={task.id} allDay={task.all_day} />
+              </View>
+            </>
+          ) : null}
 
           <SectionTitle title="우선순위" />
           <View style={[styles.block, { flexDirection: 'row', gap: space.sm }]}>

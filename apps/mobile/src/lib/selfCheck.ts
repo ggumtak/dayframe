@@ -79,12 +79,23 @@ async function checkBackground(): Promise<void> {
   const failed: string[] = [];
   try {
     const { buildWidgetTree } = await import('react-native-android-widget/src/api/build-widget-tree');
-    const { todayWidget } = await import('../features/widget/TodayWidget');
-    const sample = { date: '11월 21일 토요일', signedIn: true, rows: [{ id: 'a', title: '운동', when: '오후 7:00', overdue: false, priority: 2 as const, occurrence: '2026-11-21T10:00:00Z' }] };
-    for (const props of [sample, { ...sample, rows: [] }, { ...sample, signedIn: false }]) {
-      const widget = todayWidget(props);
-      buildWidgetTree(widget.light);
-      buildWidgetTree(widget.dark);
+    const { drawWidget } = await import('../features/widget/render');
+    const { WIDGETS } = await import('../features/widget/names');
+    const now = Date.parse('2026-11-21T09:00:00Z');
+    const task = { id: 'a', title: '운동', all_day: false, timezone: 'Asia/Seoul', priority: 2 as const, updated_at: '', recurrence_rule: null };
+    const full = {
+      signedIn: true, notice: null,
+      tasks: [{ ...task, due_at: '2026-11-21T10:00:00Z' }, { ...task, id: 'b', due_at: '2026-11-23T10:00:00Z' }],
+      habits: [{ id: 'h', name: '물', cadence: 'daily' as const, target_count: 8, timezone: 'Asia/Seoul', date: '2026-11-21', todayCount: 5, progress: 5 }],
+      focus: { running: { id: 'f', startedAt: '2026-11-21T08:50:00Z', plannedSeconds: 1500 }, date: '2026-11-21', count: 1, seconds: 1500 },
+      calendar: { '2026-11-21': 2, '2026-11-30': 1 },
+    };
+    for (const snapshot of [full, { ...full, tasks: [], habits: [], focus: null }, { signedIn: false, tasks: [] }]) {
+      for (const name of Object.values(WIDGETS)) {
+        const widget = drawWidget(name, snapshot, now) as { light: React.JSX.Element; dark: React.JSX.Element };
+        buildWidgetTree(widget.light);
+        buildWidgetTree(widget.dark);
+      }
     }
   } catch (error) {
     failed.push('widget (' + (error instanceof Error ? error.message : String(error)) + ')');

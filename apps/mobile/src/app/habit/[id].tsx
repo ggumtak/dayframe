@@ -1,11 +1,12 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
 
 import { type DayMark, MonthCalendar } from '@/components/MonthCalendar';
 import { Button, Card, EmptyState, Header, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import { useHabitActions, useHabitLogs, useHabits, useHabitStats } from '@/data/habits';
 import { Heatmap, heatmapWidth } from '@/features/habits/Heatmap';
+import { HabitReminderChips } from '@/features/reminders/ReminderChips';
 import { type PlainDate, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { showToast } from '@/lib/toast';
@@ -103,6 +104,13 @@ export default function HabitDetail() {
             <Button label="저장" onPress={rename} />
           </View>
         )}
+
+        {Platform.OS === 'android' ? (
+          <Card style={{ gap: space.sm }}>
+            <Txt variant="bodyStrong">알림</Txt>
+            <HabitReminderChips habitId={habit.id} />
+          </Card>
+        ) : null}
 
         <Card style={{ paddingVertical: space.xs }}>
           <Row icon="clock" label="이 습관으로 집중 시작" onPress={() => router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } })} />
