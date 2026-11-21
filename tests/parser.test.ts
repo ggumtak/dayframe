@@ -98,13 +98,56 @@ test("Korean day periods, half hours and particles", () => {
   assert.equal(local("내일 자정 마감"), "2026-11-23T00:00");
   assert.equal(local("정오 점심"), "2026-11-23T12:00");
   assert.equal(local("at noon lunch"), "2026-11-23T12:00");
-  assert.equal(local("7시 반 저녁식사"), "2026-11-23T07:30");
+  assert.equal(local("7시 반 저녁식사"), "2026-11-22T19:30");
   assert.equal(parse("7시 반 저녁식사").title, "저녁식사");
   assert.equal(parse("7시 반복 학습").title, "반복 학습");
   assert.equal(parse("오후 3시쯤 전화").title, "전화");
   assert.equal(parse("내일 3시에 회의").title, "회의");
   assert.equal(parse("BMW 3시리즈 시승").due_at, null);
   assert.throws(() => parse("저녁 13시 운동"));
+});
+
+test("an hour without 오전/오후 takes the natural half of the day", () => {
+  const at = (clock: string) => (text: string) => {
+    const now = Temporal.PlainDateTime.from("2026-11-21T" + clock).toZonedDateTime("Asia/Seoul").toInstant().toString();
+    const task = parse(text, now);
+    return Temporal.Instant.from(task.due_at!).toZonedDateTimeISO("Asia/Seoul").toPlainDateTime().toString().slice(0, 16);
+  };
+  // Saturday 2026-11-21, 16:19 in Seoul.
+  const afternoon = at("16:19");
+  assert.equal(afternoon("7시 운동"), "2026-11-21T19:00");
+  assert.equal(afternoon("오늘 7시 운동"), "2026-11-21T19:00");
+  assert.equal(afternoon("5시 운동"), "2026-11-21T17:00");
+  assert.equal(afternoon("7:30 운동"), "2026-11-21T19:30");
+  assert.equal(afternoon("3시 회의"), "2026-11-22T15:00");
+  assert.equal(afternoon("오늘 3시 회의"), "2026-11-21T15:00");
+  assert.equal(afternoon("12시 점심"), "2026-11-22T12:00");
+  assert.equal(afternoon("11시 반 통화"), "2026-11-21T23:30");
+  // 6시–11시 on another day or on a repeating task reads as the morning; 1시–5시 never does.
+  assert.equal(afternoon("내일 9시 회의"), "2026-11-22T09:00");
+  assert.equal(afternoon("내일 2시 미팅"), "2026-11-22T14:00");
+  assert.equal(afternoon("매일 7시 운동"), "2026-11-22T07:00");
+  assert.equal(parse("매일 7시 운동").recurrence_local_time, "07:00:00");
+  assert.equal(parse("매일 3시 간식").recurrence_local_time, "15:00:00");
+  // Words in the title settle it either way.
+  assert.equal(afternoon("내일 7시 저녁 약속"), "2026-11-22T19:00");
+  assert.equal(afternoon("5시 기상"), "2026-11-22T05:00");
+  // What was written as a 24-hour or explicit time is never reinterpreted.
+  assert.equal(afternoon("07:30 운동"), "2026-11-22T07:30");
+  assert.equal(afternoon("19시 운동"), "2026-11-21T19:00");
+  assert.equal(afternoon("오전 5시 운동"), "2026-11-22T05:00");
+  assert.equal(afternoon("7am run"), "2026-11-22T07:00");
+
+  const morning = at("08:00");
+  assert.equal(morning("9시 회의"), "2026-11-21T09:00");
+  assert.equal(morning("7시 운동"), "2026-11-21T19:00");
+  assert.equal(morning("5시 운동"), "2026-11-21T17:00");
+
+  const night = at("22:30");
+  assert.equal(night("9시 회의"), "2026-11-22T09:00");
+  assert.equal(night("오늘 9시 회의"), "2026-11-21T21:00");
+  assert.equal(night("5시 운동"), "2026-11-22T17:00");
+  assert.equal(night("11시 취침"), "2026-11-21T23:00");
 });
 
 test("Korean calendar dates, relative offsets and deadlines", () => {
@@ -155,4 +198,12 @@ test("token offsets index the normalized text for inline highlighting", () => {
   ]);
   for (const token of tokens) assert.equal(token.text, text.slice(token.start, token.end));
   assert.deepEqual(analyzeTask({ text: "plain title", timezone: "UTC" }).tokens, []);
+});
+
+test("a draft entry reports its tokens before a title is typed", () => {
+  const input = { text: "오늘 7시", now: "2026-11-21T07:19:00Z", timezone: "Asia/Seoul" };
+  assert.throws(() => analyzeTask(input));
+  const draft = analyzeTask(input, { draft: true });
+  assert.deepEqual(draft.tokens.map((token) => [token.kind, token.text]), [["date", "오늘"], ["time", "7시"]]);
+  assert.deepEqual([draft.task.title, draft.task.due_at], ["", "2026-11-21T10:00:00Z"]);
 });

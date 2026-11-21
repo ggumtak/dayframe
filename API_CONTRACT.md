@@ -40,6 +40,7 @@ POST `{"text":"Tomorrow 7pm gym every Mon, Wed #health @workout p2","timezone":"
 | `다음주 화요일`, `다음 주 화요일`, `next week Tue`, `next Tue` | Weekday in the next Monday-starting week |
 | `이번주 금요일`, `this Fri` | Weekday in the current Monday-starting week |
 | `오전 8시`, `오후 6시 30분`, `7시 반`, `7pm`, `18:30`, `at 7:15 pm` | Local wall-clock time |
+| `7시`, `7:30` (no 오전/오후 or am/pm) | The likelier half of the day: 1–5시 and 12시 are afternoon; 6–11시 is the next one still ahead today, or the morning on another day or for a repeating task. Words such as 저녁, 밤, 아침, 기상 in the title decide it. `07:30` and `19시` are taken as written |
 | `아침`, `새벽`, `낮`, `저녁`, `밤` before an hour, `정오`, `자정`, `noon`, `midnight` | Day period. `밤 12시` is the midnight that ends the given date |
 | `매일`, `매주`, `매주 월수금`, `월요일마다`, `every Mon, Wed`, `every 2 weeks`, `3일마다`, `daily`, `weekly` | Daily or weekly RRULE with optional weekday or interval |
 | `평일마다`, `매주 주말`, `격주`, `every weekday`, `every weekend`, `every other week` | Monday–Friday, Saturday–Sunday, or a two-week interval |
