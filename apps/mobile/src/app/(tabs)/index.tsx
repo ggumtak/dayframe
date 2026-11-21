@@ -34,6 +34,10 @@ export default function Today() {
   // Bucketed on every render: `useMinute` re-renders this screen when the date rolls over.
   const overdue = tasks.filter((task) => dueBucket(task) === 'overdue').sort(bySchedule);
   const due = tasks.filter((task) => dueBucket(task) === 'today').sort(bySchedule);
+  const remaining = overdue.length + due.length;
+  const summary = overdue.length && due.length
+    ? `지연 ${overdue.length} · 오늘 ${due.length}`
+    : remaining ? `${remaining}개 남음` : '남은 일 없음';
 
   const refresh = async () => {
     setRefreshing(true);
@@ -55,7 +59,7 @@ export default function Today() {
   return (
     <Screen>
       <Header
-        title="오늘" subtitle={`${date.month}월 ${date.day}일 ${weekdayName(date)}요일 · ${due.length ? due.length + '개 남음' : '남은 일 없음'}`}
+        title="오늘" subtitle={`${date.month}월 ${date.day}일 ${weekdayName(date)}요일 · ${summary}`}
         right={(
           <View style={{ flexDirection: 'row' }}>
             <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />

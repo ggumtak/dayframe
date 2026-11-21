@@ -1,11 +1,11 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { Button, Card, Chip, Header, Icon, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
-import { useFocusActions, useFocusSessions } from '@/data/focus';
+import { useDeleteFocus, useFocusActions, useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
@@ -40,10 +40,12 @@ export default function Focus() {
   const { data: habits } = useHabits();
   const { tasks, byId } = useTaskIndex();
   const actions = useFocusActions();
+  const deleteFocus = useDeleteFocus();
   const flow = useTaskFlow();
   const [chosen, setChosen] = useState<number | null>(null);
   const [target, setTarget] = useState<Target>(null);
   const [picking, setPicking] = useState(false);
+  const [pickedRecord, setPickedRecord] = useState<FocusSession | null>(null);
   const [rest, setRest] = useState<{ endsAt: number; seconds: number; long: boolean } | null>(null);
   const breakEndsAt = rest?.endsAt ?? null;
   const [now, setNow] = useState(() => Date.now());
@@ -240,7 +242,10 @@ export default function Focus() {
               const started = Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone);
               const seconds = session.ended_at ? (new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 1000 : 0;
               return (
-                <View key={session.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                <Pressable
+                  key={session.id} accessibilityRole="button" accessibilityLabel={(nameOf(session) ?? '자유 집중') + ' 기록 보기'}
+                  onPress={() => setPickedRecord(session)}
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, opacity: pressed ? 0.6 : 1 })}>
                   <Icon
                     name={session.status === 'completed' ? 'check-circle' : 'x-circle'} size={18}
                     color={session.status === 'completed' ? colors.success : colors.textFaint} />
@@ -251,7 +256,7 @@ export default function Focus() {
                     </Txt>
                   </View>
                   <Txt variant="smallStrong" tone={session.status === 'completed' ? 'default' : 'faint'}>{formatMinutes(seconds)}</Txt>
-                </View>
+                </Pressable>
               );
             })}
           </Card>
@@ -282,6 +287,29 @@ export default function Focus() {
             <Txt tone="muted" style={{ paddingVertical: space.lg }}>오늘 할 일이나 습관이 있으면 여기에서 연결할 수 있습니다.</Txt>
           ) : null}
         </ScrollView>
+      </Sheet>
+      <Sheet visible={!!pickedRecord} onClose={() => setPickedRecord(null)} title="집중 기록">
+        {pickedRecord ? (() => {
+          const started = Temporal.Instant.from(pickedRecord.started_at).toZonedDateTimeISO(timeZone);
+          const seconds = pickedRecord.ended_at
+            ? (new Date(pickedRecord.ended_at).getTime() - new Date(pickedRecord.started_at).getTime()) / 1000 : 0;
+          return (
+            <View style={{ gap: space.sm }}>
+              <Txt variant="bodyStrong">{nameOf(pickedRecord) ?? '자유 집중'}</Txt>
+              <Txt tone="muted" style={{ marginBottom: space.md }}>
+                {`${started.month}월 ${started.day}일 ${formatTime(started.hour * 60 + started.minute)} · ${formatMinutes(seconds)}`}
+              </Txt>
+              <Button
+                label="이 기록 삭제" kind="danger" icon="trash-2"
+                onPress={() => {
+                  deleteFocus.mutate(pickedRecord.id);
+                  setPickedRecord(null);
+                  showToast('집중 기록을 지웠습니다.');
+                }} />
+              <Button label="닫기" kind="secondary" onPress={() => setPickedRecord(null)} />
+            </View>
+          );
+        })() : null}
       </Sheet>
     </Screen>
   );

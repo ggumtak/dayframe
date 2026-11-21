@@ -5,9 +5,10 @@ import { cancelHabitAlert, cancelOccurrence } from '@/features/reminders/cancel'
 import { completeOccurrence } from '@/features/reminders/complete';
 import { cancelAlert, scheduleAlert } from '@/lib/alerts';
 import { ApiFailure, api } from '@/lib/api';
-import { deviceTimeZone } from '@/lib/dates';
+import { deviceTimeZone, today as localToday } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
-import type { Task } from '@/lib/shared';
+import { countByDate } from '@/lib/occurrences';
+import { nextOccurrence, type Task } from '@/lib/shared';
 
 import {
   CALENDAR_RANGE, calendarGrid, focusState, habitToday, snapshotTasks, upcomingRows, type WidgetFocus, type WidgetHabit, type WidgetSnapshot, widgetDate, widgetRows,
@@ -108,8 +109,12 @@ async function fetched(snapshot: WidgetSnapshot): Promise<WidgetSnapshot> {
     const tasks = await Promise.race([
       api.openTasks(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
     ]);
+    const month = localToday(deviceTimeZone()).toPlainYearMonth();
+    const end = month.add({ months: CALENDAR_RANGE.ahead });
+    const calendar = countByDate(tasks, month.subtract({ months: CALENDAR_RANGE.back }).toPlainDate({ day: 1 }),
+      end.toPlainDate({ day: end.daysInMonth }), nextOccurrence);
     // Merged into the newest snapshot: a tap made during the fetch is kept.
-    return await update((current) => ({ ...current, notice: null, tasks: snapshotTasks(tasks, Date.now()) }));
+    return await update((current) => ({ ...current, notice: null, tasks: snapshotTasks(tasks, Date.now()), calendar }));
   } catch {
     return snapshot;
   }
@@ -233,7 +238,8 @@ export const widgetTaskHandler: WidgetTaskHandler = async ({ widgetInfo, widgetA
   }
   let snapshot = await readSnapshot();
   renderWidget(drawWidget(name, snapshot));
-  if ((widgetAction === 'WIDGET_UPDATE' || widgetAction === 'WIDGET_ADDED') && (name === WIDGETS.today || name === WIDGETS.upcoming)) {
+  if ((widgetAction === 'WIDGET_UPDATE' || widgetAction === 'WIDGET_ADDED')
+    && (name === WIDGETS.today || name === WIDGETS.upcoming || name === WIDGETS.calendar)) {
     snapshot = await fetched(snapshot);
     renderWidget(drawWidget(name, snapshot));
   }

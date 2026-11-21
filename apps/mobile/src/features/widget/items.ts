@@ -152,6 +152,27 @@ export function focusState(focus: WidgetFocus | null | undefined, now: number, t
 /** How far the calendar widget may move from this month: the range the app counts tasks for. */
 export const CALENDAR_RANGE = { back: 1, ahead: 2 } as const;
 
+/** Updates cached calendar day counts after a task is completed or rescheduled outside the app. */
+export function adjustCalendar(
+  calendar: Record<string, number> | undefined,
+  previous: Pick<WidgetTask, 'due_at' | 'timezone'> | undefined,
+  next: Pick<WidgetTask, 'due_at' | 'timezone' | 'recurrence_rule'> | null,
+): Record<string, number> | undefined {
+  if (!calendar) return calendar;
+  const oldDay = previous?.due_at ? Temporal.Instant.from(previous.due_at).toZonedDateTimeISO(previous.timezone).toPlainDate().toString() : null;
+  const newDay = next?.due_at ? Temporal.Instant.from(next.due_at).toZonedDateTimeISO(next.timezone).toPlainDate().toString() : null;
+  // A repeating task's future occurrences were already counted in `calendar`; only its finished day leaves.
+  const addNew = newDay && newDay !== oldDay && !next?.recurrence_rule;
+  if (!oldDay && !addNew) return calendar;
+  const updated = { ...calendar };
+  if (oldDay && oldDay !== newDay && (updated[oldDay] ?? 0) > 0) {
+    if (updated[oldDay] <= 1) delete updated[oldDay];
+    else updated[oldDay] -= 1;
+  }
+  if (addNew) updated[newDay] = (updated[newDay] ?? 0) + 1;
+  return updated;
+}
+
 export interface CalendarCell { date: string; day: number; today: boolean; count: number; weekend: boolean }
 
 /** A Monday-first month grid for the calendar widget, with empty cells as null. */

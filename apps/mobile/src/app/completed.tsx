@@ -5,7 +5,6 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 
 import { Checkbox } from '@/components/Checkbox';
 import { Button, EmptyState, Header, IconButton, Loading, Screen, SectionTitle, Txt } from '@/components/ui';
-import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
 import { useProjects, useTaskActions } from '@/data/tasks';
 import { api } from '@/lib/api';
@@ -44,7 +43,6 @@ export default function Completed() {
     setReopened((current) => new Set(current).add(task.id));
     actions.reopen(task);
     showToast(`‘${task.title}’을 다시 할 일로 되돌렸습니다.`);
-    void queryClient.invalidateQueries({ queryKey: keys.completedTasks });
   };
 
   return (

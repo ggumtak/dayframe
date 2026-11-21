@@ -3,16 +3,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Card, Chip, EmptyState, Icon, IconButton, Loading, Screen, SectionTitle, Txt } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, Icon, IconButton, Loading, Row, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
 import { attachTagByName, useProjects, useTags, useTaskIndex, useTaskTags } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { parseErrorMessage } from '@/features/quick-add/messages';
 import { TaskReminderChips } from '@/features/reminders/ReminderChips';
 import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
-import { useTaskFlow } from '@/features/tasks/useTaskFlow';
+import { localTimeString, useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { errorMessage } from '@/lib/api';
-import { describeRecurrence, formatDue, isPastDue } from '@/lib/dates';
+import { describeRecurrence, dueMinutes, formatDue, instantFor, isPastDue, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { analyzeTask, type Priority, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -20,6 +20,17 @@ import { priorityColor, radius, space, type, useTheme } from '@/theme';
 
 const PLACEHOLDER = '⁣';
 const priorities: Priority[] = [1, 2, 3, 4];
+const repeatOptions: { rule: string | null; label: string; detail?: string }[] = [
+  { rule: null, label: '반복 없음' },
+  { rule: 'FREQ=DAILY', label: '매일' },
+  { rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: '평일', detail: '월–금' },
+  { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', label: '주말', detail: '토–일' },
+  { rule: 'FREQ=WEEKLY', label: '매주' },
+  { rule: 'FREQ=WEEKLY;INTERVAL=2', label: '격주' },
+  { rule: 'FREQ=MONTHLY', label: '매월' },
+  { rule: 'FREQ=MONTHLY;BYMONTHDAY=-1', label: '매월 말일' },
+  { rule: 'FREQ=YEARLY', label: '매년' },
+];
 
 export default function TaskDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -52,6 +63,7 @@ function TaskEditor({ task }: { task: Task }) {
   const [when, setWhen] = useState('');
   const [newTag, setNewTag] = useState('');
   const [calendar, setCalendar] = useState(false);
+  const [pickingRepeat, setPickingRepeat] = useState(false);
   const [done, setDone] = useState(false);
 
   const schedule = useMemo(() => {
@@ -64,7 +76,7 @@ function TaskEditor({ task }: { task: Task }) {
       if (!parsed.due_at) return { error: '날짜나 시간을 찾지 못했습니다.' };
       const patch: TaskPatch = {
         due_at: parsed.due_at, all_day: parsed.all_day, recurrence_rule: parsed.recurrence_rule,
-        ...(parsed.recurrence_local_time ? { recurrence_local_time: parsed.recurrence_local_time } : {}),
+        recurrence_local_time: parsed.recurrence_local_time ?? null,
       };
       const label = [formatDue({ due_at: parsed.due_at, all_day: parsed.all_day, timezone: task.timezone }),
         describeRecurrence(parsed.recurrence_rule)].filter(Boolean).join(' · ');
@@ -115,6 +127,20 @@ function TaskEditor({ task }: { task: Task }) {
     } catch (error) {
       showToast(errorMessage(error), { tone: 'error' });
     }
+  };
+  const applyRepeat = (rule: string | null) => {
+    setPickingRepeat(false);
+    if (rule === task.recurrence_rule) return;
+    if (!rule) {
+      flow.update(task.id, { recurrence_rule: null, recurrence_local_time: null });
+      return;
+    }
+    const minutes = dueMinutes(task);
+    const patch: TaskPatch = task.due_at
+      ? { recurrence_rule: rule, recurrence_local_time: task.all_day || minutes === null ? null : localTimeString(minutes) }
+      : { due_at: instantFor(today(task.timezone), null, task.timezone), all_day: true, recurrence_rule: rule, recurrence_local_time: null };
+    flow.update(task.id, patch);
+    haptic.tap();
   };
   const complete = () => {
     if (done) return;
@@ -170,7 +196,9 @@ function TaskEditor({ task }: { task: Task }) {
               <Chip
                 icon="calendar" label={due ?? '날짜 없음'} color={due ? (isPastDue(task) ? colors.danger : colors.success) : undefined}
                 onPress={() => setCalendar(true)} />
-              {repeat ? <Chip icon="repeat" label={repeat} color={colors.info} /> : null}
+              <Chip
+                icon="repeat" label={repeat ?? '반복 추가'} color={repeat ? colors.info : undefined}
+                selected={!!repeat} onPress={() => setPickingRepeat(true)} />
               {due ? <Chip icon="x" label="일정 지우기" onPress={() => flow.reschedule(task, null)} /> : null}
             </View>
             <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
@@ -273,6 +301,19 @@ function TaskEditor({ task }: { task: Task }) {
         </ScrollView>
       </KeyboardAvoidingView>
       <ScheduleSheet task={calendar ? task : null} onClose={() => setCalendar(false)} onPick={flow.reschedule} />
+      <Sheet visible={pickingRepeat} onClose={() => setPickingRepeat(false)} title="반복">
+        <ScrollView style={{ maxHeight: 380 }}>
+          {repeatOptions.map((item) => {
+            const active = task.recurrence_rule === item.rule;
+            return (
+              <Row
+                key={item.label} icon={item.rule ? 'repeat' : 'slash'} label={item.label} detail={item.detail}
+                trailing={active ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+                onPress={() => applyRepeat(item.rule)} />
+            );
+          })}
+        </ScrollView>
+      </Sheet>
     </Screen>
   );
 }
