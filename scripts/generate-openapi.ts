@@ -47,13 +47,15 @@ const schemas: Record<string, object> = {
     ended_at: nullable(stamp), planned_seconds: int, status: enumOf("running", "completed", "cancelled") }),
   AppVersion: obj({ latestVersion: str, versionCode: int, minSupportedVersion: str,
     releaseNotes: str, apkDownloadUrl: uri, iosStoreOrTestFlightUrl: nullable(uri) }),
+  McpConnection: obj({ id: uuid, label: str, created_at: stamp, last_used_at: nullable(stamp) }),
+  NewMcpConnection: obj({ id: uuid, label: str, created_at: stamp, last_used_at: nullable(stamp), url: uri }),
   ApiError: obj({ error: obj({ code: str, message: str, fields: array(str) }, ["code", "message"]) }),
 };
 const inputs = {
   UserPatch: v.userPatch, ProjectInput: v.project, ProjectPatch: v.project.partial(), SectionInput: v.section,
   SectionPatch: v.project.partial(), TagInput: v.tag, TaskInput: v.task, TaskPatch: v.taskPatch, ParseTaskInput: v.parse,
   CompleteTaskInput: v.complete, HabitInput: v.habit, HabitPatch: v.habitPatch, HabitLogInput: v.log,
-  FocusInput: v.focus, FinishFocusInput: v.finish,
+  FocusInput: v.focus, FinishFocusInput: v.finish, McpConnectionInput: v.mcpConnection,
 };
 for (const [name, input] of Object.entries(inputs)) {
   const { $schema: _dialect, ...jsonSchema } = z.toJSONSchema(input, { io: "input" });
@@ -76,6 +78,7 @@ const tags = {
   Tasks: "Task trees, parsing, completion and rescheduling.",
   Habits: "Habit schedules, progress logs and statistics.",
   Focus: "Pomodoro and focus session history.",
+  Assistants: "Connections that let an AI assistant act on the account through the Model Context Protocol.",
   Releases: "Public mobile update metadata.",
 };
 
@@ -165,6 +168,12 @@ operation("/habits/{id}/logs/{date}", "delete", "deleteHabitLog", "Delete a habi
 resource("/focus-sessions", "FocusSession", "focus session", "Focus", { input: "FocusInput", remove: true });
 operation("/focus-sessions/{id}/finish", "post", "finishFocusSession", "Complete or cancel a focus session", "Focus",
   { input: "FinishFocusInput", result: "FocusSession", parameters: [id] });
+operation("/mcp-connections", "get", "listMcpConnections", "List AI assistant connections", "Assistants", { result: paged("McpConnection") });
+operation("/mcp-connections", "post", "createMcpConnection", "Create an AI assistant connection", "Assistants",
+  { input: "McpConnectionInput", result: "NewMcpConnection", status: 201,
+    description: "Returns the connection URL once. Anyone holding that URL can read and change the account, so treat it as a password. At most five per account." });
+operation("/mcp-connections/{id}", "delete", "deleteMcpConnection", "Remove an AI assistant connection", "Assistants",
+  { status: 204, parameters: [id], description: "The connection's URL stops working immediately." });
 operation("/app/version", "get", "getAppVersion", "Read published Android update metadata", "Releases",
   { result: "AppVersion", anonymous: true, description: "Selects the highest published Android build number. Returns 404 until a release is published." });
 

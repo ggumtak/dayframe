@@ -54,3 +54,4 @@ export const focus = z.strictObject({
 export const finish = z.strictObject({
   status: z.enum(["completed", "cancelled"]), ended_at: instant.optional(),
 });
+export const mcpConnection = z.strictObject({ label: z.string().trim().min(1).max(60).optional() });

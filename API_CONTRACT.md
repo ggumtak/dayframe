@@ -75,6 +75,23 @@ Stats use periods through the optional inclusive `through=YYYY-MM-DD`, capped at
 
 POST `/focus-sessions` to start a session. Omit `started_at` for server time. The default plan is 1,500 seconds. `task_id` or `habit_id` may link the session to one resource. Each user can have one running session. POST `/focus-sessions/{id}/finish` with `{"status":"completed"}` or `{"status":"cancelled"}`. Pass `ended_at` for an offline finish. Retrying the same terminal status returns the stored session when no conflicting end time is supplied. GET `/focus-sessions` or `/focus-sessions/{id}` for history. DELETE the item to remove it.
 
+## AI assistants
+
+`POST /mcp-connections` with an optional `{"label":"Claude"}` creates a connection and returns it with a `url`. `GET /mcp-connections` lists connections with `label`, `created_at` and `last_used_at`. `DELETE /mcp-connections/{id}` removes one. An account can hold five.
+
+The `url` has the form `/functions/v1/api/mcp/<token>` and is shown only in the creation response; the server keeps a hash. It is a [Model Context Protocol](https://modelcontextprotocol.io) endpoint over Streamable HTTP with JSON replies. Add it to an assistant as a custom connector with no sign-in. The token in the path is the only credential, so anyone holding the URL can read, change and delete the account's tasks and habits until the connection is removed.
+
+| Tool | Behavior |
+| --- | --- |
+| `list_tasks`, `list_projects`, `list_habits` | Read tasks by view (`today`, `overdue`, `upcoming`, `inbox`, `all`), names of projects and tags, and habits with today's progress and streak |
+| `add_task` | Quick-entry text, as in `/tasks/parse`, with optional notes and parent task. Missing projects and tags are created |
+| `update_task` | Title, notes, priority, project, and a natural-language `schedule` or `clear_schedule` |
+| `complete_task`, `reopen_task`, `move_overdue_to_today` | Same behavior as the REST routes |
+| `delete_task`, `remove_habit` | Permanent deletion (or archiving a habit); marked destructive |
+| `add_habit`, `log_habit` | Create a habit, or set, skip, freeze or clear one day's entry |
+
+Each tool call runs through the REST routes with a session for the connection's owner, so validation and row-level security are the same as for the app.
+
 ## App updates
 
 `GET /app/version` returns `latestVersion`, `versionCode`, `minSupportedVersion`, `releaseNotes`, `apkDownloadUrl`, and `iosStoreOrTestFlightUrl`. A `404` before the first publication means no release metadata is available. Cache successful checks for up to 60 seconds. Compare the Android integer `versionCode` for APK upgrades and compare semantic version components numerically for the minimum supported version.

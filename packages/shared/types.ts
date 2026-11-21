@@ -124,5 +124,14 @@ export interface AppVersion {
   apkDownloadUrl: string;
   iosStoreOrTestFlightUrl: string | null;
 }
+/** An AI assistant's access to the account. `url` is returned once, when the connection is created. */
+export interface McpConnection {
+  id: UUID;
+  label: string;
+  created_at: Instant;
+  last_used_at: Instant | null;
+}
+export interface McpConnectionInput { label?: string }
+export type NewMcpConnection = McpConnection & { url: string };
 export interface Page<T> { items: T[]; nextOffset: number | null }
 export interface ApiError { error: { code: string; message: string; fields?: string[] } }
