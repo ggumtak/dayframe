@@ -1029,7 +1029,7 @@ paths:
         - *a2
         - *a3
         - *a5
-        - &a6
+        - &a7
           name: parent_task_id
           in: query
           schema:
@@ -1037,7 +1037,7 @@ paths:
               - *a4
               - const: root
           description: Direct parent UUID, or root for top-level tasks.
-        - &a7
+        - &a8
           name: state
           in: query
           schema:
@@ -1045,6 +1045,18 @@ paths:
               - open
               - completed
           description: Filter by completion state.
+        - &a9
+          name: due_from
+          in: query
+          schema: &a6
+            type: string
+            format: date-time
+          description: Inclusive start of the due-time window. Excludes unscheduled tasks.
+        - &a10
+          name: due_before
+          in: query
+          schema: *a6
+          description: Exclusive end of the due-time window. Excludes unscheduled tasks.
       responses:
         "200":
           description: Successful response.
@@ -1328,8 +1340,10 @@ paths:
       parameters:
         - *a2
         - *a3
-        - *a6
         - *a7
+        - *a8
+        - *a9
+        - *a10
       responses:
         "200":
           description: Successful response.
@@ -1430,7 +1444,8 @@ paths:
       summary: Preview a task from Korean or English text
       tags:
         - Tasks
-      description: "Returns a preview without persisting it. Use #project and @tag, and quote names that contain spaces."
+      description: "Previews daily, weekly, monthly and yearly schedules, including monthly on the last day. Use #project
+        and @tag, and quote names that contain spaces."
       requestBody:
         required: true
         content:
@@ -1725,7 +1740,7 @@ paths:
         - Tasks
       parameters:
         - *a1
-        - &a8
+        - &a11
           name: tagId
           in: path
           required: true
@@ -1777,7 +1792,7 @@ paths:
         - Tasks
       parameters:
         - *a1
-        - *a8
+        - *a11
       responses:
         "204":
           description: No response body.
@@ -2167,7 +2182,7 @@ paths:
         - *a1
         - name: through
           in: query
-          schema: &a9
+          schema: &a12
             type: string
             format: date
           description: Inclusive habit-local cutoff date. Defaults to today.
@@ -2276,11 +2291,11 @@ paths:
       description: Replaces the daily total, including when retried.
       parameters:
         - *a1
-        - &a10
+        - &a13
           name: date
           in: path
           required: true
-          schema: *a9
+          schema: *a12
           description: Habit-local log date.
       requestBody:
         required: true
@@ -2350,7 +2365,7 @@ paths:
         - Habits
       parameters:
         - *a1
-        - *a10
+        - *a13
       responses:
         "204":
           description: No response body.
@@ -2879,13 +2894,11 @@ components:
         id: *a4
         display_name:
           anyOf:
-            - &a11
+            - &a14
               type: string
             - type: "null"
-        timezone: *a11
-        created_at: &a12
-          type: string
-          format: date-time
+        timezone: *a14
+        created_at: *a6
       required:
         - id
         - display_name
@@ -2897,9 +2910,9 @@ components:
       properties:
         id: *a4
         user_id: *a4
-        created_at: *a12
-        name: *a11
-        position: &a13
+        created_at: *a6
+        name: *a14
+        position: &a15
           type: integer
       required:
         - id
@@ -2913,9 +2926,9 @@ components:
       properties:
         id: *a4
         user_id: *a4
-        created_at: *a12
-        name: *a11
-        position: *a13
+        created_at: *a6
+        name: *a14
+        position: *a15
         project_id: *a4
       required:
         - id
@@ -2930,8 +2943,8 @@ components:
       properties:
         id: *a4
         user_id: *a4
-        created_at: *a12
-        name: *a11
+        created_at: *a6
+        name: *a14
       required:
         - id
         - user_id
@@ -2943,7 +2956,7 @@ components:
       properties:
         id: *a4
         user_id: *a4
-        created_at: *a12
+        created_at: *a6
         project_id:
           anyOf:
             - *a4
@@ -2956,42 +2969,42 @@ components:
           anyOf:
             - *a4
             - type: "null"
-        title: *a11
-        notes: &a14
+        title: *a14
+        notes: &a16
           anyOf:
-            - *a11
+            - *a14
             - type: "null"
-        priority: &a15
+        priority: &a17
           enum:
             - 1
             - 2
             - 3
             - 4
-        position: *a13
-        due_at: &a16
+        position: *a15
+        due_at: &a18
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
-        all_day: &a17
+        all_day: &a19
           type: boolean
-        timezone: *a11
-        recurrence_rule: &a18
+        timezone: *a14
+        recurrence_rule: &a20
           anyOf:
-            - *a11
+            - *a14
             - type: "null"
-        recurrence_anchor_at: &a19
+        recurrence_anchor_at: &a21
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
-        recurrence_local_time: &a20
+        recurrence_local_time: &a22
           anyOf:
-            - *a11
+            - *a14
             - type: "null"
-        completed_at: &a21
+        completed_at: &a23
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
-        updated_at: *a12
+        updated_at: *a6
       required:
         - id
         - user_id
@@ -3017,24 +3030,24 @@ components:
       properties:
         id: *a4
         user_id: *a4
-        created_at: *a12
+        created_at: *a6
         project_id:
           type: "null"
         section_id:
           type: "null"
         parent_task_id: *a4
-        title: *a11
-        notes: *a14
-        priority: *a15
-        position: *a13
-        due_at: *a16
-        all_day: *a17
-        timezone: *a11
-        recurrence_rule: *a18
-        recurrence_anchor_at: *a19
-        recurrence_local_time: *a20
-        completed_at: *a21
-        updated_at: *a12
+        title: *a14
+        notes: *a16
+        priority: *a17
+        position: *a15
+        due_at: *a18
+        all_day: *a19
+        timezone: *a14
+        recurrence_rule: *a20
+        recurrence_anchor_at: *a21
+        recurrence_local_time: *a22
+        completed_at: *a23
+        updated_at: *a6
       required:
         - id
         - user_id
@@ -3071,10 +3084,10 @@ components:
       properties:
         task:
           $ref: "#/components/schemas/Task"
-        completed_at: *a12
+        completed_at: *a6
         occurrence_due_at:
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
       required:
         - task
@@ -3084,28 +3097,28 @@ components:
     ParsedTask:
       type: object
       properties:
-        title: *a11
+        title: *a14
         due_at:
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
-        all_day: *a17
-        timezone: *a11
+        all_day: *a19
+        timezone: *a14
         recurrence_rule:
           anyOf:
-            - *a11
+            - *a14
             - type: "null"
         recurrence_local_time:
           anyOf:
-            - *a11
+            - *a14
             - type: "null"
         project:
           anyOf:
-            - *a11
+            - *a14
             - type: "null"
         tags:
           type: array
-          items: *a11
+          items: *a14
         priority:
           enum:
             - 1
@@ -3137,18 +3150,18 @@ components:
       properties:
         id: *a4
         user_id: *a4
-        created_at: *a12
-        name: *a11
+        created_at: *a6
+        name: *a14
         cadence:
           enum:
             - daily
             - weekly
-        target_count: *a13
-        timezone: *a11
-        start_date: *a9
+        target_count: *a15
+        timezone: *a14
+        start_date: *a12
         archived_at:
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
       required:
         - id
@@ -3166,14 +3179,14 @@ components:
       properties:
         user_id: *a4
         habit_id: *a4
-        log_date: *a9
+        log_date: *a12
         status:
           enum:
             - completed
             - frozen
             - skipped
-        count: *a13
-        created_at: *a12
+        count: *a15
+        created_at: *a6
       required:
         - user_id
         - habit_id
@@ -3185,18 +3198,18 @@ components:
     HabitStats:
       type: object
       properties:
-        as_of: *a9
-        current_streak: *a13
-        longest_streak: *a13
-        completed_periods: *a13
-        evaluated_periods: *a13
+        as_of: *a12
+        current_streak: *a15
+        longest_streak: *a15
+        completed_periods: *a15
+        evaluated_periods: *a15
         completion_rate:
           anyOf:
             - type: number
               minimum: 0
               maximum: 1
             - type: "null"
-        current_period_count: *a13
+        current_period_count: *a15
       required:
         - as_of
         - current_streak
@@ -3211,7 +3224,7 @@ components:
       properties:
         id: *a4
         user_id: *a4
-        created_at: *a12
+        created_at: *a6
         task_id:
           anyOf:
             - *a4
@@ -3220,12 +3233,12 @@ components:
           anyOf:
             - *a4
             - type: "null"
-        started_at: *a12
+        started_at: *a6
         ended_at:
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
-        planned_seconds: *a13
+        planned_seconds: *a15
         status:
           enum:
             - running
@@ -3245,16 +3258,16 @@ components:
     AppVersion:
       type: object
       properties:
-        latestVersion: *a11
-        versionCode: *a13
-        minSupportedVersion: *a11
-        releaseNotes: *a11
-        apkDownloadUrl: &a22
+        latestVersion: *a14
+        versionCode: *a15
+        minSupportedVersion: *a14
+        releaseNotes: *a14
+        apkDownloadUrl: &a24
           type: string
           format: uri
         iosStoreOrTestFlightUrl:
           anyOf:
-            - *a22
+            - *a24
             - type: "null"
       required:
         - latestVersion
@@ -3268,11 +3281,11 @@ components:
       type: object
       properties:
         id: *a4
-        label: *a11
-        created_at: *a12
+        label: *a14
+        created_at: *a6
         last_used_at:
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
       required:
         - id
@@ -3284,13 +3297,13 @@ components:
       type: object
       properties:
         id: *a4
-        label: *a11
-        created_at: *a12
+        label: *a14
+        created_at: *a6
         last_used_at:
           anyOf:
-            - *a12
+            - *a6
             - type: "null"
-        url: *a22
+        url: *a24
       required:
         - id
         - label
@@ -3304,11 +3317,11 @@ components:
         error:
           type: object
           properties:
-            code: *a11
-            message: *a11
+            code: *a14
+            message: *a14
             fields:
               type: array
-              items: *a11
+              items: *a14
           required:
             - code
             - message
@@ -3471,67 +3484,89 @@ components:
         - title
       additionalProperties: false
     TaskPatch:
-      type: object
-      properties:
-        project_id:
-          anyOf:
-            - type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            - type: "null"
-        section_id:
-          anyOf:
-            - type: string
-              format: uuid
-              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-            - type: "null"
-        title:
-          type: string
-          minLength: 1
-          maxLength: 500
-        notes:
-          anyOf:
-            - type: string
-              maxLength: 10000
-            - type: "null"
-        priority:
-          anyOf:
-            - type: number
-              const: 1
-            - type: number
-              const: 2
-            - type: number
-              const: 3
-            - type: number
-              const: 4
-        position:
-          type: integer
-          minimum: -2147483648
-          maximum: 2147483647
-        due_at:
-          anyOf:
-            - type: string
+      anyOf:
+        - type: object
+          properties:
+            project_id:
+              anyOf:
+                - type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                - type: "null"
+            section_id:
+              anyOf:
+                - type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                - type: "null"
+            title:
+              type: string
+              minLength: 1
+              maxLength: 500
+            notes:
+              anyOf:
+                - type: string
+                  maxLength: 10000
+                - type: "null"
+            priority:
+              anyOf:
+                - type: number
+                  const: 1
+                - type: number
+                  const: 2
+                - type: number
+                  const: 3
+                - type: number
+                  const: 4
+            position:
+              type: integer
+              minimum: -2147483648
+              maximum: 2147483647
+            due_at:
+              anyOf:
+                - type: string
+                  format: date-time
+                  pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+                - type: "null"
+            all_day:
+              type: boolean
+            timezone:
+              type: string
+              maxLength: 100
+              pattern: ^[A-Za-z][A-Za-z0-9_+/-]*$
+            recurrence_local_time:
+              anyOf:
+                - type: string
+                  format: time
+                  pattern: ^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$
+                - type: "null"
+            recurrence_rule:
+              anyOf:
+                - type: string
+                  maxLength: 100
+                - type: "null"
+          additionalProperties: false
+        - type: object
+          properties:
+            preserve_recurrence:
+              description: Move only the current occurrence.
+              type: boolean
+              const: true
+            expected_due_at:
+              description: Current occurrence's due time.
+              type: string
               format: date-time
               pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
-            - type: "null"
-        all_day:
-          type: boolean
-        timezone:
-          type: string
-          maxLength: 100
-          pattern: ^[A-Za-z][A-Za-z0-9_+/-]*$
-        recurrence_local_time:
-          anyOf:
-            - type: string
-              format: time
-              pattern: ^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$
-            - type: "null"
-        recurrence_rule:
-          anyOf:
-            - type: string
-              maxLength: 100
-            - type: "null"
-      additionalProperties: false
+            due_at:
+              description: New due time for the occurrence.
+              type: string
+              format: date-time
+              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$
+          required:
+            - preserve_recurrence
+            - expected_due_at
+            - due_at
+          additionalProperties: false
     ParseTaskInput:
       type: object
       properties:
@@ -3686,7 +3721,7 @@ components:
             $ref: "#/components/schemas/Project"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3701,7 +3736,7 @@ components:
             $ref: "#/components/schemas/Section"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3716,7 +3751,7 @@ components:
             $ref: "#/components/schemas/Tag"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3731,7 +3766,7 @@ components:
             $ref: "#/components/schemas/Task"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3746,7 +3781,7 @@ components:
             $ref: "#/components/schemas/Subtask"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3761,7 +3796,7 @@ components:
             $ref: "#/components/schemas/TaskTag"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3776,7 +3811,7 @@ components:
             $ref: "#/components/schemas/Habit"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3791,7 +3826,7 @@ components:
             $ref: "#/components/schemas/HabitLog"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3806,7 +3841,7 @@ components:
             $ref: "#/components/schemas/FocusSession"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items
@@ -3821,7 +3856,7 @@ components:
             $ref: "#/components/schemas/McpConnection"
         nextOffset:
           anyOf:
-            - *a13
+            - *a15
             - type: "null"
       required:
         - items

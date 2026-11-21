@@ -71,6 +71,10 @@ const page = [query("limit", { ...int, minimum: 1, maximum: 100, default: 50 }, 
 const projectId = query("project_id", uuid, "Direct project assignment.");
 const parent = query("parent_task_id", { anyOf: [uuid, { const: "root" }] }, "Direct parent UUID, or root for top-level tasks.");
 const state = query("state", enumOf("open", "completed"), "Filter by completion state.");
+const dueWindow = [
+  query("due_from", stamp, "Inclusive start of the due-time window. Excludes unscheduled tasks."),
+  query("due_before", stamp, "Exclusive end of the due-time window. Excludes unscheduled tasks."),
+];
 const paths: Record<string, Record<string, object>> = {};
 const tags = {
   Account: "Profile and default time zone.",
@@ -139,10 +143,12 @@ operation("/me", "patch", "updateMe", "Update your profile", "Account", { input:
 resource("/projects", "Project", "project", "Organization", { input: "ProjectInput", patch: "ProjectPatch", remove: true });
 resource("/sections", "Section", "section", "Organization", { input: "SectionInput", patch: "SectionPatch", remove: true, filters: [projectId] });
 resource("/tags", "Tag", "tag", "Organization", { input: "TagInput", patch: "TagInput", remove: true });
-resource("/tasks", "Task", "task", "Tasks", { input: "TaskInput", patch: "TaskPatch", remove: true, filters: [projectId, parent, state] });
-resource("/subtasks", "Subtask", "subtask", "Tasks", { filters: [parent, state] });
+resource("/tasks", "Task", "task", "Tasks", { input: "TaskInput", patch: "TaskPatch", remove: true,
+  filters: [projectId, parent, state, ...dueWindow] });
+resource("/subtasks", "Subtask", "subtask", "Tasks", { filters: [parent, state, ...dueWindow] });
 operation("/tasks/parse", "post", "parseTask", "Preview a task from Korean or English text", "Tasks",
-  { input: "ParseTaskInput", result: "ParsedTask", description: "Returns a preview without persisting it. Use #project and @tag, and quote names that contain spaces." });
+  { input: "ParseTaskInput", result: "ParsedTask",
+    description: "Previews daily, weekly, monthly and yearly schedules, including monthly on the last day. Use #project and @tag, and quote names that contain spaces." });
 operation("/tasks/reschedule-overdue", "post", "rescheduleOverdueTasks", "Move past-date open tasks to today", "Tasks",
   { result: "RescheduleResult", description: "Uses each task's time zone and preserves its local time and recurrence anchor. Returns the number changed." });
 operation("/tasks/{id}/complete", "post", "completeTask", "Complete the current task occurrence", "Tasks",

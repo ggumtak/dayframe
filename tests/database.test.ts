@@ -33,7 +33,8 @@ before(async () => {
       as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to anon, authenticated, service_role;
   `);
-  for (const file of ["20261121000000_core.sql", "20261121000100_operations.sql", "20261122000000_mcp_connections.sql"]) {
+  for (const file of ["20261121000000_core.sql", "20261121000100_operations.sql", "20261122000000_mcp_connections.sql",
+    "20261122000100_calendar_recurrence.sql"]) {
     await db.exec(await readFile(new URL("../supabase/migrations/" + file, import.meta.url), "utf8"));
   }
   await db.query("insert into auth.users values ($1), ($2)", [alice, bob]);
@@ -103,6 +104,20 @@ test("bulk rescheduling is owner-only, uses local dates, and retains anchor/time
   assert.deepEqual(moved.rows, [{ today: true, time: "19:00:00", recurrence_anchor_at: "2001-01-01 10:00:00+00" }]);
   await as("authenticated", bob);
   assert.deepEqual((await db.query("select due_at::text from tasks")).rows, [{ due_at: "2001-01-01 10:00:00+00" }]);
+});
+
+test("calendar repeat rules persist and a one-time move keeps the series anchor and time", async () => {
+  await as("authenticated", alice);
+  await db.query("insert into tasks(title,due_at,timezone,recurrence_rule) values ('Month end','2099-01-31T10:00Z','Asia/Seoul','FREQ=MONTHLY;BYMONTHDAY=-1')");
+  await db.query("insert into tasks(title,due_at,recurrence_rule) values ('Annual','2099-01-31T10:00Z','FREQ=YEARLY;INTERVAL=2')");
+  const moved = await db.query("update tasks set due_at='2099-02-01T10:00Z' where title='Month end' " +
+    "returning due_at::text,recurrence_anchor_at::text,recurrence_local_time::text");
+  assert.deepEqual(moved.rows, [{
+    due_at: "2099-02-01 10:00:00+00", recurrence_anchor_at: "2099-01-31 10:00:00+00", recurrence_local_time: "19:00:00",
+  }]);
+  for (const rule of ["FREQ=YEARLY;BYDAY=MO", "FREQ=WEEKLY;BYMONTHDAY=-1", "FREQ=MONTHLY;INTERVAL=53"]) {
+    await assert.rejects(db.query("update tasks set recurrence_rule=$1 where title='Month end'", [rule]), { code: "23514" });
+  }
 });
 
 test("daily and weekly stats, freeze/skip, upsert and ownership of logs", async () => {

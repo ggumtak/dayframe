@@ -47,9 +47,11 @@ export interface Task extends OwnedRow {
   updated_at: Instant;
 }
 export type Subtask = Task & { parent_task_id: UUID; project_id: null; section_id: null };
-export type TaskPatch = Partial<Pick<Task, "project_id" | "section_id" | "title" | "notes" |
+type TaskFields = Partial<Pick<Task, "project_id" | "section_id" | "title" | "notes" |
   "priority" | "position" | "due_at" | "all_day" | "timezone" | "recurrence_rule" | "recurrence_local_time">>;
-export type TaskInput = TaskPatch & Pick<Task, "title"> & Partial<Pick<Task, "id" | "parent_task_id">>;
+export type TaskPatch = (TaskFields & { preserve_recurrence?: never; expected_due_at?: never })
+  | { due_at: Instant; expected_due_at: Instant; preserve_recurrence: true };
+export type TaskInput = TaskFields & Pick<Task, "title"> & Partial<Pick<Task, "id" | "parent_task_id">>;
 export interface TaskTag { user_id: UUID; task_id: UUID; tag_id: UUID }
 export interface CompleteTaskInput { request_id: UUID; expected_updated_at: Instant }
 export interface TaskCompletion {

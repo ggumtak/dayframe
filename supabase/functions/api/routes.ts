@@ -59,6 +59,18 @@ function filters(table: Resource, params: URLSearchParams): Record<string, strin
     if (state !== null) {
       query.completed_at = validate(z.enum(["open", "completed"]), state) === "open" ? "is.null" : "not.is.null";
     }
+    const from = params.get("due_from");
+    const before = params.get("due_before");
+    if (from !== null || before !== null) {
+      const lower = from === null ? null : Temporal.Instant.from(validate(schema.instant, from));
+      const upper = before === null ? null : Temporal.Instant.from(validate(schema.instant, before));
+      if (lower && upper && Temporal.Instant.compare(lower, upper) >= 0) {
+        throw new ApiProblem(400, "INVALID_INPUT", "due_from must be earlier than due_before");
+      }
+      const bounds = [lower && "due_at.gte." + lower.toString(), upper && "due_at.lt." + upper.toString()];
+      query.and = "(" + bounds.filter(Boolean).join(",") + ")";
+      query.order = "due_at.asc,priority.asc,position.asc,id.asc";
+    }
   }
   return query;
 }
@@ -85,6 +97,18 @@ async function editResource(request: Request, db: Supabase, table: Resource, fil
     case "tags": return update<Tag>(db, table, filter, await readJson(request, schema.tag));
     case "tasks": {
       const patch = requireChanges(await readJson(request, schema.taskPatch));
+      if ("preserve_recurrence" in patch) {
+        const moved = await db.rest<Task[]>(table, {
+          ...filter, due_at: "eq." + patch.expected_due_at, completed_at: "is.null", recurrence_rule: "not.is.null",
+        }, "PATCH", { due_at: patch.due_at }, "return=representation");
+        if (moved.length) return moved[0];
+        const current = onlyResult(await db.rest<Task[]>(table, filter));
+        if (current.recurrence_rule && !current.completed_at && current.due_at &&
+          Temporal.Instant.from(current.due_at).equals(patch.due_at)) {
+          return current;
+        }
+        throw new ApiProblem(409, "STALE_RESOURCE", "This occurrence changed before it could be moved");
+      }
       const anchor = Object.hasOwn(patch, "due_at") ? { recurrence_anchor_at: patch.due_at } : {};
       return update<Task>(db, table, filter, { ...patch, ...anchor });
     }

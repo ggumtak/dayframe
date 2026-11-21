@@ -82,6 +82,35 @@ test("DST disambiguation, anchor recovery, interval and stale occurrence skippin
   assert.throws(() => recurrence("FREQ=WEEKLY;BYDAY=MO,MO"));
 });
 
+test("calendar repetitions use the selected day and recognize Korean and English quick entry", () => {
+  const endOfMonth = parse("매달 말일 오후 6시 장부 정리");
+  assert.equal(endOfMonth.title, "장부 정리");
+  assert.equal(endOfMonth.due_at, "2026-11-30T09:00:00Z");
+  assert.equal(endOfMonth.recurrence_rule, "FREQ=MONTHLY;BYMONTHDAY=-1");
+  assert.equal(parse("매월 31일에 청구서 확인", "2027-02-01T00:00:00Z").due_at, "2027-03-30T15:00:00Z");
+  assert.equal(parse("매년 2월 29일 점검").due_at, "2028-02-28T15:00:00Z");
+  assert.equal(parse("2개월마다 교체").recurrence_rule, "FREQ=MONTHLY;INTERVAL=2");
+  assert.equal(parse("Review every other year").recurrence_rule, "FREQ=YEARLY;INTERVAL=2");
+  assert.equal(parse("Pay rent every 2 months on the last day").recurrence_rule, "FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=-1");
+  assert.equal(parse("Check monthly on the 31st at 7pm", "2027-01-31T11:00:00Z").due_at, "2027-03-31T10:00:00Z");
+  assert.equal(parse("매월 25일 정오 기상 알람 점검").recurrence_local_time, "12:00:00");
+  assert.throws(() => parse("매월 32일 점검"));
+  assert.throws(() => parse("매월 말일 밤 12시 점검"));
+});
+
+test("calendar repeats keep their original day, skip missing dates and retain wall time", () => {
+  const next = (rule: string, anchor: string, after = anchor) =>
+    nextOccurrence(rule, "America/New_York", anchor, Temporal.Instant.from(after), false);
+  assert.equal(next("FREQ=MONTHLY", "2027-01-31T15:00:00Z"), "2027-03-31T14:00:00Z");
+  assert.equal(next("FREQ=MONTHLY;BYMONTHDAY=-1", "2027-01-31T15:00:00Z"), "2027-02-28T15:00:00Z");
+  assert.equal(next("FREQ=MONTHLY;BYMONTHDAY=-1", "2027-01-31T15:00:00Z",
+    "2027-02-28T15:00:00Z"), "2027-03-31T14:00:00Z");
+  assert.equal(next("FREQ=MONTHLY;INTERVAL=3", "2027-01-31T15:00:00Z"), "2027-07-31T14:00:00Z");
+  assert.equal(next("FREQ=YEARLY;INTERVAL=4", "2096-02-29T15:00:00Z"), "2104-02-29T15:00:00Z");
+  assert.throws(() => recurrence("FREQ=YEARLY;BYDAY=MO"));
+  assert.throws(() => recurrence("FREQ=WEEKLY;BYMONTHDAY=-1"));
+});
+
 test("Korean day periods, half hours and particles", () => {
   const local = (text: string) => {
     const due = parse(text).due_at;

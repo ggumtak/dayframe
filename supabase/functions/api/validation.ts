@@ -31,10 +31,14 @@ const taskFields = z.strictObject({
   recurrence_local_time: z.iso.time().nullable().optional(),
   recurrence_rule: z.string().max(100).refine((rule) => {
     try { recurrence(rule); return true; } catch { return false; }
-  }, "Use a supported daily or weekly RRULE").nullable().optional(),
+  }, "Use a supported daily, weekly, monthly or yearly RRULE").nullable().optional(),
 });
 export const task = taskFields.extend({ id, parent_task_id: link });
-export const taskPatch = taskFields.partial();
+export const taskPatch = z.union([taskFields.partial(), z.strictObject({
+  preserve_recurrence: z.literal(true).describe("Move only the current occurrence."),
+  expected_due_at: instant.describe("Current occurrence's due time."),
+  due_at: instant.describe("New due time for the occurrence."),
+})]);
 export const complete = z.strictObject({ request_id: uuid, expected_updated_at: instant });
 export const parse = z.strictObject({ text: z.string().trim().min(1).max(1000), timezone, now: instant.optional() });
 

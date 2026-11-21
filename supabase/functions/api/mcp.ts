@@ -251,7 +251,7 @@ export const tools: Tool[] = [
   {
     name: "add_task", title: "Add a task", annotations: write,
     description: "Adds a task from natural language in Korean or English. Dates (내일, 11월 25일, next Tue), times (저녁 7시, 7pm), "
-      + "repeats (매일, 매주 월수금, every weekday), #project, @tag and p1–p4 are understood; the rest becomes the title. "
+      + "repeats (매일, 매주 월수금, 매달 말일, every weekday, yearly), #project, @tag and p1–p4 are understood; the rest becomes the title. "
       + "Set parent_task_id to add a subtask.",
     inputSchema: object({
       text: { type: "string", description: "The task as the user said it" },

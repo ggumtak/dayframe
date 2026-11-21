@@ -36,7 +36,12 @@ export function useTaskFlow() {
   }, [actions]);
 
   const reschedule = useCallback((task: Task, date: PlainDate | null) => {
-    actions.update(task.id, schedulePatch(task, date));
+    if (date && task.recurrence_rule && task.due_at) {
+      const due_at = task.recurrence_local_time
+        ? date.toZonedDateTime({ timeZone: task.timezone, plainTime: task.recurrence_local_time }).toInstant().toString()
+        : instantFor(date, dueMinutes(task), task.timezone);
+      actions.update(task.id, { due_at, expected_due_at: task.due_at, preserve_recurrence: true });
+    } else actions.update(task.id, schedulePatch(task, date));
   }, [actions]);
 
   const postpone = useCallback((task: Task) => {

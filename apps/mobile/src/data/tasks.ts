@@ -102,7 +102,8 @@ queryClient.setMutationDefaults(writes.updateTask, {
   mutationFn: (vars: UpdateTaskVars) => api.updateTask(vars.id, vars.patch),
   onMutate: async (vars: UpdateTaskVars) => {
     await hold(keys.tasks);
-    editTasks((tasks) => tasks.map((task) => (task.id === vars.id ? { ...task, ...vars.patch } : task)));
+    const patch = vars.patch.preserve_recurrence ? { due_at: vars.patch.due_at } : vars.patch;
+    editTasks((tasks) => tasks.map((task) => (task.id === vars.id ? { ...task, ...patch } : task)));
   },
   onSuccess: (task: Task) => editTasks((tasks) => tasks.map((item) => (item.id === task.id ? task : item))),
   onSettled: () => settle(keys.tasks),
