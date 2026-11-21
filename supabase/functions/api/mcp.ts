@@ -29,7 +29,16 @@ export async function hashToken(token: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export const connectionUrl = (baseUrl: string, token: string) => baseUrl.replace(/\/+$/, "") + "/functions/v1/api/mcp/" + token;
+/**
+ * The address an assistant is given. A hosted project's functions also answer on their own host without the
+ * "/functions/v1" prefix; the shorter form survives being carried to another device, where a dropped "1" or
+ * "/" in that prefix sent the assistant to the gateway's 401 and into a sign-in flow that does not exist.
+ */
+export function connectionUrl(baseUrl: string, token: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  const hosted = /^https:\/\/([a-z0-9]{20})\.supabase\.co$/.exec(base);
+  return hosted ? "https://" + hosted[1] + ".functions.supabase.co/api/mcp/" + token : base + "/functions/v1/api/mcp/" + token;
+}
 
 /** A failure the assistant should read and act on, as opposed to a protocol error. */
 class ToolFailure extends Error {}

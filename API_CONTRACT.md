@@ -86,7 +86,7 @@ POST `/focus-sessions` to start a session. Omit `started_at` for server time. Th
 
 `POST /mcp-connections` with an optional `{"label":"Claude"}` creates a connection and returns it with a `url`. `GET /mcp-connections` lists connections with `label`, `created_at` and `last_used_at`. `DELETE /mcp-connections/{id}` removes one. An account can hold five.
 
-The `url` has the form `/functions/v1/api/mcp/<token>` and is shown only in the creation response; the server keeps a hash. It is a [Model Context Protocol](https://modelcontextprotocol.io) endpoint over Streamable HTTP with JSON replies. Add it to an assistant as a custom connector with no sign-in. The token in the path is the only credential, so anyone holding the URL can read, change and delete the account's tasks and habits until the connection is removed.
+The `url` has the form `https://<ref>.functions.supabase.co/api/mcp/<token>` on a hosted project (`/functions/v1/api/mcp/<token>`, which also works, elsewhere) and is shown only in the creation response; the server keeps a hash. It is a [Model Context Protocol](https://modelcontextprotocol.io) endpoint over Streamable HTTP with JSON replies. Add it to an assistant as a custom connector with no sign-in. The token in the path is the only credential, so anyone holding the URL can read, change and delete the account's tasks and habits until the connection is removed.
 
 | Tool | Behavior |
 | --- | --- |

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Temporal } from "@js-temporal/polyfill";
 import { createHandler } from "../supabase/functions/api/handler.ts";
-import { hashToken, tools } from "../supabase/functions/api/mcp.ts";
+import { connectionUrl, hashToken, tools } from "../supabase/functions/api/mcp.ts";
 
 const upstream = "https://project.supabase.invalid";
 const defaultOwner = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -224,4 +224,14 @@ test("requests that are not JSON-RPC get an error, not silence", async () => {
     assert.equal((Array.isArray(payload) ? payload[0] : payload).error.code, -32600);
   }
   assert.equal((await post({ jsonrpc: "2.0", id: 7, result: {} })).status, 202);
+});
+
+test("hosted projects hand out the short functions address, and both forms reach the endpoint", async () => {
+  assert.equal(connectionUrl("https://abcdefghijklmnopqrst.supabase.co/", "T"), "https://abcdefghijklmnopqrst.functions.supabase.co/api/mcp/T");
+  assert.equal(connectionUrl("http://127.0.0.1:54321", "T"), "http://127.0.0.1:54321/functions/v1/api/mcp/T");
+  const { handler } = await backend();
+  for (const prefix of ["https://ref.functions.supabase.co/api/mcp/", "https://ref.supabase.co/functions/v1/api/mcp/"]) {
+    const response = await handler(new Request(prefix + token, { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) }));
+    assert.equal(response.status, 200);
+  }
 });
