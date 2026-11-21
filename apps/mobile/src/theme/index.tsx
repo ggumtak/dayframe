@@ -23,6 +23,8 @@ const light = {
   dangerSoft: '#FBE7E8',
   info: '#3B82C4',
   infoSoft: '#E4EFF9',
+  schedule: '#2F7BF6',
+  onSchedule: '#FFFFFF',
   overlay: 'rgba(15, 15, 20, 0.38)',
   shadow: '#1B1B1F',
 };
@@ -46,6 +48,8 @@ const dark: typeof light = {
   dangerSoft: '#3D1C1E',
   info: '#6AAAE6',
   infoSoft: '#16293C',
+  schedule: '#3D84F7',
+  onSchedule: '#FFFFFF',
   overlay: 'rgba(0, 0, 0, 0.6)',
   shadow: '#000000',
 };

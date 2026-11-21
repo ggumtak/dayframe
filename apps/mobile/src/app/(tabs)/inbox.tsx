@@ -35,11 +35,11 @@ export default function Inbox() {
 
   return (
     <Screen>
-      <Header title={selected?.name ?? '받은함'} subtitle={tasks.length ? `${tasks.length}개 · 길게 눌러 순서 변경` : undefined} />
+      <Header title={selected?.name ?? '수신함'} subtitle={tasks.length ? `${tasks.length}개 · 길게 눌러 순서 변경` : undefined} />
       {projects?.length ? (
         <View>
           <PlainScroll horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm, paddingBottom: space.sm }}>
-            <Chip icon="inbox" label={'받은함' + (counts.get(null) ? ' ' + counts.get(null) : '')} selected={!selected} onPress={() => setProjectId(null)} />
+            <Chip icon="inbox" label={'수신함' + (counts.get(null) ? ' ' + counts.get(null) : '')} selected={!selected} onPress={() => setProjectId(null)} />
             {projects.map((project) => (
               <Chip
                 key={project.id} icon="hash" label={project.name + (counts.get(project.id) ? ' ' + counts.get(project.id) : '')}
@@ -54,7 +54,7 @@ export default function Inbox() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {tasks.length ? <TaskList tasks={tasks} sortable /> : (
             <EmptyState
-              icon={selected ? 'hash' : 'inbox'} title={selected ? '이 프로젝트는 비어 있습니다' : '받은함이 비어 있습니다'}
+              icon={selected ? 'hash' : 'inbox'} title={selected ? '이 프로젝트는 비어 있습니다' : '수신함이 비어 있습니다'}
               message={selected ? '+ 버튼으로 이 프로젝트에 할 일을 추가하세요.' : '떠오르는 일을 일단 여기에 적어 두세요. #이름을 붙이면 프로젝트로 분류됩니다.'} />
           )}
           {tasks.length && !projects?.length ? (

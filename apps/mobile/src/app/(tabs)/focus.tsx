@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
-import { Button, Card, Chip, Header, Icon, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { Button, Card, Chip, Header, Icon, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useFocusActions, useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
@@ -16,8 +16,13 @@ import type { FocusSession } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { space, useTheme } from '@/theme';
 
-const presets = [15, 25, 45, 60];
-const BREAK_SECONDS = 5 * 60;
+/** Pomodoro rhythms: focus, a short break after each round, and a long break after every fourth. */
+const modes = [
+  { minutes: 25, rest: 5, longRest: 15, label: '25분 집중', detail: '휴식 5분' },
+  { minutes: 50, rest: 10, longRest: 30, label: '50분 집중', detail: '휴식 10분' },
+] as const;
+const ROUNDS = 4;
+const modeFor = (plannedSeconds: number) => (plannedSeconds > 40 * 60 ? modes[1] : modes[0]);
 const SIZE = 248;
 const STROKE = 10;
 
@@ -35,16 +40,21 @@ export default function Focus() {
   const { tasks, byId } = useTaskIndex();
   const actions = useFocusActions();
   const flow = useTaskFlow();
-  const [minutes, setMinutes] = useState(25);
+  const [chosen, setChosen] = useState<number | null>(null);
   const [target, setTarget] = useState<Target>(null);
   const [picking, setPicking] = useState(false);
-  const [breakEndsAt, setBreakEndsAt] = useState<number | null>(null);
+  const [rest, setRest] = useState<{ endsAt: number; seconds: number; long: boolean } | null>(null);
+  const breakEndsAt = rest?.endsAt ?? null;
   const [now, setNow] = useState(() => Date.now());
   const finished = useRef(new Set<string>());
   const timeZone = deviceTimeZone();
   useMinute();
 
   const running = sessions?.find((session) => session.status === 'running') ?? null;
+  // Opens on the rhythm used last time.
+  const lastPlanned = sessions?.find((session) => session.status !== 'running')?.planned_seconds;
+  const mode = modes.find((item) => item.minutes === chosen) ?? modeFor(lastPlanned ?? 0);
+  const minutes = mode.minutes;
   const ticking = !!running || breakEndsAt !== null;
 
   // Arriving from a task or habit attaches it to the next session.
@@ -57,13 +67,31 @@ export default function Focus() {
     else if (params.habitId) setTarget({ kind: 'habit', id: params.habitId });
   }
 
+  // Totalled on every render: the timer and `useMinute` keep this screen current across midnight.
+  const day = Temporal.Now.plainDateISO(timeZone);
+  const doneToday = (sessions ?? []).filter((session) => session.status === 'completed' && session.ended_at
+    && Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone).toPlainDate().equals(day));
+  const todayStats = {
+    count: doneToday.length,
+    seconds: doneToday.reduce((sum, session) =>
+      sum + (new Date(session.ended_at!).getTime() - new Date(session.started_at).getTime()) / 1000, 0),
+  };
+
+  /** Starts the break a finished round has earned: a long one after every fourth round of the day. */
+  const beginRest = (plannedSeconds: number, roundsBefore: number, from: number) => {
+    const rhythm = modeFor(plannedSeconds);
+    const long = (roundsBefore + 1) % ROUNDS === 0;
+    const seconds = (long ? rhythm.longRest : rhythm.rest) * 60;
+    setRest({ endsAt: from + seconds * 1000, seconds, long });
+  };
+
   const nameOf = (session: Pick<FocusSession, 'task_id' | 'habit_id'>) => (session.task_id
     ? byId.get(session.task_id)?.title : session.habit_id ? habits?.find((habit) => habit.id === session.habit_id)?.name : undefined);
 
   // The interval reads the newest state through this ref, so it never has to be torn down mid-session.
-  const latest = useRef({ running, breakEndsAt, byId, actions, flow });
+  const latest = useRef({ running, breakEndsAt, byId, actions, flow, beginRest, rounds: todayStats.count });
   useEffect(() => {
-    latest.current = { running, breakEndsAt, byId, actions, flow };
+    latest.current = { running, breakEndsAt, byId, actions, flow, beginRest, rounds: todayStats.count };
   });
 
   useEffect(() => {
@@ -82,9 +110,9 @@ export default function Focus() {
         const task = session.task_id ? state.byId.get(session.task_id) : undefined;
         showToast(`집중 ${formatMinutes(session.planned_seconds)} 완료!`, task
           ? { actionLabel: '할 일도 완료', onAction: () => state.flow.complete(task) } : {});
-        setBreakEndsAt(time + BREAK_SECONDS * 1000);
+        state.beginRest(session.planned_seconds, state.rounds, time);
       } else if (!session && state.breakEndsAt !== null && time >= state.breakEndsAt) {
-        setBreakEndsAt(null);
+        setRest(null);
         haptic.medium();
         showToast('휴식이 끝났습니다. 다음 집중을 시작해 보세요.');
       }
@@ -103,7 +131,7 @@ export default function Focus() {
 
   const start = () => {
     haptic.medium();
-    setBreakEndsAt(null);
+    setRest(null);
     actions.start({
       planned_seconds: minutes * 60,
       ...(target?.kind === 'task' ? { task_id: target.id } : target?.kind === 'habit' ? { habit_id: target.id } : {}),
@@ -115,17 +143,10 @@ export default function Focus() {
     finished.current.add(running.id);
     haptic.light();
     actions.finish({ id: running.id, status, ended_at: new Date().toISOString() });
-    if (status === 'completed') showToast(`집중 ${formatMinutes(elapsed)} 기록했습니다.`);
-  };
-
-  // Totalled on every render: the timer and `useMinute` keep this screen current across midnight.
-  const day = Temporal.Now.plainDateISO(timeZone);
-  const doneToday = (sessions ?? []).filter((session) => session.status === 'completed' && session.ended_at
-    && Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone).toPlainDate().equals(day));
-  const todayStats = {
-    count: doneToday.length,
-    seconds: doneToday.reduce((sum, session) =>
-      sum + (new Date(session.ended_at!).getTime() - new Date(session.started_at).getTime()) / 1000, 0),
+    if (status === 'completed') {
+      showToast(`집중 ${formatMinutes(elapsed)} 기록했습니다.`);
+      beginRest(running.planned_seconds, todayStats.count, Date.now());
+    }
   };
 
   const candidates = useMemo(() => tasks
@@ -135,7 +156,8 @@ export default function Focus() {
     : target ? nameOf({ task_id: target.kind === 'task' ? target.id : null, habit_id: target.kind === 'habit' ? target.id : null }) : undefined;
 
   const onBreak = !running && breakEndsAt !== null;
-  const total = running ? running.planned_seconds : onBreak ? BREAK_SECONDS : minutes * 60;
+  const total = running ? running.planned_seconds : onBreak ? rest!.seconds : minutes * 60;
+  const round = todayStats.count % ROUNDS;
   const shown = Math.max(0, running ? remaining : onBreak ? breakRemaining : minutes * 60);
   const ratio = total > 0 ? Math.min(1, Math.max(0, 1 - shown / total)) : 0;
   const r = (SIZE - STROKE) / 2;
@@ -160,7 +182,7 @@ export default function Focus() {
             ) : null}
           </Svg>
           <Txt variant="caption" tone="muted" style={{ marginBottom: 4 }}>
-            {running ? '집중 중' : onBreak ? '휴식 중' : '준비'}
+            {running ? '집중 중' : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중') : '준비'}
           </Txt>
           <Txt style={{ fontSize: 56, lineHeight: 64, fontWeight: '300', fontVariant: ['tabular-nums'] }}>{formatDuration(shown)}</Txt>
           {targetName ? (
@@ -175,10 +197,20 @@ export default function Focus() {
           </View>
         ) : (
           <>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              {presets.map((value) => (
-                <Chip key={value} label={value + '분'} selected={minutes === value} onPress={() => setMinutes(value)} />
-              ))}
+            <View style={{ alignSelf: 'stretch', gap: space.sm }}>
+              <Segmented<string>
+                value={String(minutes)} onChange={(value) => setChosen(Number(value))}
+                options={modes.map((item) => ({ value: String(item.minutes), label: item.label + ' · ' + item.detail }))} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }} accessibilityLabel={`${ROUNDS}회 중 ${round}회 완료`}>
+                {Array.from({ length: ROUNDS }, (_, index) => (
+                  <View
+                    key={index}
+                    style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: index < round ? colors.accent : colors.surfaceMuted }} />
+                ))}
+                <Txt variant="small" tone="muted" style={{ marginLeft: 4 }}>
+                  {ROUNDS - round}회 더 하면 긴 휴식 {mode.longRest}분
+                </Txt>
+              </View>
             </View>
             <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
               <Chip icon="link" label={targetName ?? '할 일·습관 연결'} color={target ? colors.accent : undefined} onPress={() => setPicking(true)} style={{ maxWidth: 260 }} />
@@ -186,7 +218,7 @@ export default function Focus() {
             </View>
             <View style={{ alignSelf: 'stretch', gap: space.sm }}>
               <Button label={onBreak ? '휴식 건너뛰고 집중 시작' : '집중 시작'} icon="play" onPress={start} />
-              {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={() => setBreakEndsAt(null)} /> : null}
+              {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={() => setRest(null)} /> : null}
             </View>
           </>
         )}

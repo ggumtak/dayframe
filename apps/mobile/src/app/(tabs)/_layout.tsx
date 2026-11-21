@@ -70,7 +70,7 @@ export default function TabsLayout() {
   return (
     <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <TabBar {...props} />}>
       <Tabs.Screen name="index" options={{ title: '오늘' }} />
-      <Tabs.Screen name="inbox" options={{ title: '받은함' }} />
+      <Tabs.Screen name="inbox" options={{ title: '수신함' }} />
       <Tabs.Screen name="upcoming" options={{ title: '예정' }} />
       <Tabs.Screen name="habits" options={{ title: '습관' }} />
       <Tabs.Screen name="focus" options={{ title: '집중' }} />

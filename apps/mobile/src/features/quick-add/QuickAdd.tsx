@@ -13,7 +13,7 @@ import { haptic } from '@/lib/haptics';
 import { analyzeTask, type TaskAnalysis } from '@/lib/shared';
 import { elevation, priorityColor, radius, space, useTheme } from '@/theme';
 
-import { HighlightInput, type TokenTints } from './HighlightInput';
+import { HighlightInput, type PillPalette } from './HighlightInput';
 import { parseErrorMessage } from './messages';
 
 export const TAB_BAR_HEIGHT = 58;
@@ -61,13 +61,15 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   const result = useMemo<{ analysis?: TaskAnalysis; error?: string | null }>(() => {
     if (!text.trim()) return {};
     try {
-      return { analysis: analyzeTask({ text, timezone }) };
+      return { analysis: analyzeTask({ text, timezone }, { draft: true }) };
     } catch (error) {
       return { error: parseErrorMessage(error) };
     }
   }, [text, timezone]);
   const { analysis } = result;
-  const parsed = analysis?.task;
+  // The schedule is marked as soon as it is typed, but there is nothing to add until a title follows.
+  const parsed = analysis?.task.title ? analysis.task : undefined;
+  const draft = analysis?.task;
 
   useEffect(() => {
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -77,9 +79,11 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     return () => back.remove();
   }, [onClose]);
 
-  const tints: TokenTints = {
-    date: colors.successSoft, time: colors.successSoft, recurrence: colors.infoSoft, project: colors.accentSoft,
-    tag: colors.accentSoft, priority: colors.warningSoft,
+  const palette: PillPalette = {
+    schedule: { background: colors.schedule, foreground: colors.onSchedule },
+    project: { background: colors.accentSoft, foreground: colors.accent },
+    tag: { background: colors.accentSoft, foreground: colors.accent },
+    priority: { background: colors.warningSoft, foreground: colors.warning },
   };
 
   const submit = () => {
@@ -116,13 +120,13 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     input.current?.focus();
   };
 
-  const due = parsed?.due_at ? formatDue({ due_at: parsed.due_at, timezone, all_day: parsed.all_day }) : null;
-  const repeat = describeRecurrence(parsed?.recurrence_rule ?? null);
-  const isNewProject = !!parsed?.project
-    && !projects?.some((project) => project.name.toLowerCase() === parsed.project!.toLowerCase());
-  const defaultProject = !parsed?.project && defaults.projectId
+  const due = draft?.due_at ? formatDue({ due_at: draft.due_at, timezone, all_day: draft.all_day }) : null;
+  const repeat = describeRecurrence(draft?.recurrence_rule ?? null);
+  const isNewProject = !!draft?.project
+    && !projects?.some((project) => project.name.toLowerCase() === draft.project!.toLowerCase());
+  const defaultProject = !draft?.project && defaults.projectId
     ? projects?.find((project) => project.id === defaults.projectId)?.name : undefined;
-  const hasChips = !!parsed && (due || repeat || parsed.project || parsed.tags.length > 0 || parsed.priority < 4);
+  const hasChips = !!draft && (due || repeat || draft.project || draft.tags.length > 0 || draft.priority < 4);
 
   return (
     <KeyboardAvoidingView behavior="padding" style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -145,7 +149,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
         ) : null}
         <HighlightInput
           ref={input} value={text} onChangeText={setText} tokens={analysis && analysis.text === text ? analysis.tokens : []}
-          tints={tints} autoFocus onSubmitEditing={submit}
+          palette={palette} autoFocus onSubmitEditing={submit}
           placeholder={parent ? '하위 작업 추가' : '예: 내일 저녁 7시 운동 #건강 p2'}
           accessibilityLabel="할 일 입력" />
         {result.error ? (
@@ -153,20 +157,20 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
         ) : null}
         {hasChips || defaultProject || (defaults.dueToday && !parent && !due) ? (
           <View style={styles.chips}>
-            {due ? <Animated.View entering={ZoomIn.duration(140)}><Chip icon="calendar" label={due} color={colors.success} /></Animated.View>
+            {due ? <Animated.View entering={ZoomIn.duration(140)}><Chip icon="calendar" label={due} color={colors.schedule} /></Animated.View>
               : defaults.dueToday && !parent ? <Chip icon="calendar" label="오늘" /> : null}
-            {repeat ? <Animated.View entering={ZoomIn.duration(140)}><Chip icon="repeat" label={repeat} color={colors.info} /></Animated.View> : null}
-            {parsed?.project ? (
+            {repeat ? <Animated.View entering={ZoomIn.duration(140)}><Chip icon="repeat" label={repeat} color={colors.schedule} /></Animated.View> : null}
+            {draft?.project ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip icon="hash" label={parsed.project + (isNewProject ? ' · 새 프로젝트' : '')} color={colors.accent} />
+                <Chip icon="hash" label={draft.project + (isNewProject ? ' · 새 프로젝트' : '')} color={colors.accent} />
               </Animated.View>
             ) : defaultProject ? <Chip icon="hash" label={defaultProject} /> : null}
-            {parsed?.tags.map((tag) => (
+            {draft?.tags.map((tag) => (
               <Animated.View key={tag} entering={ZoomIn.duration(140)}><Chip icon="tag" label={tag} color={colors.accent} /></Animated.View>
             ))}
-            {parsed && parsed.priority < 4 ? (
+            {draft && draft.priority < 4 ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip icon="flag" label={'P' + parsed.priority} color={priorityColor(colors, parsed.priority)} />
+                <Chip icon="flag" label={'P' + draft.priority} color={priorityColor(colors, draft.priority)} />
               </Animated.View>
             ) : null}
           </View>
