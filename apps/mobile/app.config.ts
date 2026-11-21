@@ -56,6 +56,10 @@ const config: ExpoConfig = {
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
+        name: 'Calendar', label: '달력', description: '이번 달 달력에 일정이 있는 날을 표시하고, 누르면 그 날을 엽니다.',
+        minWidth: '250dp', minHeight: '250dp', targetCellWidth: 4, targetCellHeight: 4, resizeMode: 'horizontal|vertical',
+        updatePeriodMillis: 1800000,
+      }, {
         name: 'Habits', label: '습관', description: '오늘의 습관을 보고 누르면 바로 기록합니다.',
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,

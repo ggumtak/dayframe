@@ -36,7 +36,7 @@ export default function Completed() {
     }
     return [...groups];
   }, [query.data, reopened, shown, zone]);
-  const total = (query.data ?? []).length - reopened.size;
+  const total = (query.data ?? []).filter((task) => task.completed_at && !reopened.has(task.id)).length;
   const names = new Map((projects ?? []).map((project) => [project.id, project.name]));
   const now = today(zone);
 

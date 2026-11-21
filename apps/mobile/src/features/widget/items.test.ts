@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { focusState, habitToday, snapshotTasks, upcomingRows, widgetDate, widgetRows, type WidgetTask } from './items.ts';
+import { calendarGrid, focusState, habitToday, snapshotTasks, upcomingRows, widgetDate, widgetRows, type WidgetTask } from './items.ts';
 
 const now = Date.parse('2026-11-21T09:00:00Z'); // Saturday 18:00 in Seoul
 let next = 0;
@@ -71,4 +71,15 @@ test('habit and focus figures roll over with the day', () => {
   assert.deepEqual(focusState(focus, now, 'Asia/Seoul'), { running: focus.running, endsAt: '오후 6:15', count: 2, minutes: 50 });
   assert.equal(focusState(focus, Date.parse('2026-11-21T09:20:00Z'), 'Asia/Seoul').running, null);
   assert.equal(focusState(focus, Date.parse('2026-11-21T16:00:00Z'), 'Asia/Seoul').count, 0);
+});
+
+test('the calendar widget lays a month out Monday-first and marks today and busy days', () => {
+  const grid = calendarGrid(now, 'Asia/Seoul', 0, { '2026-11-21': 2, '2026-11-30': 1 });
+  assert.equal(grid.title, '11월');
+  assert.equal(grid.weeks.length, 6); // November 2026 starts on a Sunday
+  assert.deepEqual(grid.weeks[0].map((cell) => cell?.day ?? null), [null, null, null, null, null, null, 1]);
+  const today = grid.weeks.flat().find((cell) => cell?.today);
+  assert.deepEqual([today?.date, today?.count, today?.weekend], ['2026-11-21', 2, true]);
+  assert.equal(grid.weeks[5][0]?.date, '2026-11-30');
+  assert.equal(calendarGrid(now, 'Asia/Seoul', 2, {}).title, '2027년 1월');
 });

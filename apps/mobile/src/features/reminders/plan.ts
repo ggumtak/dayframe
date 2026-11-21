@@ -93,18 +93,23 @@ export function stableUuid(text: string): string {
 }
 
 export const HABIT_PREFIX = 'habit-';
-export interface HabitReminderInput { id: string; time: string; timezone: string; doneToday: boolean }
+export interface HabitReminderInput {
+  id: string; time: string; timezone: string;
+  /** The last day already covered by a met goal: today for a daily habit, Sunday for a weekly one. Null if not met. */
+  doneThrough: string | null;
+}
 export interface PlannedHabitReminder { id: string; habitId: string; date: string; at: number }
 
-/** A habit's alert for each of the coming days at its chosen time, skipping today once it is done. */
+/** A habit's alert for each of the coming days at its chosen time, skipping the days a met goal already covers. */
 export function planHabitReminders(habits: HabitReminderInput[], now: number, days = 7): PlannedHabitReminder[] {
   const planned: PlannedHabitReminder[] = [];
   for (const habit of habits) {
     const match = /^(\d{1,2}):(\d{2})$/.exec(habit.time);
     if (!match) continue;
     const today = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(habit.timezone).toPlainDate();
-    for (let offset = habit.doneToday ? 1 : 0; offset < days; offset++) {
+    for (let offset = 0; offset < days; offset++) {
       const date = today.add({ days: offset });
+      if (habit.doneThrough && Temporal.PlainDate.compare(date, Temporal.PlainDate.from(habit.doneThrough)) <= 0) continue;
       const at = date.toZonedDateTime({ timeZone: habit.timezone, plainTime: { hour: Number(match[1]), minute: Number(match[2]) } }).epochMilliseconds;
       if (at <= now) continue;
       planned.push({ id: HABIT_PREFIX + habit.id + '-' + date.toString(), habitId: habit.id, date: date.toString(), at });

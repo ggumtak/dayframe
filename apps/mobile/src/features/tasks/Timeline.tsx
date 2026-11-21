@@ -140,7 +140,8 @@ export function Timeline({ tasks, sessions, timeZone, onComplete, onAddAt }: {
 const styles = StyleSheet.create({
   allDay: { flexDirection: 'row', paddingHorizontal: space.lg, paddingVertical: space.md, borderBottomWidth: StyleSheet.hairlineWidth },
   allDayItem: { flexDirection: 'row', alignItems: 'center', gap: space.sm, borderRadius: radius.sm, paddingHorizontal: space.sm, minHeight: 34 },
-  hour: { position: 'absolute', left: GUTTER, right: 0, height: HOUR, borderTopWidth: StyleSheet.hairlineWidth },
+  // Every layer stops at the same right margin as the rest of the app.
+  hour: { position: 'absolute', left: GUTTER, right: space.lg, height: HOUR, borderTopWidth: StyleSheet.hairlineWidth },
   hourLabel: { position: 'absolute', left: -GUTTER + space.sm, top: -7, width: GUTTER - space.md },
   lane: { position: 'absolute', top: 0, bottom: 0, left: GUTTER + 4, right: space.lg },
   block: { position: 'absolute', paddingRight: 4 },
@@ -149,6 +150,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3, paddingHorizontal: space.sm,
   },
   focus: { position: 'absolute', left: GUTTER + 4, right: space.lg, borderRadius: radius.sm, borderLeftWidth: 3, opacity: 0.7 },
-  now: { position: 'absolute', left: GUTTER - 4, right: 0, flexDirection: 'row', alignItems: 'center' },
+  now: { position: 'absolute', left: GUTTER - 4, right: space.lg, flexDirection: 'row', alignItems: 'center' },
   nowDot: { width: 8, height: 8, borderRadius: 4, marginRight: -1 },
 });

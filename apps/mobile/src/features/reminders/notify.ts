@@ -4,7 +4,7 @@ import { AppState } from 'react-native';
 import { AndroidImportance, AndroidNotificationVisibility } from 'expo-notifications';
 
 import { nextCheckIn } from '@/features/habits/checkIn';
-import { widgetTaskChanged } from '@/features/widget/render';
+import { widgetHabitChanged, widgetTaskChanged } from '@/features/widget/render';
 import { api } from '@/lib/api';
 import { describeRecurrence, formatTime, Temporal } from '@/lib/dates';
 import { nextOccurrence, type Task } from '@/lib/shared';
@@ -96,7 +96,7 @@ function signature(item: { at: number }, content: Notifications.NotificationCont
 }
 
 /** A habit with an alert time, as the app knows it right now. */
-export interface HabitReminderInfo { id: string; name: string; time: string; timezone: string; doneToday: boolean; progress: string }
+export interface HabitReminderInfo { id: string; name: string; time: string; timezone: string; doneThrough: string | null; progress: string }
 
 /**
  * Makes the device's scheduled alerts match the task list: new and changed ones are scheduled,
@@ -136,6 +136,8 @@ export async function syncReminders(
   const kept = new Set<string>();
   for (const request of scheduled) {
     const id = request.identifier;
+    // Habit data not loaded yet says nothing about habit alerts, so those already scheduled stay.
+    if (id.startsWith(HABIT_PREFIX) && extra.habits === undefined) continue;
     if (id.startsWith(REMINDER_PREFIX) || id.startsWith(HABIT_PREFIX)) {
       const want = wanted.get(id);
       if (want && request.content.data?.signature === want.signature) kept.add(id);
@@ -226,11 +228,12 @@ export function listenForReminders(open: (target: { taskId: string } | { habitId
     else if (AppState.currentState === 'active') void handleReminderAction(response).then(changed);
   };
   const subscription = Notifications.addNotificationResponseReceivedListener(respond);
-  // An alert tapped while the app was closed is what launched it.
+  // An alert tapped while the app was closed is what launched it. A button pressed then was already handled
+  // by the background task, so only a plain tap is acted on here.
   const launch = Notifications.getLastNotificationResponse();
   if (launch) {
     Notifications.clearLastNotificationResponse();
-    respond(launch);
+    if (launch.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) respond(launch);
   }
   return () => subscription.remove();
 }
@@ -240,7 +243,8 @@ async function logHabitFromAlert(habitId: string, date: string): Promise<void> {
   try {
     const [habits, logs] = await Promise.all([api.habits(), api.habitLogs(habitId)]);
     const habit = habits.find((item) => item.id === habitId);
-    if (!habit) return;
+    // An alert scheduled before the habit was archived or deleted logs nothing.
+    if (!habit || habit.archived_at) return;
     const day = Temporal.PlainDate.from(date);
     const weekStart = day.subtract({ days: day.dayOfWeek - 1 });
     const inPeriod = logs.filter((log) => (habit.cadence === 'weekly'
@@ -251,7 +255,9 @@ async function logHabitFromAlert(habitId: string, date: string): Promise<void> {
     // Already done for the period: the alert never undoes a check.
     if (progress >= habit.target_count) return;
     const next = nextCheckIn(habit, todayCount, progress);
-    if (next.status) await api.setHabitLog(habitId, date, { status: next.status, count: next.count });
+    if (!next.status) return;
+    await api.setHabitLog(habitId, date, { status: next.status, count: next.count });
+    await widgetHabitChanged(habitId, date, next.count, progress + next.count - todayCount);
   } catch {
     await Notifications.scheduleNotificationAsync({
       content: { title: '기록하지 못했습니다', body: '연결이 없습니다. 앱에서 다시 기록해 주세요.', data: { url: 'dayframe:///habit/' + habitId } },

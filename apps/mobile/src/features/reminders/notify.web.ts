@@ -14,7 +14,7 @@ export const SNOOZE = 'snooze';
 export async function prepareReminders(): Promise<void> {}
 export async function reminderPermission(): Promise<PermissionState> { return 'denied'; }
 export async function requestReminderPermission(_force?: boolean): Promise<PermissionState> { return 'denied'; }
-export interface HabitReminderInfo { id: string; name: string; time: string; timezone: string; doneToday: boolean; progress: string }
+export interface HabitReminderInfo { id: string; name: string; time: string; timezone: string; doneThrough: string | null; progress: string }
 export async function syncReminders(
   _tasks: Task[], _settings: ReminderSettings, _context: ReminderContext, _extra?: { overrides?: ReminderOverrides; habits?: HabitReminderInfo[] },
 ): Promise<void> {}

@@ -88,6 +88,7 @@ async function checkBackground(): Promise<void> {
       tasks: [{ ...task, due_at: '2026-11-21T10:00:00Z' }, { ...task, id: 'b', due_at: '2026-11-23T10:00:00Z' }],
       habits: [{ id: 'h', name: '물', cadence: 'daily' as const, target_count: 8, timezone: 'Asia/Seoul', date: '2026-11-21', todayCount: 5, progress: 5 }],
       focus: { running: { id: 'f', startedAt: '2026-11-21T08:50:00Z', plannedSeconds: 1500 }, date: '2026-11-21', count: 1, seconds: 1500 },
+      calendar: { '2026-11-21': 2, '2026-11-30': 1 },
     };
     for (const snapshot of [full, { ...full, tasks: [], habits: [], focus: null }, { signedIn: false, tasks: [] }]) {
       for (const name of Object.values(WIDGETS)) {

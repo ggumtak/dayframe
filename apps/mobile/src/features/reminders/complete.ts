@@ -19,7 +19,8 @@ export async function completeOccurrence(taskId: string, occurrence: string): Pr
     const task = await api.task(taskId);
     if (task.completed_at || !task.due_at || Date.parse(task.due_at) !== Date.parse(occurrence)) return { status: 'gone', task };
     const result = await api.completeTask(taskId, {
-      request_id: stableUuid(taskId + '@' + Date.parse(occurrence)), expected_updated_at: task.updated_at,
+      // Same tap, same id; a reopen changes `updated_at`, so completing again later is a new request.
+      request_id: stableUuid(taskId + '@' + Date.parse(occurrence) + '@' + task.updated_at), expected_updated_at: task.updated_at,
     });
     return { status: 'done', task: result.task };
   } catch (error) {

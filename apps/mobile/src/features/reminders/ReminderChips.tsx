@@ -3,6 +3,7 @@ import { Platform, View } from 'react-native';
 import { Chip, Txt } from '@/components/ui';
 import { space } from '@/theme';
 
+import { requestReminderPermission } from './notify';
 import { setHabitReminder, setTaskReminder, type TaskReminder, useReminderOverrides } from './overrides';
 import { useReminderSettings } from './settings';
 
@@ -50,7 +51,15 @@ export function HabitReminderChips({ habitId }: { habitId: string }) {
     <View style={{ gap: space.sm }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         <Chip icon="bell-off" label="끄기" selected={!own} onPress={() => setHabitReminder(habitId, null)} />
-        {times.map((time) => <Chip key={time} label={timeLabel(time)} selected={own === time} onPress={() => setHabitReminder(habitId, time)} />)}
+        {times.map((time) => (
+          <Chip
+            key={time} label={timeLabel(time)} selected={own === time}
+            onPress={() => {
+              setHabitReminder(habitId, time);
+              // Habit alerts work even with task alerts off, so they ask for permission themselves.
+              void requestReminderPermission(true);
+            }} />
+        ))}
       </View>
       <Txt variant="small" tone="muted">
         {own ? '매일 ' + timeLabel(own) + '에 알려 줍니다. 그날 목표를 채우면 울리지 않고, 알림의 [기록하기]로 바로 기록할 수 있습니다.' : '정해 두면 매일 그 시간에 알려 줍니다.'}

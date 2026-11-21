@@ -31,6 +31,10 @@ export interface WidgetSnapshot {
   tasks: WidgetTask[];
   habits?: WidgetHabit[];
   focus?: WidgetFocus | null;
+  /** Tasks per date, repeats included, from the start of last month to the end of the month after next. */
+  calendar?: Record<string, number>;
+  /** Months away from the current one that the calendar widget shows. */
+  calendarOffset?: number;
   /** A short note for the header, such as a failed completion. */
   notice?: string | null;
 }
@@ -95,10 +99,12 @@ export type UpcomingRow = { kind: 'day'; key: string; label: string; count: numb
 export function upcomingRows(tasks: WidgetTask[], now: number, timeZone: string): UpcomingRow[] {
   const today = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(timeZone).toPlainDate();
   const days = new Map<string, { date: Temporal.PlainDate; rows: WidgetRow[] }>();
+  // "Ahead" is judged in each task's own zone, as the Today widget does, so no task shows in both.
+  const todayIn = (zone: string) => Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(zone).toPlainDate();
   for (const task of [...tasks].sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!) || a.priority - b.priority)) {
     if (!task.due_at) continue;
     const due = Temporal.Instant.from(task.due_at).toZonedDateTimeISO(task.timezone);
-    const ahead = today.until(due.toPlainDate()).days;
+    const ahead = todayIn(task.timezone).until(due.toPlainDate()).days;
     if (ahead < 1 || ahead > 7) continue;
     const key = due.toPlainDate().toString();
     const entry = days.get(key) ?? { date: due.toPlainDate(), rows: [] };
@@ -141,4 +147,25 @@ export function focusState(focus: WidgetFocus | null | undefined, now: number, t
     count: sameDay ? focus!.count : 0,
     minutes: sameDay ? Math.round(focus!.seconds / 60) : 0,
   };
+}
+
+/** How far the calendar widget may move from this month: the range the app counts tasks for. */
+export const CALENDAR_RANGE = { back: 1, ahead: 2 } as const;
+
+export interface CalendarCell { date: string; day: number; today: boolean; count: number; weekend: boolean }
+
+/** A Monday-first month grid for the calendar widget, with empty cells as null. */
+export function calendarGrid(now: number, timeZone: string, offset: number, counts: Record<string, number>):
+  { title: string; weeks: (CalendarCell | null)[][] } {
+  const today = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(timeZone).toPlainDate();
+  const month = today.toPlainYearMonth().add({ months: offset });
+  const first = month.toPlainDate({ day: 1 });
+  const cells: (CalendarCell | null)[] = Array.from({ length: first.dayOfWeek - 1 }, () => null);
+  for (let day = 1; day <= month.daysInMonth; day++) {
+    const date = month.toPlainDate({ day });
+    cells.push({ date: date.toString(), day, today: date.equals(today), count: counts[date.toString()] ?? 0, weekend: date.dayOfWeek >= 6 });
+  }
+  while (cells.length % 7) cells.push(null);
+  const weeks = Array.from({ length: cells.length / 7 }, (_, row) => cells.slice(row * 7, row * 7 + 7));
+  return { title: (month.year === today.year ? '' : month.year + '년 ') + month.month + '월', weeks };
 }

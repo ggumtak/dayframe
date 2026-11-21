@@ -265,3 +265,71 @@ function QuickAdd({ palette }: { palette: Palette }) {
   );
 }
 export const quickAddWidget = () => both(QuickAdd, {});
+
+// ---- 달력
+
+export interface CalendarWidgetProps {
+  signedIn: boolean;
+  title: string;
+  weeks: ({ date: string; day: number; today: boolean; count: number; weekend: boolean } | null)[][];
+  /** Changes on every draw so tapping the same day twice still opens it. */
+  stamp: number;
+  canBack: boolean;
+  canAhead: boolean;
+}
+
+function NavButton({ label, direction, enabled, palette }: { label: string; direction: number; enabled: boolean; palette: Palette }) {
+  const path = direction < 0 ? 'M14 6l-6 6 6 6' : 'M10 6l6 6-6 6';
+  return (
+    <SvgWidget
+      svg={svg(`<path d="${path}" fill="none" stroke="${enabled ? palette.text : palette.border}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`)}
+      {...(enabled ? { clickAction: ACTIONS.calendarMove, clickActionData: { by: direction } } : {})}
+      accessibilityLabel={label} style={{ height: 32, width: 32, padding: 4 }} />
+  );
+}
+
+function Calendar({ signedIn, title, weeks, stamp, canBack, canAhead, palette }: CalendarWidgetProps & { palette: Palette }) {
+  return (
+    <Frame palette={palette}>
+      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 8, paddingBottom: 4 }}>
+        <FlexWidget clickAction="OPEN_URI" clickActionData={{ uri: 'dayframe:///upcoming?view=month&at=' + stamp }} style={{ flex: 1 }}>
+          <TextWidget text={title} style={{ fontSize: 17, fontWeight: '800', color: palette.text }} />
+        </FlexWidget>
+        <NavButton label="이전 달" direction={-1} enabled={canBack} palette={palette} />
+        <SvgWidget
+          svg={svg(`<circle cx="12" cy="12" r="3.5" fill="${palette.accent}"/>`)} clickAction={ACTIONS.calendarMove} clickActionData={{ by: 0 }}
+          accessibilityLabel="이번 달" style={{ height: 32, width: 28, padding: 6 }} />
+        <NavButton label="다음 달" direction={1} enabled={canAhead} palette={palette} />
+      </FlexWidget>
+      {!signedIn ? <Message text={SIGNED_OUT} palette={palette} uri="dayframe:///" /> : (
+        <FlexWidget style={{ width: 'match_parent', height: 'match_parent', paddingHorizontal: 8 }}>
+          <FlexWidget style={{ width: 'match_parent', flexDirection: 'row' }}>
+            {['월', '화', '수', '목', '금', '토', '일'].map((name, index) => (
+              <FlexWidget key={name} style={{ flex: 1, alignItems: 'center', paddingVertical: 2 }}>
+                <TextWidget text={name} style={{ fontSize: 11, color: index >= 5 ? palette.danger : palette.faint }} />
+              </FlexWidget>
+            ))}
+          </FlexWidget>
+          {weeks.map((week, row) => (
+            <FlexWidget key={row} style={{ width: 'match_parent', flex: 1, flexDirection: 'row' }}>
+              {week.map((cell, column) => (cell ? (
+                <FlexWidget
+                  key={column} clickAction="OPEN_URI" clickActionData={{ uri: `dayframe:///upcoming?view=month&date=${cell.date}&at=${stamp}` }}
+                  accessibilityLabel={cell.day + '일' + (cell.count ? ', 일정 ' + cell.count + '개' : '')}
+                  style={{ flex: 1, height: 'match_parent', alignItems: 'center', justifyContent: 'center' }}>
+                  <FlexWidget style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: cell.today ? palette.accent : palette.background }}>
+                    <TextWidget
+                      text={String(cell.day)}
+                      style={{ fontSize: 13, fontWeight: cell.today || cell.count ? '700' : '400', color: cell.today ? palette.onAccent : cell.weekend ? palette.danger : palette.text }} />
+                  </FlexWidget>
+                  <FlexWidget style={{ width: 4, height: 4, borderRadius: 2, marginTop: 1, backgroundColor: cell.count ? palette.accent : palette.background }} />
+                </FlexWidget>
+              ) : <FlexWidget key={column} style={{ flex: 1 }} />))}
+            </FlexWidget>
+          ))}
+        </FlexWidget>
+      )}
+    </Frame>
+  );
+}
+export const calendarWidget = (props: CalendarWidgetProps) => both(Calendar, props);

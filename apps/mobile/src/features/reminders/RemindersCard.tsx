@@ -16,7 +16,8 @@ const leads: { value: ReminderSettings['leadMinutes']; label: string }[] = [
 ];
 const widgetChoices: { name: WidgetName; label: string; detail: string; icon: IconName }[] = [
   { name: WIDGETS.today, label: '오늘 할 일', detail: '지연·오늘 목록, 동그라미로 바로 완료 (4×2)', icon: 'sun' },
-  { name: WIDGETS.upcoming, label: '예정', detail: '앞으로 7일을 날짜별로 (4×2)', icon: 'calendar' },
+  { name: WIDGETS.upcoming, label: '예정', detail: '앞으로 7일을 날짜별로 (4×2)', icon: 'list' },
+  { name: WIDGETS.calendar, label: '달력', detail: '이번 달 일정 표시, 날짜를 누르면 그 날로 (4×4)', icon: 'calendar' },
   { name: WIDGETS.habits, label: '습관', detail: '누르면 오늘 기록 (4×2)', icon: 'repeat' },
   { name: WIDGETS.focus, label: '집중', detail: '25분·50분 바로 시작 (2×2)', icon: 'clock' },
   { name: WIDGETS.quickAdd, label: '빠른 추가', detail: '눌러서 할 일 입력 (4×1)', icon: 'plus-circle' },
