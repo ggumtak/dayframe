@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { KeyboardAvoidingView, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AppState, KeyboardAvoidingView, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Button, Icon, Screen, Txt } from '@/components/ui';
 import { auth, authMessage } from '@/lib/auth';
@@ -15,20 +15,25 @@ export default function SignIn() {
   const [notice, setNotice] = useState<string | null>(null);
   const ready = /\S+@\S+\.\S+/.test(email.trim()) && password.length >= 6;
 
+  // Set after a sign-up that still needs its email confirmed.
+  const [awaitingEmail, setAwaitingEmail] = useState(false);
+  const credentials = useRef({ email: '', password: '' });
+
   const submit = async () => {
     if (!ready || busy) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const credentials = { email: email.trim(), password };
+      credentials.current = { email: email.trim(), password };
       const { data, error: failure } = mode === 'sign-in'
-        ? await auth.signInWithPassword(credentials) : await auth.signUp(credentials);
+        ? await auth.signInWithPassword(credentials.current) : await auth.signUp(credentials.current);
       if (failure) setError(authMessage(failure));
       else if (!data.session) {
         // The project requires email confirmation before the first sign-in.
-        setNotice('확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 로그인해 주세요.');
+        setNotice('확인 메일을 보냈습니다. 메일의 링크를 누르고 이 앱으로 돌아오면 자동으로 로그인됩니다. 링크를 누른 뒤 빈 페이지나 오류 페이지가 보여도 인증은 완료된 것입니다.');
         setMode('sign-in');
+        setAwaitingEmail(true);
       }
     } catch (failure) {
       setError(authMessage(failure as Error));
@@ -36,6 +41,18 @@ export default function SignIn() {
       setBusy(false);
     }
   };
+
+  // Coming back from the mail app after tapping the link signs in without retyping anything.
+  useEffect(() => {
+    if (!awaitingEmail) return;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      auth.signInWithPassword(credentials.current).then(({ data }) => {
+        if (data.session) setAwaitingEmail(false);
+      }).catch(() => {});
+    });
+    return () => subscription.remove();
+  }, [awaitingEmail]);
 
   const field = [styles.field, type.body, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }];
   return (
