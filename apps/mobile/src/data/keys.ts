@@ -3,6 +3,7 @@ export const keys = {
   projects: ['projects'] as const,
   tags: ['tags'] as const,
   tasks: ['tasks', 'open'] as const,
+  completedTasks: ['tasks', 'completed'] as const,
   taskTags: ['task-tags'] as const,
   habits: ['habits'] as const,
   habitLogs: (id: string) => ['habit-logs', id] as const,

@@ -117,6 +117,7 @@ export const api = {
   createTag: (name: string) => json<Tag>('/tags', 'POST', { name }),
 
   openTasks: () => all<Task>('/tasks', { state: 'open' }),
+  completedTasks: () => all<Task>('/tasks', { state: 'completed' }),
   task: (id: string) => request<Task>('/tasks/' + id),
   createTask: (input: TaskInput) => json<Task>('/tasks', 'POST', input),
   updateTask: (id: string, patch: TaskPatch) => json<Task>('/tasks/' + id, 'PATCH', patch),

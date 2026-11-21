@@ -12,11 +12,13 @@ const names = ['월', '화', '수', '목', '금', '토', '일'];
 export type DayMark = 'done' | 'partial' | 'skipped';
 
 /** A Monday-first month grid for picking a date or reading per-day marks. */
-export function MonthCalendar({ initial, selected, today, marks, min, max, onSelect }: {
+export function MonthCalendar({ initial, selected, today, marks, dots, min, max, onSelect }: {
   initial: PlainDate;
   selected?: PlainDate | null;
   today: PlainDate;
   marks?: Map<string, DayMark>;
+  /** Days with something on them, shown as a small dot under the date. */
+  dots?: Set<string>;
   min?: PlainDate;
   max?: PlainDate;
   onSelect?: (date: PlainDate) => void;
@@ -66,6 +68,9 @@ export function MonthCalendar({ initial, selected, today, marks, min, max, onSel
                 <View style={[styles.day, { backgroundColor: fill }, isToday && !isSelected && { borderWidth: 1.5, borderColor: colors.accent }]}>
                   <Text style={[type.small as TextStyle, { color: foreground, fontWeight: isToday ? '700' : '400' }]}>{date.day}</Text>
                 </View>
+                {dots ? (
+                  <View style={[styles.dot, { backgroundColor: dots.has(key) ? (isSelected ? colors.accent : colors.textFaint) : 'transparent' }]} />
+                ) : null}
               </Pressable>
             );
           })}
@@ -80,4 +85,5 @@ const styles = StyleSheet.create({
   week: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', justifyContent: 'center', textAlign: 'center', paddingVertical: 3 },
   day: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  dot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
 });

@@ -56,7 +56,12 @@ export default function Today() {
     <Screen>
       <Header
         title="오늘" subtitle={`${date.month}월 ${date.day}일 ${weekdayName(date)}요일 · ${due.length ? due.length + '개 남음' : '남은 일 없음'}`}
-        right={<IconButton name="settings" label="설정" onPress={() => router.push('/settings')} color={colors.textMuted} />} />
+        right={(
+          <View style={{ flexDirection: 'row' }}>
+            <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
+            <IconButton name="settings" label="설정" onPress={() => router.push('/settings')} color={colors.textMuted} />
+          </View>
+        )} />
       <UpdateBanner />
       <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
         <Segmented

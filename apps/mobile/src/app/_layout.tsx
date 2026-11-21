@@ -39,6 +39,8 @@ function Routes({ signedIn }: { signedIn: boolean }) {
         <Stack.Screen name="settings" />
         <Stack.Screen name="ai" />
         <Stack.Screen name="add" options={{ animation: 'none' }} />
+        <Stack.Screen name="search" options={{ animation: 'fade' }} />
+        <Stack.Screen name="completed" />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="sign-in" />

@@ -1,8 +1,9 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView as PlainScroll, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
-import { Chip, EmptyState, Header, Loading, Screen, Txt } from '@/components/ui';
+import { Chip, EmptyState, Header, IconButton, Loading, Screen, Txt } from '@/components/ui';
 import { byPosition, useProjects, useTaskIndex } from '@/data/tasks';
 import { TaskList } from '@/features/tasks/TaskList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
@@ -35,7 +36,14 @@ export default function Inbox() {
 
   return (
     <Screen>
-      <Header title={selected?.name ?? '수신함'} subtitle={tasks.length ? `${tasks.length}개 · 길게 눌러 순서 변경` : undefined} />
+      <Header
+        title={selected?.name ?? '수신함'} subtitle={tasks.length ? `${tasks.length}개 · 길게 눌러 순서 변경` : undefined}
+        right={(
+          <View style={{ flexDirection: 'row' }}>
+            <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
+            <IconButton name="check-circle" label="완료한 일" onPress={() => router.push('/completed')} color={colors.textMuted} />
+          </View>
+        )} />
       {projects?.length ? (
         <View>
           <PlainScroll horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm, paddingBottom: space.sm }}>
