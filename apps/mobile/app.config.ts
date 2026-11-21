@@ -12,12 +12,8 @@ const config: ExpoConfig = {
   icon: './assets/images/icon.png',
   scheme: 'dayframe',
   userInterfaceStyle: 'automatic',
-  ios: {
-    bundleIdentifier: 'com.ggumtak.dayframe',
-    buildNumber: String(versionCode),
-    supportsTablet: true,
-    infoPlist: { ITSAppUsesNonExemptEncryption: false },
-  },
+  // Android is the only shipped target; the web build exists for development.
+  platforms: ['android', 'web'],
   android: {
     package: 'com.ggumtak.dayframe',
     versionCode,

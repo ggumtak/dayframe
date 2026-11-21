@@ -1,7 +1,7 @@
 import * as Application from 'expo-application';
 import { File, Paths } from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
-import { Linking, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
 import { env } from '@/lib/env';
 
@@ -61,11 +61,4 @@ export async function installApk(file: File): Promise<void> {
   await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
     data: file.contentUri, type: 'application/vnd.android.package-archive', flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
   });
-}
-
-/** iOS has no sideloading; send the user to TestFlight or the App Store when a link is published. */
-export async function openStore(release: ReleaseInfo): Promise<boolean> {
-  if (!release.iosUrl) return false;
-  await Linking.openURL(release.iosUrl);
-  return true;
 }

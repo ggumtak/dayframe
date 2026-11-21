@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 
 import { keys } from '@/data/keys';
 import { haptic } from '@/lib/haptics';
 
 import { fetchLatestRelease, installedApp } from './check';
 import {
-  canSelfUpdate, downloadApk, hasInstallPermission, installApk, openInstallPermissionSettings, openStore, UpdateError,
+  canSelfUpdate, downloadApk, hasInstallPermission, installApk, openInstallPermissionSettings, UpdateError,
 } from './installer';
 import { type InstalledApp, isNewer, isRequired, type ReleaseInfo, type UpdateFailure } from './version';
 
@@ -27,8 +27,8 @@ interface UpdateValue {
   checkFailed: boolean;
   lastChecked: number;
   phase: UpdatePhase;
-  /** What "update now" does on this platform. */
-  action: 'install' | 'store' | 'none';
+  /** Whether "update now" can download and install the release on this device. */
+  action: 'install' | 'none';
   check: () => void;
   start: () => void;
   cancel: () => void;
@@ -58,8 +58,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<UpdatePhase>({ name: 'idle' });
   const abort = useRef<AbortController | null>(null);
   const available = !!release && isNewer(release, installed);
-  const action: UpdateValue['action'] = !available ? 'none'
-    : canSelfUpdate && release?.apkUrl ? 'install' : Platform.OS !== 'android' && release?.iosUrl ? 'store' : 'none';
+  const action: UpdateValue['action'] = available && canSelfUpdate && release?.apkUrl ? 'install' : 'none';
 
   const download = async (target: ReleaseInfo) => {
     const controller = new AbortController();
@@ -87,10 +86,6 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
   const start = () => {
     if (!release || phase.name === 'downloading' || phase.name === 'installing') return;
-    if (action === 'store') {
-      void openStore(release);
-      return;
-    }
     if (action !== 'install') return;
     if (!hasInstallPermission()) {
       setPhase({ name: 'permission' });

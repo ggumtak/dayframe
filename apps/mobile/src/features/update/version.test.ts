@@ -61,7 +61,7 @@ test('GitHub latest-release payloads map to release info', () => {
     ],
   }, repo);
   assert.deepEqual(release, {
-    version: '1.4.2', versionCode: 10402, minSupportedVersion: null, notes: 'Faster sync', iosUrl: null, source: 'github',
+    version: '1.4.2', versionCode: 10402, minSupportedVersion: null, notes: 'Faster sync', source: 'github',
     apkUrl: 'https://github.com/ggumtak/dayframe/releases/download/v1.4.2/dayframe.apk',
   });
   assert.equal(fromGithubRelease({ tag_name: 'v1.5.0', assets: [{ name: 'x.apk', browser_download_url: 'https://github.com/other/repo/releases/download/v1.5.0/x.apk' }] }, repo)?.apkUrl, null);

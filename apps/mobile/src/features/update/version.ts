@@ -7,7 +7,6 @@ export interface ReleaseInfo {
   minSupportedVersion: string | null;
   notes: string;
   apkUrl: string | null;
-  iosUrl: string | null;
   source: 'backend' | 'github';
 }
 
@@ -67,7 +66,7 @@ export function fromGithubRelease(payload: unknown, repo: string): ReleaseInfo |
   const apk = release.assets?.find((asset) => asset.name?.toLowerCase().endsWith('.apk') && isTrustedApkUrl(asset.browser_download_url, repo));
   return {
     version, versionCode: versionCodeOf(version), minSupportedVersion: null, notes: (release.body ?? '').trim(),
-    apkUrl: apk?.browser_download_url ?? null, iosUrl: null, source: 'github',
+    apkUrl: apk?.browser_download_url ?? null, source: 'github',
   };
 }
 

@@ -76,8 +76,7 @@ export function UpdateCard() {
 
       {update.available && update.action === 'none' ? (
         <Txt variant="small" tone="muted">
-          {Platform.OS === 'ios' ? 'iOS 배포 링크(TestFlight)가 등록되면 여기에서 바로 열 수 있습니다.'
-            : Platform.OS === 'web' ? '앱 설치는 Android 기기에서 진행해 주세요.' : '이 릴리스의 설치 파일이 아직 올라오지 않았습니다.'}
+          {Platform.OS === 'web' ? '앱 설치는 Android 기기에서 진행해 주세요.' : '이 릴리스의 설치 파일이 아직 올라오지 않았습니다.'}
         </Txt>
       ) : null}
 
@@ -85,7 +84,7 @@ export function UpdateCard() {
         <View style={{ flexDirection: 'row', gap: space.sm }}>
           {update.action !== 'none' ? (
             <Button
-              label={update.action === 'store' ? '스토어에서 업데이트' : phase.name === 'error' ? '다시 시도' : '지금 업데이트'}
+              label={phase.name === 'error' ? '다시 시도' : '지금 업데이트'}
               icon="download" onPress={update.start} style={{ flex: 1 }} />
           ) : null}
           <Button
