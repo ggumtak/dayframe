@@ -3,8 +3,22 @@ import { test } from 'node:test';
 
 import { Temporal } from '@js-temporal/polyfill';
 
-import { nextOccurrence } from '../../../../supabase/functions/api/schedule.ts';
 import { countByDate, datePhrase, occurrenceDates } from './occurrences.ts';
+
+// A stand-in for the backend's recurrence engine (tested in the root suite), kept local so this app test
+// needs only the app's own packages: weekly rules step to the next listed weekday, monthly ones by a month.
+const nextOccurrence = (rule: string, timezone: string, _anchor: string, after: Temporal.Instant) => {
+  const at = after.toZonedDateTimeISO(timezone);
+  if (rule.startsWith('FREQ=MONTHLY')) return at.add({ months: 1 }).toInstant().toString();
+  const days = /BYDAY=([A-Z,]+)/.exec(rule)?.[1].split(',');
+  if (!rule.startsWith('FREQ=WEEKLY') || !days) throw new Error('unsupported rule');
+  const names = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+  for (let step = 1; step <= 7; step++) {
+    const next = at.add({ days: step });
+    if (days.includes(names[next.dayOfWeek - 1])) return next.toInstant().toString();
+  }
+  throw new Error('no weekday');
+};
 
 const base = { id: 'a', all_day: false, timezone: 'Asia/Seoul', recurrence_anchor_at: null, recurrence_local_time: null };
 const nov = [Temporal.PlainDate.from('2026-11-01'), Temporal.PlainDate.from('2026-11-30')] as const;
