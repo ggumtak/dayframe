@@ -56,9 +56,9 @@ npm test            # 업데이트 버전 비교 로직 단위 테스트
 
 | 실행 조건 | 결과 |
 | --- | --- |
-| `v1.2.3` 태그 푸시 | APK 빌드 → 서명·버전·권한 검증 → GitHub Release에 `dayframe.apk` 게시 |
-| Pull Request, 수동 실행 | 같은 APK를 빌드해 에뮬레이터에서 실행해 보고, 결과물은 아티팩트로만 보관 |
+| 버전을 입력한 수동 실행(`main`), 또는 `v1.2.3` 태그 푸시 | APK 빌드 → 서명·버전·권한 검증 → GitHub Release에 `dayframe.apk` 게시 |
+| Pull Request, 버전 없는 수동 실행 | 같은 APK를 빌드해 에뮬레이터에서 실행해 보고, 결과물은 아티팩트로만 보관 |
 
-버전은 태그에서 정해집니다. `v1.2.3`은 버전 이름 `1.2.3`, 빌드 번호 `10203`이 됩니다.
+버전은 입력값(또는 태그)에서 정해집니다. `1.2.3`은 버전 이름 `1.2.3`, 빌드 번호 `10203`이 됩니다.
 
 EAS를 쓰려면 `eas.json`의 `preview` 프로필이 APK를 만듭니다: `npx eas-cli@latest build -p android --profile preview`.

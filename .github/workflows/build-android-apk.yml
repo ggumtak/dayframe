@@ -1,7 +1,10 @@
 name: Build Android APK
 
-# Tags (v1.2.3) build a signed APK and publish it as a GitHub Release, which is where the app's
-# "Update now" button downloads from. Pull requests and manual runs build the same APK as an artifact only.
+# A release builds a signed APK and publishes it as a GitHub Release, which is where the app's
+# "Update now" button downloads from. There are two ways to release:
+#   - run this workflow by hand on main with a version (Actions > Build Android APK > Run workflow), or
+#   - push a tag such as v1.2.3.
+# Pull requests, and manual runs without a version, build the same APK as an artifact only.
 on:
   push:
     tags: ['v*']
@@ -12,9 +15,20 @@ on:
       - 'supabase/functions/api/**'
       - '.github/workflows/build-android-apk.yml'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, for example 1.0.1. Leave empty to build without releasing.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
+
+env:
+  # "true" when this run publishes a release.
+  RELEASE: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '') }}
+  # The tag a release is published under: the pushed tag, or v<version> for a manual release.
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
 
 concurrency:
   group: android-apk-${{ github.ref }}
@@ -32,8 +46,8 @@ jobs:
       EXPO_PUBLIC_GITHUB_REPO: ${{ github.repository }}
       EXPO_NO_TELEMETRY: '1'
       # Non-release builds also run on the x86_64 emulator and log an on-device self-check for the smoke test.
-      EXPO_PUBLIC_SELF_CHECK: ${{ github.ref_type != 'tag' && '1' || '' }}
-      ANDROID_ABIS: ${{ github.ref_type == 'tag' && 'armeabi-v7a,arm64-v8a' || 'armeabi-v7a,arm64-v8a,x86_64' }}
+      EXPO_PUBLIC_SELF_CHECK: ${{ !(github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')) && '1' || '' }}
+      ANDROID_ABIS: ${{ (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')) && 'armeabi-v7a,arm64-v8a' || 'armeabi-v7a,arm64-v8a,x86_64' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,9 +64,15 @@ jobs:
           cache: gradle
 
       - name: Resolve version
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            version="${GITHUB_REF_NAME#v}"
+          if [[ "$RELEASE" == "true" ]]; then
+            if [[ "$GITHUB_REF_TYPE" != "tag" && "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+              echo "::error::Releases are made from $DEFAULT_BRANCH. This run is on $GITHUB_REF_NAME."
+              exit 1
+            fi
+            version="${RELEASE_TAG#v}"
           else
             version="$(node -p "require('./package.json').version")"
           fi
@@ -72,7 +92,7 @@ jobs:
           configured="$(node -p "const c = require('./release.config.json'); /^https:\/\/.+/.test(c.supabaseUrl) && c.supabaseKey.length > 0")"
           if [[ "$configured" == "true" ]]; then
             echo "Using the Supabase project from apps/mobile/release.config.json"
-          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+          elif [[ "$RELEASE" == "true" ]]; then
             echo "::error::apps/mobile/release.config.json does not name a Supabase project, so a released app could not sign anyone in."
             exit 1
           else
@@ -99,7 +119,7 @@ jobs:
           if [[ -n "$KEYSTORE_BASE64" ]]; then
             echo "$KEYSTORE_BASE64" | base64 --decode > "$signing/release.jks"
             echo "SIGNING=release" >> "$GITHUB_ENV"
-          elif [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+          elif [[ "$RELEASE" != "true" ]]; then
             # No secrets on this run: sign with a throwaway key so the signing path is still exercised.
             KEYSTORE_PASSWORD=throwaway
             KEY_PASSWORD=throwaway
@@ -176,7 +196,7 @@ jobs:
   smoke:
     name: Emulator smoke test
     needs: build
-    if: github.ref_type != 'tag'
+    if: ${{ !(github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -212,7 +232,7 @@ jobs:
   release:
     name: Publish release
     needs: build
-    if: github.ref_type == 'tag'
+    if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '') }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -229,7 +249,7 @@ jobs:
 
       - name: Resolve version
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           [[ "$version" =~ ^([0-9]+)\.([0-9]{1,2})\.([0-9]{1,2})$ ]]
           echo "APP_VERSION=$version" >> "$GITHUB_ENV"
           echo "ANDROID_VERSION_CODE=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))" >> "$GITHUB_ENV"
@@ -237,11 +257,12 @@ jobs:
       - name: Publish the GitHub Release
         run: |
           sha256sum --check dayframe.apk.sha256
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dayframe.apk dayframe.apk.sha256 --clobber
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dayframe.apk dayframe.apk.sha256 --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dayframe.apk dayframe.apk.sha256 \
-              --title "Dayframe $APP_VERSION" --generate-notes --verify-tag
+            # Creates the tag at the built commit when it does not exist yet (manual releases).
+            gh release create "$RELEASE_TAG" dayframe.apk dayframe.apk.sha256 \
+              --title "Dayframe $APP_VERSION" --generate-notes --target "$GITHUB_SHA"
           fi
 
       # Optional: lets the backend's /app/version report this release (and a minimum supported version).
@@ -249,9 +270,9 @@ jobs:
       - name: Record the release in Supabase
         if: env.SUPABASE_SERVICE_ROLE_KEY != '' && env.SUPABASE_URL != ''
         run: |
-          notes="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)"
+          notes="$(gh release view "$RELEASE_TAG" --json body --jq .body)"
           jq -n --arg version "$APP_VERSION" --argjson code "$ANDROID_VERSION_CODE" --arg notes "$notes" \
-            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/dayframe.apk" \
+            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/dayframe.apk" \
             '{latest_version: $version, version_code: $code, min_supported_version: "1.0.0", release_notes: $notes,
               apk_download_url: $url, published_at: (now | todate)}' > release.json
           curl --fail-with-body -sS -X POST "$SUPABASE_URL/rest/v1/app_releases?on_conflict=version_code" \
