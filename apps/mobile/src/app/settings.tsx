@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Linking, ScrollView, View } from 'react-native';
 
-import { Button, Card, Header, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
+import { Button, Card, Header, Icon, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useProfile, useSession } from '@/data/session';
 import { UpdateCard } from '@/features/update/UpdateCard';
 import { deviceTimeZone } from '@/lib/dates';
@@ -19,7 +19,7 @@ const examples: [string, string][] = [
 ];
 
 export default function Settings() {
-  const { mode, setMode } = useTheme();
+  const { colors, mode, setMode } = useTheme();
   const { account, signOut } = useSession();
   const { data: profile } = useProfile();
   const [confirm, setConfirm] = useState(false);
@@ -31,6 +31,16 @@ export default function Settings() {
         <View style={{ gap: space.sm }}>
           <Txt variant="section" tone="muted">앱 업데이트</Txt>
           <UpdateCard />
+        </View>
+
+        <View style={{ gap: space.sm }}>
+          <Txt variant="section" tone="muted">AI 비서</Txt>
+          <Card style={{ paddingVertical: space.xs }}>
+            <Row
+              icon="cpu" label="AI 연결" detail="Claude · ChatGPT"
+              trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
+              onPress={() => router.push('/ai')} />
+          </Card>
         </View>
 
         <View style={{ gap: space.sm }}>

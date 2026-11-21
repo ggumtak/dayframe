@@ -36,6 +36,7 @@ function Routes({ signedIn }: { signedIn: boolean }) {
         <Stack.Screen name="habit/[id]" />
         <Stack.Screen name="habit/new" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="ai" />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="sign-in" />
