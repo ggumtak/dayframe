@@ -7,14 +7,15 @@ import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-rean
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Chip, Icon, type IconName, Txt } from '@/components/ui';
-import { nextPosition, useProjects, useTaskActions, useTaskIndex } from '@/data/tasks';
+import { nextPosition, useProjects, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { describeRecurrence, deviceTimeZone, formatDue, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { analyzeTask, type TaskAnalysis } from '@/lib/shared';
+import { analyzeTask, type Priority, type TaskAnalysis } from '@/lib/shared';
 import { elevation, priorityColor, radius, space, useTheme } from '@/theme';
 
 import { HighlightInput, type PillPalette } from './HighlightInput';
 import { parseErrorMessage } from './messages';
+import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames } from './suggest';
 
 export const TAB_BAR_HEIGHT = 58;
 
@@ -37,14 +38,15 @@ interface QuickAddValue {
 const QuickAddContext = createContext<QuickAddValue>({ open: () => {}, setScreenDefaults: () => {} });
 export const useQuickAdd = () => useContext(QuickAddContext);
 
-const inserts: { label: string; text: string; icon: IconName }[] = [
-  { label: '오늘', text: '오늘', icon: 'sun' },
-  { label: '내일', text: '내일', icon: 'sunrise' },
-  { label: '매일', text: '매일', icon: 'repeat' },
+const inserts: { label: string; text: string; icon: IconName; kind?: 'date' | 'recurrence' | 'priority' }[] = [
+  { label: '오늘', text: '오늘', icon: 'sun', kind: 'date' },
+  { label: '내일', text: '내일', icon: 'sunrise', kind: 'date' },
+  { label: '매일', text: '매일', icon: 'repeat', kind: 'recurrence' },
   { label: '프로젝트', text: '#', icon: 'hash' },
   { label: '태그', text: '@', icon: 'tag' },
-  { label: '우선순위', text: 'p1', icon: 'flag' },
+  { label: '우선순위', text: 'p1', icon: 'flag', kind: 'priority' },
 ];
+const priorities: Priority[] = [1, 2, 3, 4];
 
 function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onClose: () => void }) {
   const { colors } = useTheme();
@@ -52,8 +54,10 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   const input = useRef<TextInputInstance>(null);
   const [text, setText] = useState(defaults.initialText ?? '');
   const [added, setAdded] = useState(0);
+  const [pickingPriority, setPickingPriority] = useState(false);
   const { tasks, byId } = useTaskIndex();
   const { data: projects } = useProjects();
+  const { data: tags } = useTags();
   const actions = useTaskActions();
   const timezone = deviceTimeZone();
   const parent = defaults.parentTaskId ? byId.get(defaults.parentTaskId) : undefined;
@@ -127,9 +131,42 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     input.current?.focus();
   };
 
-  const insert = (token: string) => {
+  const tokens = analysis && analysis.text === text ? analysis.tokens : [];
+  const mention = useMemo(() => activeMention(text), [text]);
+  const suggestions = useMemo(() => {
+    if (!mention) return [];
+    const pool = mention.kind === 'project' ? (projects ?? []).map((item) => item.name) : (tags ?? []).map((item) => item.name);
+    return matchNames(pool, mention.query);
+  }, [mention, projects, tags]);
+
+  const insert = (item: (typeof inserts)[number]) => {
     haptic.tap();
-    setText((current) => (current && !/\s$/.test(current) ? current + ' ' : current) + token + (token.length > 1 ? ' ' : ''));
+    if (item.kind === 'priority') {
+      setPickingPriority((open) => !open);
+      input.current?.focus();
+      return;
+    }
+    setPickingPriority(false);
+    if (item.kind === 'date' || item.kind === 'recurrence') {
+      const scheduleKind = item.kind;
+      setText((current) => applyScheduleWord(current, item.text, scheduleKind, tokens));
+    } else {
+      setText((current) => (current && !/\s$/.test(current) ? current + ' ' : current) + item.text);
+    }
+    input.current?.focus();
+  };
+
+  const pickPriority = (priority: Priority) => {
+    haptic.tap();
+    setText((current) => applyPriority(current, priority, tokens));
+    setPickingPriority(false);
+    input.current?.focus();
+  };
+
+  const pickSuggestion = (name: string) => {
+    if (!mention) return;
+    haptic.tap();
+    setText((current) => applyMention(current, mention, name));
     input.current?.focus();
   };
 
@@ -161,12 +198,47 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
           </Txt>
         ) : null}
         <HighlightInput
-          ref={input} value={text} onChangeText={setText} tokens={analysis && analysis.text === text ? analysis.tokens : []}
+          ref={input} value={text} onChangeText={setText} tokens={tokens}
           palette={palette} autoFocus onSubmitEditing={submit}
           placeholder={parent ? '하위 작업 추가' : '예: 내일 저녁 7시 운동 #건강 p2'}
           accessibilityLabel="할 일 입력" />
         {result.error ? (
           <Txt variant="small" tone="danger" style={{ marginTop: 6 }} accessibilityLiveRegion="polite">{result.error}</Txt>
+        ) : null}
+        {suggestions.length > 0 && mention ? (
+          <ScrollView
+            horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always"
+            contentContainerStyle={{ gap: 6, paddingTop: space.sm }}>
+            {suggestions.map((name) => (
+              <Pressable
+                key={name} accessibilityRole="button" accessibilityLabel={(mention.kind === 'project' ? '프로젝트 ' : '태그 ') + name}
+                onPress={() => pickSuggestion(name)}
+                style={({ pressed }) => [styles.suggestion, { backgroundColor: colors.accentSoft, opacity: pressed ? 0.6 : 1 }]}>
+                <Icon name={mention.kind === 'project' ? 'hash' : 'tag'} size={12} color={colors.accent} />
+                <Txt variant="smallStrong" tone="accent">{name}</Txt>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
+        {pickingPriority ? (
+          <View style={{ flexDirection: 'row', gap: 6, marginTop: space.sm }}>
+            {priorities.map((priority) => {
+              const active = (draft?.priority ?? 4) === priority;
+              const tint = priorityColor(colors, priority);
+              return (
+                <Pressable
+                  key={priority} accessibilityRole="button" accessibilityLabel={'우선순위 ' + priority}
+                  onPress={() => pickPriority(priority)}
+                  style={({ pressed }) => [styles.insert, {
+                    flex: 1, justifyContent: 'center', borderColor: active ? tint : colors.border,
+                    backgroundColor: active ? colors.surfaceMuted : 'transparent', opacity: pressed ? 0.6 : 1,
+                  }]}>
+                  <Icon name="flag" size={13} color={tint} />
+                  <Txt variant="smallStrong" style={{ color: active ? colors.text : colors.textMuted }}>P{priority}</Txt>
+                </Pressable>
+              );
+            })}
+          </View>
         ) : null}
         {hasChips || defaultProject || (defaults.dueToday && !parent && !due) ? (
           <View style={styles.chips}>
@@ -190,14 +262,20 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
         ) : null}
         <View style={styles.tools}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6 }} style={{ flex: 1 }}>
-            {inserts.map((item) => (
-              <Pressable
-                key={item.label} accessibilityRole="button" accessibilityLabel={item.label + ' 넣기'} onPress={() => insert(item.text)}
-                style={({ pressed }) => [styles.insert, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
-                <Icon name={item.icon} size={13} color={colors.textMuted} />
-                <Txt variant="small" tone="muted">{item.label}</Txt>
-              </Pressable>
-            ))}
+            {inserts.map((item) => {
+              const active = item.kind === 'priority' && pickingPriority;
+              return (
+                <Pressable
+                  key={item.label} accessibilityRole="button" accessibilityLabel={item.label + ' 넣기'} onPress={() => insert(item)}
+                  style={({ pressed }) => [styles.insert, {
+                    borderColor: active ? colors.accent : colors.border,
+                    backgroundColor: active ? colors.accentSoft : 'transparent', opacity: pressed ? 0.6 : 1,
+                  }]}>
+                  <Icon name={item.icon} size={13} color={active ? colors.accent : colors.textMuted} />
+                  <Txt variant="small" tone={active ? 'accent' : 'muted'}>{item.label}</Txt>
+                </Pressable>
+              );
+            })}
           </ScrollView>
           {added > 0 ? (
             <Animated.View key={added} entering={ZoomIn.duration(160)} exiting={FadeOut.duration(400)}>
@@ -263,6 +341,9 @@ const styles = StyleSheet.create({
   tools: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.md },
   insert: {
     flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 10, height: 30,
+  },
+  suggestion: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.sm, paddingHorizontal: 10, height: 30,
   },
   send: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   fabWrap: { position: 'absolute', right: space.lg },

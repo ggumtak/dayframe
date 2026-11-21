@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Platform, Pressable, Switch, View } from 'react-native';
+import { AppState, Platform, Pressable, Switch, View } from 'react-native';
 
 import { Button, Card, Chip, Icon, Txt } from '@/components/ui';
 import { radius, space, useTheme } from '@/theme';
 
 import { openNotificationSettings, type PermissionState, reminderPermission, requestReminderPermission } from './notify';
+import { useReminderOverrides } from './overrides';
 import type { ReminderSettings } from './plan';
 import { setReminderSettings, useReminderSettings } from './settings';
 
@@ -17,6 +18,8 @@ const allDay: { value: number | null; label: string }[] = [{ value: null, label:
 export function RemindersCard() {
   const { colors } = useTheme();
   const settings = useReminderSettings();
+  const overrides = useReminderOverrides();
+  const hasHabitAlerts = Object.keys(overrides.habits).length > 0;
   const [permission, setPermission] = useState<PermissionState>('granted');
   const check = useCallback(() => void reminderPermission().then(setPermission), []);
 
@@ -43,14 +46,14 @@ export function RemindersCard() {
           trackColor={{ true: colors.accent, false: colors.border }} thumbColor="#FFFFFF" />
       </View>
 
-      {settings.enabled && permission !== 'granted' ? (
+      {(settings.enabled || hasHabitAlerts) && permission !== 'granted' ? (
         <View style={{ backgroundColor: colors.dangerSoft, borderRadius: radius.md, padding: space.md, gap: space.sm }}>
           <Txt variant="small" tone="danger">
             {permission === 'denied' ? '휴대폰 설정에서 Dayframe 알림이 꺼져 있어 알림이 울리지 않습니다.' : '알림을 허용해야 울립니다.'}
           </Txt>
           <Button
             label={permission === 'denied' ? '휴대폰 설정 열기' : '알림 허용'} kind="secondary" style={{ minHeight: 40 }}
-            onPress={() => (permission === 'denied' ? void Linking.openSettings() : void requestReminderPermission(true).then(setPermission))} />
+            onPress={() => (permission === 'denied' ? void openNotificationSettings() : void requestReminderPermission(true).then(setPermission))} />
         </View>
       ) : null}
 

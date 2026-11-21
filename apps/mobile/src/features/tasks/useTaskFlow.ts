@@ -7,11 +7,19 @@ import { dueMinutes, instantFor, type PlainDate, today } from '@/lib/dates';
 import type { Task, TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 
-/** The schedule fields for moving a task to `date`, keeping its time of day. A null date clears the schedule. */
+/** Formats minutes past midnight as `HH:MM:00` for `recurrence_local_time`. */
+export function localTimeString(minutes: number): string {
+  return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0') + ':00';
+}
+
+/** The schedule fields for moving a task to `date`, keeping or updating its time of day. A null date clears the schedule. */
 export function schedulePatch(task: Task, date: PlainDate | null, minutes: number | null | undefined = undefined): TaskPatch {
-  if (!date) return { due_at: null, all_day: false, recurrence_rule: null };
+  if (!date) return { due_at: null, all_day: false, recurrence_rule: null, recurrence_local_time: null };
   const time = minutes === undefined ? dueMinutes(task) : minutes;
-  return { due_at: instantFor(date, time, task.timezone), all_day: time === null };
+  const all_day = time === null;
+  const patch: TaskPatch = { due_at: instantFor(date, time, task.timezone), all_day };
+  if (task.recurrence_rule) patch.recurrence_local_time = all_day ? null : localTimeString(time);
+  return patch;
 }
 
 /** Task gestures with their feedback: completion and deletion can both be undone from the toast. */
@@ -35,13 +43,15 @@ export function useTaskFlow() {
     });
   }, [actions]);
 
-  const reschedule = useCallback((task: Task, date: PlainDate | null) => {
-    if (date && task.recurrence_rule && task.due_at) {
+  const reschedule = useCallback((task: Task, date: PlainDate | null, minutes?: number | null) => {
+    const currentMinutes = dueMinutes(task);
+    const timeChanged = minutes !== undefined && minutes !== currentMinutes;
+    if (date && task.recurrence_rule && task.due_at && !timeChanged) {
       const due_at = task.recurrence_local_time
         ? date.toZonedDateTime({ timeZone: task.timezone, plainTime: task.recurrence_local_time }).toInstant().toString()
-        : instantFor(date, dueMinutes(task), task.timezone);
+        : instantFor(date, currentMinutes, task.timezone);
       actions.update(task.id, { due_at, expected_due_at: task.due_at, preserve_recurrence: true });
-    } else actions.update(task.id, schedulePatch(task, date));
+    } else actions.update(task.id, schedulePatch(task, date, minutes));
   }, [actions]);
 
   const postpone = useCallback((task: Task) => {

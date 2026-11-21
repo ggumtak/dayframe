@@ -150,7 +150,7 @@ queryClient.setMutationDefaults(writes.completeTask, {
       }
     }));
   },
-  onSettled: () => settle(keys.tasks),
+  onSettled: () => settle(keys.tasks, keys.completedTasks),
 });
 
 queryClient.setMutationDefaults(writes.reopenTask, {
@@ -158,11 +158,12 @@ queryClient.setMutationDefaults(writes.reopenTask, {
   mutationFn: (task: Task) => api.reopenTask(task.id),
   // Put the task back at once; the completion it undoes may still be waiting in the queue.
   onMutate: async (task: Task) => {
-    await hold(keys.tasks);
+    await hold(keys.tasks, keys.completedTasks);
     editTasks((tasks) => [...tasks.filter((item) => item.id !== task.id), { ...task, completed_at: null }]);
+    queryClient.setQueryData<Task[]>(keys.completedTasks, (tasks) => tasks?.filter((item) => item.id !== task.id));
   },
   onSuccess: (task: Task) => editTasks((tasks) => [...tasks.filter((item) => item.id !== task.id), task]),
-  onSettled: () => settle(keys.tasks),
+  onSettled: () => settle(keys.tasks, keys.completedTasks),
 });
 
 // Tasks the user has just deleted are hidden while the "undo" toast is up, and only then deleted.
@@ -283,8 +284,60 @@ export const byPosition = (a: Task, b: Task) => a.position - b.position || (a.id
 /** Sorts scheduled work the way a day is read: timed items in order, then by priority. */
 export function bySchedule(a: Task, b: Task): number {
   const [left, right] = [a.due_at ?? '', b.due_at ?? ''];
-  if (left !== right) return left < right ? -1 : 1;
+  if (left !== right) {
+    if (!left) return 1;
+    if (!right) return -1;
+    return left < right ? -1 : 1;
+  }
   return a.priority - b.priority || byPosition(a, b);
+}
+
+/** Sorts highest priority first (P1 → P4), then earliest due date, then manual order. */
+export function byPriority(a: Task, b: Task): number {
+  if (a.priority !== b.priority) return a.priority - b.priority;
+  return bySchedule(a, b);
+}
+
+/** Create, rename, or delete a project; deleting cascades to its tasks on the server. */
+export function useProjectActions() {
+  const create = useMutation({
+    mutationFn: (name: string) => api.createProject({ name }),
+    onSuccess: (project) => {
+      queryClient.setQueryData<Project[]>(keys.projects, (list) => [...(list ?? []).filter((item) => item.id !== project.id), project]);
+    },
+    onSettled: () => settle(keys.projects),
+  });
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.updateProject(id, { name }),
+    onMutate: async ({ id, name }) => {
+      await hold(keys.projects);
+      queryClient.setQueryData<Project[]>(keys.projects, (list) => list?.map((project) => (project.id === id ? { ...project, name } : project)));
+    },
+    onSettled: () => settle(keys.projects),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteProject(id),
+    onMutate: async (id) => {
+      await hold(keys.projects, keys.tasks);
+      queryClient.setQueryData<Project[]>(keys.projects, (list) => list?.filter((project) => project.id !== id));
+      editTasks((tasks) => {
+        const dropped = new Set<string>();
+        for (const task of tasks) {
+          if (task.project_id === id) {
+            for (const item of withDescendants(tasks, task.id)) dropped.add(item);
+          }
+        }
+        return tasks.filter((task) => !dropped.has(task.id));
+      });
+    },
+    onSettled: () => settle(keys.projects, keys.tasks, keys.taskTags, keys.completedTasks),
+  });
+  return {
+    create: (name: string, onSuccess?: (project: Project) => void) => create.mutate(name, { onSuccess }),
+    rename: (id: string, name: string) => rename.mutate({ id, name }),
+    remove: (id: string) => remove.mutate(id),
+    creating: create.isPending,
+  };
 }
 
 export interface TaskIndex {

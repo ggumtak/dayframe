@@ -60,7 +60,7 @@ export const TaskRow = memo(function TaskRow({
     }, 240);
   };
 
-  const meta: { key: string; icon?: 'calendar' | 'repeat' | 'hash' | 'tag' | 'git-merge'; text: string; color: string }[] = [];
+  const meta: { key: string; icon?: 'calendar' | 'repeat' | 'hash' | 'tag' | 'git-merge' | 'align-left'; text: string; color: string }[] = [];
   const minutes = dueMinutes(task);
   if (due && !(hideDate && minutes === null)) {
     meta.push({
@@ -71,6 +71,7 @@ export const TaskRow = memo(function TaskRow({
   if (repeat) meta.push({ key: 'repeat', icon: 'repeat', text: repeat, color: colors.textMuted });
   for (const name of tagNames ?? []) meta.push({ key: 'tag-' + name, icon: 'tag', text: name, color: colors.accent });
   if (subtaskCount) meta.push({ key: 'subtasks', icon: 'git-merge', text: String(subtaskCount), color: colors.textMuted });
+  if (task.notes?.trim()) meta.push({ key: 'notes', icon: 'align-left', text: '', color: colors.textFaint });
 
   const row = (
     <Pressable
@@ -100,7 +101,7 @@ export const TaskRow = memo(function TaskRow({
               {meta.map((item) => (
                 <View key={item.key} style={styles.metaItem}>
                   {item.icon ? <Feather name={item.icon} size={11} color={item.color} /> : null}
-                  <Text style={[styles.metaText, { color: item.color }]} numberOfLines={1}>{item.text}</Text>
+                  {item.text ? <Text style={[styles.metaText, { color: item.color }]} numberOfLines={1}>{item.text}</Text> : null}
                 </View>
               ))}
             </View>

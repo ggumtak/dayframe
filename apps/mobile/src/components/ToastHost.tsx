@@ -1,3 +1,4 @@
+import Feather from '@expo/vector-icons/Feather';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
@@ -38,14 +39,16 @@ export function ToastHost({ bottomOffset = 0, rightInset = 0 }: { bottomOffset?:
   }, []);
 
   if (!toast) return null;
-  const background = isDark ? colors.surfaceMuted : colors.text;
-  const foreground = isDark ? colors.text : colors.background;
+  const isError = toast.tone === 'error';
+  const background = isError ? colors.danger : isDark ? colors.surfaceMuted : colors.text;
+  const foreground = isError ? '#FFFFFF' : isDark ? colors.text : colors.background;
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom: insets.bottom + bottomOffset + space.lg, right: space.lg + rightInset }]}>
       <Animated.View
         key={toast.id} entering={FadeInDown.duration(180)} exiting={FadeOutDown.duration(160)}
         accessibilityLiveRegion="polite" accessibilityRole="alert"
         style={[styles.toast, { backgroundColor: background }, elevation(colors, 2)]}>
+        {isError ? <Feather name="alert-circle" size={18} color="#FFFFFF" /> : null}
         <Text style={[type.small as TextStyle, { color: foreground, flex: 1 }]} numberOfLines={2}>{toast.message}</Text>
         {toast.actionLabel ? (
           <Pressable

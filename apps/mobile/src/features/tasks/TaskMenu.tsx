@@ -1,9 +1,10 @@
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Icon, type IconName, Row, Sheet, Txt } from '@/components/ui';
-import { useTaskActions } from '@/data/tasks';
+import { Chip, Icon, type IconName, Row, Sheet, Txt } from '@/components/ui';
+import { useProjects, useTaskActions } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { describeRecurrence, formatDue, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -30,14 +31,22 @@ function Action({ icon, label, onPress, color }: { icon: IconName; label: string
  * `onSchedule` opens the full date picker the list already has.
  */
 export function TaskMenu({ task, onClose, onSchedule }: { task: Task | null; onClose: () => void; onSchedule: (task: Task) => void }) {
+  if (!task) return null;
+  return <TaskMenuContent key={task.id} task={task} onClose={onClose} onSchedule={onSchedule} />;
+}
+
+function TaskMenuContent({ task, onClose, onSchedule }: { task: Task; onClose: () => void; onSchedule: (task: Task) => void }) {
   const { colors } = useTheme();
   const flow = useTaskFlow();
   const actions = useTaskActions();
+  const { data: projects } = useProjects();
   const quickAdd = useQuickAdd();
-  if (!task) return null;
+  const [movingProject, setMovingProject] = useState(false);
+
   const now = today(task.timezone);
   const due = formatDue(task);
   const repeat = describeRecurrence(task.recurrence_rule);
+  const projectName = task.project_id ? projects?.find((item) => item.id === task.project_id)?.name : undefined;
   const run = (action: () => void) => {
     onClose();
     action();
@@ -47,14 +56,16 @@ export function TaskMenu({ task, onClose, onSchedule }: { task: Task | null; onC
     <Sheet visible onClose={onClose}>
       <View style={{ gap: 2, marginBottom: space.md }}>
         <Txt variant="heading" numberOfLines={2}>{task.title}</Txt>
-        <Txt variant="small" tone="muted">{[due ?? '날짜 없음', repeat].filter(Boolean).join(' · ')}</Txt>
+        <Txt variant="small" tone="muted">
+          {[due ?? '날짜 없음', repeat, projectName ? '#' + projectName : null].filter(Boolean).join(' · ')}
+        </Txt>
       </View>
 
       <View style={styles.actions}>
         <Action icon="check" label="완료" color={colors.success} onPress={() => run(() => flow.complete(task))} />
         <Action icon="sun" label="오늘" onPress={() => run(() => flow.reschedule(task, now))} />
         <Action icon="sunrise" label="내일" onPress={() => run(() => flow.reschedule(task, now.add({ days: 1 })))} />
-        <Action icon="calendar" label="날짜" onPress={() => run(() => onSchedule(task))} />
+        <Action icon="calendar" label="날짜·시간" onPress={() => run(() => onSchedule(task))} />
       </View>
 
       <View style={styles.priorities}>
@@ -77,6 +88,34 @@ export function TaskMenu({ task, onClose, onSchedule }: { task: Task | null; onC
       </View>
 
       <View style={{ marginTop: space.sm }}>
+        {!task.parent_task_id && projects?.length ? (
+          <>
+            <Row
+              icon="folder" label="프로젝트 옮기기" detail={projectName ? '#' + projectName : '미분류'}
+              trailing={<Icon name={movingProject ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textFaint} />}
+              onPress={() => setMovingProject((open) => !open)} />
+            {movingProject ? (
+              <ScrollView
+                horizontal showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 6, paddingBottom: space.sm }}>
+                <Chip
+                  icon="inbox" label="미분류" selected={!task.project_id}
+                  onPress={() => run(() => {
+                    actions.update(task.id, { project_id: null, section_id: null });
+                    showToast('미분류로 옮겼습니다.');
+                  })} />
+                {projects.map((project) => (
+                  <Chip
+                    key={project.id} icon="hash" label={project.name} selected={task.project_id === project.id}
+                    onPress={() => run(() => {
+                      actions.update(task.id, { project_id: project.id, section_id: null });
+                      showToast(`#${project.name} 프로젝트로 옮겼습니다.`);
+                    })} />
+                ))}
+              </ScrollView>
+            ) : null}
+          </>
+        ) : null}
         {task.parent_task_id ? null : (
           <Row icon="corner-down-right" label="하위 작업 추가" onPress={() => run(() => quickAdd.open({ parentTaskId: task.id }))} />
         )}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { calendarGrid, focusState, habitToday, snapshotTasks, upcomingRows, widgetDate, widgetRows, type WidgetTask } from './items.ts';
+import { adjustCalendar, calendarGrid, focusState, habitToday, snapshotTasks, upcomingRows, widgetDate, widgetRows, type WidgetTask } from './items.ts';
 
 const now = Date.parse('2026-11-21T09:00:00Z'); // Saturday 18:00 in Seoul
 let next = 0;
@@ -82,4 +82,13 @@ test('the calendar widget lays a month out Monday-first and marks today and busy
   assert.deepEqual([today?.date, today?.count, today?.weekend], ['2026-11-21', 2, true]);
   assert.equal(grid.weeks[5][0]?.date, '2026-11-30');
   assert.equal(calendarGrid(now, 'Asia/Seoul', 2, {}).title, '2027년 1월');
+});
+
+test('adjustCalendar updates cached day counts when tasks are completed from a widget', () => {
+  const prev = task('회의', '2026-11-21T10:00:00Z');
+  assert.deepEqual(adjustCalendar({ '2026-11-21': 2, '2026-11-22': 1 }, prev, null), { '2026-11-21': 1, '2026-11-22': 1 });
+  assert.deepEqual(adjustCalendar({ '2026-11-21': 1 }, prev, null), {});
+  // A repeating task's next day was already counted, so only the completed day decrements.
+  const nextRepeat = task('회의', '2026-11-22T10:00:00Z', { recurrence_rule: 'FREQ=DAILY' });
+  assert.deepEqual(adjustCalendar({ '2026-11-21': 1, '2026-11-22': 1 }, prev, nextRepeat), { '2026-11-22': 1 });
 });

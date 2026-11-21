@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import type { ComponentProps, ReactNode } from 'react';
 import {
-  ActivityIndicator, Modal, Pressable, type PressableProps, type StyleProp, StyleSheet, Text, type TextProps, type TextStyle,
+  ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, type PressableProps, type StyleProp, StyleSheet, Text, type TextProps, type TextStyle,
   View, type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -198,14 +198,14 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable accessibilityLabel="닫기" style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]} onPress={onClose} />
         <View style={[styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + space.lg }]}>
           <View style={[styles.grabber, { backgroundColor: colors.border }]} />
           {title ? <Txt variant="heading" style={{ marginBottom: space.md }}>{title}</Txt> : null}
           {children}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

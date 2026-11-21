@@ -113,6 +113,8 @@ export const api = {
 
   projects: () => all<Project>('/projects'),
   createProject: (input: ProjectInput) => json<Project>('/projects', 'POST', input),
+  updateProject: (id: string, patch: Partial<ProjectInput>) => json<Project>('/projects/' + id, 'PATCH', patch),
+  deleteProject: (id: string) => request<void>('/projects/' + id, { method: 'DELETE' }),
   tags: () => all<Tag>('/tags'),
   createTag: (name: string) => json<Tag>('/tags', 'POST', { name }),
 

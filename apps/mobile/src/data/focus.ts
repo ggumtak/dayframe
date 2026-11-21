@@ -63,7 +63,10 @@ export function useDeleteFocus() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.deleteFocus,
-    onMutate: (id: string) => client.setQueryData<FocusSession[]>(keys.focus, (sessions) => sessions?.filter((session) => session.id !== id)),
-    onSettled: () => client.invalidateQueries({ queryKey: keys.focus }),
+    onMutate: async (id: string) => {
+      await hold(keys.focus);
+      client.setQueryData<FocusSession[]>(keys.focus, (sessions) => sessions?.filter((session) => session.id !== id));
+    },
+    onSettled: () => settle(keys.focus),
   });
 }
