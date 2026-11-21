@@ -13,7 +13,7 @@ import { dueBucket } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { useTheme } from '@/theme';
 
-const icons: Record<string, IconName> = { index: 'sun', inbox: 'inbox', upcoming: 'calendar', habits: 'repeat', focus: 'clock' };
+const icons: Record<string, IconName> = { index: 'sun', inbox: 'list', upcoming: 'calendar', habits: 'repeat', focus: 'clock' };
 
 function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) {
   const { colors } = useTheme();
@@ -70,7 +70,7 @@ export default function TabsLayout() {
   return (
     <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <TabBar {...props} />}>
       <Tabs.Screen name="index" options={{ title: '오늘' }} />
-      <Tabs.Screen name="inbox" options={{ title: '수신함' }} />
+      <Tabs.Screen name="inbox" options={{ title: '목록' }} />
       <Tabs.Screen name="upcoming" options={{ title: '예정' }} />
       <Tabs.Screen name="habits" options={{ title: '습관' }} />
       <Tabs.Screen name="focus" options={{ title: '집중' }} />
