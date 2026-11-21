@@ -141,6 +141,7 @@ export const api = {
   focusSessions: () => request<Page<FocusSession>>('/focus-sessions', { query: { limit: 100 } }).then((page) => page.items),
   startFocus: (input: FocusInput) => json<FocusSession>('/focus-sessions', 'POST', input),
   finishFocus: (id: string, input: FinishFocusInput) => json<FocusSession>('/focus-sessions/' + id + '/finish', 'POST', input),
+  deleteFocus: (id: string) => request<void>('/focus-sessions/' + id, { method: 'DELETE' }),
 
   mcpConnections: () => request<Page<McpConnection>>('/mcp-connections').then((page) => page.items),
   createMcpConnection: (label: string) => json<NewMcpConnection>('/mcp-connections', 'POST', { label }),

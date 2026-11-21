@@ -15,8 +15,10 @@ interface Drag {
   heights: SharedValue<number[]>;
 }
 
-function SortableRow({ index, count, drag, enabled, onDrop, children }: {
-  index: number; count: number; drag: Drag; enabled: boolean; onDrop: (from: number, to: number) => void; children: ReactNode;
+function SortableRow({ index, count, drag, enabled, onDrop, onHold, children }: {
+  index: number; count: number; drag: Drag; enabled: boolean; onDrop: (from: number, to: number) => void;
+  /** A long press released without moving: the row is not dragged, so it can offer a menu instead. */
+  onHold?: () => void; children: ReactNode;
 }) {
   const { colors } = useTheme();
   const { active, target, offset, heights } = drag;
@@ -62,8 +64,14 @@ function SortableRow({ index, count, drag, enabled, onDrop, children }: {
         target.set(slot);
       }
     })
-    .onEnd(() => {
+    .onEnd((event) => {
       if (active.get() !== index) return;
+      if (onHold && Math.abs(event.translationY) < 8 && Math.abs(event.translationX) < 8) {
+        offset.set(withTiming(0, { duration: 120 }));
+        active.set(-1);
+        onHold();
+        return;
+      }
       const slot = target.get();
       offset.set(withTiming(settle(slot), { duration: 140 }));
       // Commit after the row has slid into its slot, so the list re-renders in place.
@@ -114,11 +122,13 @@ function SortableRow({ index, count, drag, enabled, onDrop, children }: {
 }
 
 /** A vertical list whose rows can be picked up with a long press and dropped in a new order. */
-export function SortableList<T>({ items, keyOf, renderItem, onReorder, enabled = true }: {
+export function SortableList<T>({ items, keyOf, renderItem, onReorder, onHold, enabled = true }: {
   items: T[];
   keyOf: (item: T) => string;
   renderItem: (item: T) => ReactNode;
   onReorder: (items: T[], moved: T) => void;
+  /** Long press and release in place; long press and move still drags. */
+  onHold?: (item: T) => void;
   enabled?: boolean;
 }) {
   const active = useSharedValue(-1);
@@ -149,7 +159,9 @@ export function SortableList<T>({ items, keyOf, renderItem, onReorder, enabled =
   return (
     <View>
       {items.map((item, index) => (
-        <SortableRow key={keyOf(item)} index={index} count={items.length} drag={drag} enabled={enabled} onDrop={drop}>
+        <SortableRow
+          key={keyOf(item)} index={index} count={items.length} drag={drag} enabled={enabled} onDrop={drop}
+          onHold={onHold ? () => onHold(item) : undefined}>
           {renderItem(item)}
         </SortableRow>
       ))}

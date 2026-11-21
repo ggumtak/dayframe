@@ -2,17 +2,15 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { Task } from '@/lib/shared';
 
-export type ReminderStyle = 'brief' | 'detailed';
 export interface ReminderSettings {
   enabled: boolean;
   /** Minutes before a timed task's due time. */
   leadMinutes: 0 | 5 | 10 | 30 | 60;
-  style: ReminderStyle;
   /** Local hour that an all-day task is announced on its day, or null for no alert. */
   allDayHour: number | null;
 }
 
-export const defaultReminderSettings: ReminderSettings = { enabled: true, leadMinutes: 0, style: 'detailed', allDayHour: 9 };
+export const defaultReminderSettings: ReminderSettings = { enabled: true, leadMinutes: 0, allDayHour: 9 };
 
 export type ReminderTask = Pick<Task, 'id' | 'title' | 'due_at' | 'all_day' | 'timezone' | 'completed_at' | 'recurrence_rule'>;
 

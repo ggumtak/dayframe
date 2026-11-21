@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 
 import type { TaskToken } from '@/lib/shared';
-import { useTheme } from '@/theme';
+import { fontFamily, useTheme } from '@/theme';
 
 import { firstLine, type Line, lineStarts, type PillKind, pills, runs } from './pills';
 
@@ -71,7 +71,7 @@ export function HighlightInput({ value, tokens, palette, ref, ...props }: Omit<T
 const styles = StyleSheet.create({
   // Every layer must share every metric, or the caret drifts away from the glyphs.
   text: {
-    fontSize: 17, lineHeight: LINE_HEIGHT, letterSpacing: 0, padding: 0, margin: 0, includeFontPadding: false,
+    fontFamily, fontSize: 17, lineHeight: LINE_HEIGHT, letterSpacing: 0, padding: 0, margin: 0, includeFontPadding: false,
     textAlignVertical: 'top', fontWeight: '400', flexShrink: 0,
   },
   layer: { position: 'absolute', left: 0, right: 0, top: 0 },

@@ -5,7 +5,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { EmptyState, Icon, IconButton, Screen, SectionTitle, Txt } from '@/components/ui';
 import { bySchedule, useProjects, useTagNames, useTaskIndex } from '@/data/tasks';
 import { TaskList } from '@/features/tasks/TaskList';
-import { radius, space, useTheme } from '@/theme';
+import { fontFamily, radius, space, useTheme } from '@/theme';
 
 /** Lower-cased and with spaces removed, so "보고 서" still finds "보고서". */
 const fold = (text: string) => text.toLowerCase().replace(/\s+/g, '');
@@ -38,7 +38,7 @@ export default function Search() {
           <TextInput
             value={query} onChangeText={setQuery} autoFocus placeholder="할 일, 메모, #프로젝트, @태그" accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
-            style={[{ flex: 1, color: colors.text, fontSize: 16, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
+            style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 16, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
           {query ? <IconButton name="x" label="지우기" size={18} color={colors.textMuted} onPress={() => setQuery('')} /> : null}
         </View>
       </View>

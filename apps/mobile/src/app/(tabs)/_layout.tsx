@@ -11,9 +11,9 @@ import { TAB_BAR_HEIGHT } from '@/features/quick-add/QuickAdd';
 import { useMinute } from '@/lib/clock';
 import { dueBucket } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { useTheme } from '@/theme';
+import { fontFamily, useTheme } from '@/theme';
 
-const icons: Record<string, IconName> = { index: 'sun', inbox: 'inbox', upcoming: 'calendar', habits: 'repeat', focus: 'clock' };
+const icons: Record<string, IconName> = { index: 'sun', inbox: 'list', upcoming: 'calendar', habits: 'repeat', focus: 'clock' };
 
 function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) {
   const { colors } = useTheme();
@@ -70,7 +70,7 @@ export default function TabsLayout() {
   return (
     <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <TabBar {...props} />}>
       <Tabs.Screen name="index" options={{ title: '오늘' }} />
-      <Tabs.Screen name="inbox" options={{ title: '수신함' }} />
+      <Tabs.Screen name="inbox" options={{ title: '목록' }} />
       <Tabs.Screen name="upcoming" options={{ title: '예정' }} />
       <Tabs.Screen name="habits" options={{ title: '습관' }} />
       <Tabs.Screen name="focus" options={{ title: '집중' }} />
@@ -81,11 +81,11 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center' },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, height: TAB_BAR_HEIGHT },
-  label: { fontSize: 11, lineHeight: 14 },
+  label: { fontFamily, fontSize: 11, lineHeight: 14 },
   badge: {
     position: 'absolute', top: -5, right: -12, minWidth: 17, height: 17, borderRadius: 9, borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
   },
-  badgeText: { fontSize: 9, fontWeight: '700', lineHeight: 12 },
+  badgeText: { fontFamily, fontSize: 9, fontWeight: '700', lineHeight: 12 },
   offline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 5 },
 });
