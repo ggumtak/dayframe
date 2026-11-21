@@ -45,6 +45,14 @@ const config: ExpoConfig = {
     }],
     'expo-localization',
     ['expo-notifications', { color: '#3574F0' }],
+    ['react-native-android-widget', {
+      widgets: [{
+        name: 'Today', label: '오늘 할 일', description: '오늘과 지연된 할 일을 보고 바로 완료합니다.',
+        minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
+        // The app redraws the widget whenever tasks change; this only catches the day rolling over.
+        updatePeriodMillis: 1800000,
+      }],
+    }],
   ],
 };
 

@@ -1,3 +1,4 @@
+import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Platform, ScrollView, Share, View } from 'react-native';
@@ -35,14 +36,20 @@ function formatMoment(iso: string): string {
   return moment.month + '월 ' + moment.day + '일 ' + formatTime(moment.hour * 60 + moment.minute);
 }
 
+// The address is long and one wrong character makes the AI look for a sign-in page, so it is only ever
+// copied or shared, never retyped.
+async function copyAddress(url: string) {
+  try {
+    await Clipboard.setStringAsync(url);
+    showToast('주소를 복사했습니다. 컴퓨터로 옮길 때도 붙여넣기만 해 주세요.');
+  } catch {
+    showToast('주소를 길게 눌러 직접 복사해 주세요.', { tone: 'error' });
+  }
+}
+
 async function shareAddress(url: string) {
   try {
-    if (Platform.OS === 'web') {
-      await navigator.clipboard.writeText(url);
-      showToast('주소를 복사했습니다.');
-    } else {
-      await Share.share({ message: url });
-    }
+    await Share.share({ message: url });
   } catch {
     showToast('주소를 길게 눌러 직접 복사해 주세요.', { tone: 'error' });
   }
@@ -77,7 +84,11 @@ export default function AiConnections() {
             <View style={{ backgroundColor: colors.surfaceMuted, borderRadius: radius.sm, padding: space.md }}>
               <Txt variant="small" selectable accessibilityLabel="연결 주소">{fresh.url}</Txt>
             </View>
-            <Button label={Platform.OS === 'web' ? '주소 복사' : '주소 복사 · 보내기'} icon="share-2" onPress={() => void shareAddress(fresh.url)} />
+            <Button label="주소 복사" icon="copy" onPress={() => void copyAddress(fresh.url)} />
+            {Platform.OS !== 'web' ? (
+              <Button label="컴퓨터로 보내기 (카톡 나에게 등)" kind="secondary" icon="share-2" onPress={() => void shareAddress(fresh.url)} />
+            ) : null}
+            <Txt variant="small" tone="muted">주소를 손으로 옮겨 적으면 한 글자만 틀려도 연결되지 않습니다. 꼭 복사해서 붙여 넣어 주세요.</Txt>
             <Button label="등록을 마쳤습니다" kind="secondary" onPress={() => setFresh(null)} />
           </Card>
         ) : (

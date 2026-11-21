@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
+import { clearReminders } from '@/features/reminders/notify';
+import { saveWidget } from '@/features/widget/render';
 import { api } from '@/lib/api';
 import { auth, AUTH_STORAGE_KEY } from '@/lib/auth';
 import { deviceTimeZone } from '@/lib/dates';
@@ -78,6 +80,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     signOut: async () => {
       await auth.signOut({ scope: 'local' });
       await clearLocalData();
+      // Alerts and the widget must not keep showing this account's tasks.
+      await Promise.all([clearReminders(), saveWidget(null)]);
       await AsyncStorage.removeItem(ACCOUNT_KEY);
     },
   }), [account, isLoading]);
