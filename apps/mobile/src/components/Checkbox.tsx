@@ -6,8 +6,10 @@ import { haptic } from '@/lib/haptics';
 import { useTheme } from '@/theme';
 
 /** A round check that fills with a small bounce, so finishing something feels like something. */
-export function Checkbox({ checked, color, size = 24, onPress, label }: {
-  checked: boolean; color?: string; size?: number; onPress: () => void; label: string;
+export function Checkbox({ checked, color, size = 22, tinted, onPress, label }: {
+  checked: boolean; color?: string; size?: number;
+  /** Washes the empty circle with its colour, so a priority shows before the task is read. */
+  tinted?: boolean; onPress: () => void; label: string;
 }) {
   const { colors } = useTheme();
   const tint = color ?? colors.textFaint;
@@ -25,8 +27,8 @@ export function Checkbox({ checked, color, size = 24, onPress, label }: {
       }}>
       <Animated.View
         style={[{
-          width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: tint,
-          backgroundColor: checked ? tint : 'transparent', alignItems: 'center', justifyContent: 'center',
+          width: size, height: size, borderRadius: size / 2, borderWidth: tinted ? 2 : 1.5, borderColor: tint,
+          backgroundColor: checked ? tint : tinted ? tint + '1F' : 'transparent', alignItems: 'center', justifyContent: 'center',
         }, animated]}>
         {checked ? <Feather name="check" size={size * 0.62} color={colors.surface} /> : null}
       </Animated.View>

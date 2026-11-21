@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { RefreshControl, View } from 'react-native';
+import { Pressable, RefreshControl, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { Button, EmptyState, Header, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
@@ -81,11 +81,13 @@ export default function Today() {
               {overdue.length ? (
                 <>
                   <SectionTitle
-                    title="지연됨" count={overdue.length}
+                    title="지연됨" count={overdue.length} tone="danger"
                     action={(
-                      <Button
-                        label="오늘로 옮기기" kind="ghost" icon="corner-down-right" onPress={moveOverdue}
-                        style={{ minHeight: 30, paddingHorizontal: space.sm }} />
+                      <Pressable
+                        accessibilityRole="button" accessibilityLabel="오늘로 옮기기" hitSlop={10} onPress={moveOverdue}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                        <Txt variant="smallStrong" tone="accent">오늘로 옮기기</Txt>
+                      </Pressable>
                     )} />
                   <TaskList tasks={overdue} />
                 </>

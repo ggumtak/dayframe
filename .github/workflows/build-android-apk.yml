@@ -20,6 +20,10 @@ on:
         description: 'Version to release, for example 1.0.1. Leave empty to build without releasing.'
         required: false
         default: ''
+      notes:
+        description: 'What changed, as shown to users in the app. Leave empty to list the merged pull requests.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -255,14 +259,17 @@ jobs:
           echo "ANDROID_VERSION_CODE=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))" >> "$GITHUB_ENV"
 
       - name: Publish the GitHub Release
+        env:
+          RELEASE_NOTES: ${{ inputs.notes }}
         run: |
           sha256sum --check dayframe.apk.sha256
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dayframe.apk dayframe.apk.sha256 --clobber
           else
             # Creates the tag at the built commit when it does not exist yet (manual releases).
+            if [ -n "$RELEASE_NOTES" ]; then notes=(--notes "$RELEASE_NOTES"); else notes=(--generate-notes); fi
             gh release create "$RELEASE_TAG" dayframe.apk dayframe.apk.sha256 \
-              --title "Dayframe $APP_VERSION" --generate-notes --target "$GITHUB_SHA"
+              --title "Dayframe $APP_VERSION" "${notes[@]}" --target "$GITHUB_SHA"
           fi
 
       # Optional: lets the backend's /app/version report this release (and a minimum supported version).

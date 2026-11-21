@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import { api } from '@/lib/api';
 import { env, isConfigured } from '@/lib/env';
 
-import { fromGithubRelease, type InstalledApp, isTrustedApkUrl, type ReleaseInfo } from './version';
+import { fromGithubRelease, type InstalledApp, isTrustedApkUrl, readableNotes, type ReleaseInfo } from './version';
 
 export function installedApp(): InstalledApp {
   const build = Number(Application.nativeBuildVersion);
@@ -21,7 +21,7 @@ async function fromBackend(): Promise<ReleaseInfo | null> {
   const release = await api.appVersion();
   return {
     version: release.latestVersion, versionCode: release.versionCode, minSupportedVersion: release.minSupportedVersion,
-    notes: release.releaseNotes.trim(), apkUrl: isTrustedApkUrl(release.apkDownloadUrl, env.githubRepo) ? release.apkDownloadUrl : null,
+    notes: readableNotes(release.releaseNotes), apkUrl: isTrustedApkUrl(release.apkDownloadUrl, env.githubRepo) ? release.apkDownloadUrl : null,
     source: 'backend',
   };
 }

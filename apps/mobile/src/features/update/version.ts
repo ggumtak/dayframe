@@ -58,6 +58,14 @@ interface GithubRelease {
   assets?: { name?: string; browser_download_url?: string }[];
 }
 
+/** Release notes as plain sentences: GitHub's generated headings, author credits and compare links are dropped. */
+export function readableNotes(body: string): string {
+  return body.split(/\r?\n/)
+    .filter((line) => !/^\s*(#+\s*What's Changed|\*\*Full Changelog\*\*|#+\s*New Contributors)/i.test(line) && !/^https?:\/\/\S+$/.test(line.trim()))
+    .map((line) => line.replace(/\s+by @\S+ in https?:\/\/\S+/i, '').replace(/^\s*[*-]\s+/, '• ').replace(/^#+\s*/, '').replace(/\*\*(.+?)\*\*/g, '$1').trimEnd())
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /** Maps GitHub's "latest release" payload. Null when it is not a usable published version. */
 export function fromGithubRelease(payload: unknown, repo: string): ReleaseInfo | null {
   const release = (payload ?? {}) as GithubRelease;
@@ -65,7 +73,7 @@ export function fromGithubRelease(payload: unknown, repo: string): ReleaseInfo |
   const version = parseVersion(release.tag_name)!.join('.');
   const apk = release.assets?.find((asset) => asset.name?.toLowerCase().endsWith('.apk') && isTrustedApkUrl(asset.browser_download_url, repo));
   return {
-    version, versionCode: versionCodeOf(version), minSupportedVersion: null, notes: (release.body ?? '').trim(),
+    version, versionCode: versionCodeOf(version), minSupportedVersion: null, notes: readableNotes(release.body ?? ''),
     apkUrl: apk?.browser_download_url ?? null, source: 'github',
   };
 }

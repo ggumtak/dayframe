@@ -94,14 +94,14 @@ export function Chip({ label, icon, selected, color, onPress, style }: {
   label: string; icon?: IconName; selected?: boolean; color?: string; onPress?: () => void; style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
-  const foreground = selected ? colors.onAccent : color ?? colors.textMuted;
+  const foreground = selected ? colors.accent : color ?? colors.textMuted;
   const content = (
     <>
       {icon ? <Icon name={icon} size={13} color={foreground} /> : null}
       <Text style={[type.smallStrong as TextStyle, { color: foreground }]} numberOfLines={1}>{label}</Text>
     </>
   );
-  const base = [styles.chip, { backgroundColor: selected ? colors.accent : colors.surfaceMuted }, style];
+  const base = [styles.chip, { backgroundColor: selected ? colors.accentSoft : 'transparent', borderColor: selected ? colors.accentSoft : colors.border }, style];
   if (!onPress) return <View style={base}>{content}</View>;
   return (
     <Pressable
@@ -116,11 +116,11 @@ export function Chip({ label, icon, selected, color, onPress, style }: {
   );
 }
 
-export function SectionTitle({ title, count, action }: { title: string; count?: number; action?: ReactNode }) {
+export function SectionTitle({ title, count, action, tone }: { title: string; count?: number; action?: ReactNode; tone?: Tone }) {
   return (
     <View style={styles.section}>
-      <Txt variant="section" tone="muted">{title}</Txt>
-      {count ? <Txt variant="section" tone="faint">{count}</Txt> : null}
+      <Txt variant="section" tone={tone} accessibilityRole="header">{title}</Txt>
+      {count ? <Txt variant="small" tone="faint">{count}</Txt> : null}
       <View style={{ flex: 1 }} />
       {action}
     </View>
@@ -130,7 +130,7 @@ export function SectionTitle({ title, count, action }: { title: string; count?: 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }, elevation(colors), style]}>
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }, style]}>
       {children}
     </View>
   );
@@ -237,10 +237,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center', gap: space.sm,
   },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, minHeight: 28, borderRadius: radius.pill,
+    flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, minHeight: 30, borderRadius: radius.sm, borderWidth: 1,
   },
-  section: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm },
-  card: { borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, padding: space.lg },
+  section: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingTop: space.xl, paddingBottom: 6, minHeight: 50 },
+  card: { borderRadius: radius.lg, borderWidth: 1, padding: space.lg },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm, padding: space.xxl, minHeight: 240 },
   emptyIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
   segmented: { flexDirection: 'row', borderRadius: radius.md, padding: 3 },
