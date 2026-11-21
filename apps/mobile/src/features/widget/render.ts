@@ -1,4 +1,4 @@
-import { requestPinWidget, requestWidgetUpdate, type WidgetTaskHandler } from 'react-native-android-widget';
+import { requestWidgetUpdate, type WidgetTaskHandler } from 'react-native-android-widget';
 
 import { nextCheckIn } from '@/features/habits/checkIn';
 import { cancelHabitAlert, cancelOccurrence } from '@/features/reminders/cancel';
@@ -238,8 +238,3 @@ export const widgetTaskHandler: WidgetTaskHandler = async ({ widgetInfo, widgetA
     renderWidget(drawWidget(name, snapshot));
   }
 };
-
-/** Asks the launcher to place a widget; false when the launcher does not offer that. */
-export function pinWidget(widgetName: WidgetName = WIDGETS.today): Promise<boolean> {
-  return requestPinWidget({ widgetName }).catch(() => false);
-}

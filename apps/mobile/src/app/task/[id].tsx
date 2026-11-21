@@ -217,7 +217,7 @@ function TaskEditor({ task }: { task: Task }) {
             <>
               <SectionTitle title="프로젝트" />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm }}>
-                <Chip icon="inbox" label="수신함" selected={!task.project_id} onPress={() => flow.update(task.id, { project_id: null, section_id: null })} />
+                <Chip icon="inbox" label="미분류" selected={!task.project_id} onPress={() => flow.update(task.id, { project_id: null, section_id: null })} />
                 {(projects ?? []).map((project) => (
                   <Chip
                     key={project.id} icon="hash" label={project.name} selected={task.project_id === project.id}

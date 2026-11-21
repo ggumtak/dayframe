@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
 import { uuid } from '@/lib/ids';
@@ -56,4 +56,14 @@ export function useFocusActions() {
       start.mutate({ ...vars, id: uuid(), started_at: new Date().toISOString() }),
     finish: (vars: FinishFocusVars) => finish.mutate(vars),
   };
+}
+
+/** Removes a focus record, such as a test round, from the timeline and the day's totals. */
+export function useDeleteFocus() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteFocus,
+    onMutate: (id: string) => client.setQueryData<FocusSession[]>(keys.focus, (sessions) => sessions?.filter((session) => session.id !== id)),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.focus }),
+  });
 }

@@ -61,15 +61,21 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 export const radius = { sm: 8, md: 10, lg: 14, xl: 20, pill: 999 } as const;
+/**
+ * The app's own typeface, bundled so text looks the same on every phone. Android picks the right file for
+ * each fontWeight from the family registered in app.config.ts; the web build falls back to the system font.
+ */
+export const fontFamily = Platform.OS === 'android' ? 'Pretendard' : undefined;
+
 export const type = {
-  title: { fontSize: 26, lineHeight: 32, fontWeight: '800', letterSpacing: -0.3 },
-  heading: { fontSize: 20, lineHeight: 26, fontWeight: '700', letterSpacing: -0.2 },
-  section: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  body: { fontSize: 16, lineHeight: 22, fontWeight: '400' },
-  bodyStrong: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
-  small: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
-  smallStrong: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  caption: { fontSize: 11, lineHeight: 14, fontWeight: '500' },
+  title: { fontSize: 26, lineHeight: 32, fontFamily, fontWeight: '800', letterSpacing: -0.3 },
+  heading: { fontSize: 20, lineHeight: 26, fontFamily, fontWeight: '700', letterSpacing: -0.2 },
+  section: { fontSize: 14, lineHeight: 20, fontFamily, fontWeight: '700' },
+  body: { fontSize: 16, lineHeight: 22, fontFamily, fontWeight: '400' },
+  bodyStrong: { fontSize: 16, lineHeight: 22, fontFamily, fontWeight: '600' },
+  small: { fontSize: 13, lineHeight: 18, fontFamily, fontWeight: '400' },
+  smallStrong: { fontSize: 13, lineHeight: 18, fontFamily, fontWeight: '600' },
+  caption: { fontSize: 11, lineHeight: 14, fontFamily, fontWeight: '500' },
 } as const;
 
 export function priorityColor(colors: Colors, priority: Priority): string {

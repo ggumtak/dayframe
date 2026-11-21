@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
-import { AppState } from 'react-native';
+import { AppState, Linking } from 'react-native';
 import { AndroidImportance, AndroidNotificationVisibility } from 'expo-notifications';
 
 import { nextCheckIn } from '@/features/habits/checkIn';
@@ -73,7 +73,8 @@ function leadText(minutes: number): string {
   return minutes === 60 ? '1시간 후' : minutes + '분 후';
 }
 
-/** What the alert says. Brief: the title and the time. Detailed: also the repeat, project, notes and subtasks, with buttons. */
+/** What the alert says: the time, repeat and project, then notes and open subtasks, with 완료 and 10분 뒤에 buttons. How much of it the
+ * phone shows (a brief or a detailed popup) is the phone's own per-app setting. */
 export function reminderContent(
   task: Task, occurrence: string, settings: ReminderSettings, context: ReminderContext, lead = settings.leadMinutes,
 ): Notifications.NotificationContentInput {
@@ -81,7 +82,6 @@ export function reminderContent(
   const time = task.all_day ? '오늘 · 종일' : formatTime(due.hour * 60 + due.minute);
   const when = !task.all_day && lead ? leadText(lead) + ' · ' + time : time;
   const base = { title: task.title, sound: true, priority: 'high', color: '#3574F0', data: { url: 'dayframe:///task/' + task.id } };
-  if (settings.style === 'brief') return { ...base, body: when };
   const facts = [when, describeRecurrence(task.recurrence_rule), context.projectName(task) ? '#' + context.projectName(task) : null];
   const lines = [facts.filter(Boolean).join(' · ')];
   const notes = task.notes?.trim();
@@ -263,5 +263,18 @@ async function logHabitFromAlert(habitId: string, date: string): Promise<void> {
       content: { title: '기록하지 못했습니다', body: '연결이 없습니다. 앱에서 다시 기록해 주세요.', data: { url: 'dayframe:///habit/' + habitId } },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: CHANNEL },
     }).catch(() => {});
+  }
+}
+
+/** The phone's own notification settings for this app: popup style, lock screen, sound. */
+export async function openNotificationSettings(): Promise<void> {
+  try {
+    const IntentLauncher = await import('expo-intent-launcher');
+    const Application = await import('expo-application');
+    await IntentLauncher.startActivityAsync('android.settings.APP_NOTIFICATION_SETTINGS', {
+      extra: { 'android.provider.extra.APP_PACKAGE': Application.applicationId ?? 'com.ggumtak.dayframe' },
+    });
+  } catch {
+    await Linking.openSettings().catch(() => {});
   }
 }

@@ -21,3 +21,4 @@ export async function syncReminders(
 export async function clearReminders(): Promise<void> {}
 export async function handleReminderAction(_response: unknown): Promise<void> {}
 export function listenForReminders(_open: (target: { taskId: string } | { habitId: string }) => void, _changed: () => void): () => void { return () => {}; }
+export async function openNotificationSettings(): Promise<void> {}

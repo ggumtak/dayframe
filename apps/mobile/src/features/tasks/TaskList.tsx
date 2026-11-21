@@ -10,6 +10,7 @@ import type { Task } from '@/lib/shared';
 import { useTheme } from '@/theme';
 
 import { ScheduleSheet } from './ScheduleSheet';
+import { TaskMenu } from './TaskMenu';
 import { useTaskFlow } from './useTaskFlow';
 
 /** Positions that put `ordered` in sequence, touching as few tasks as possible. */
@@ -45,6 +46,7 @@ export function TaskList({ tasks, hideDate, sortable }: {
   const { data: projects } = useProjects();
   const tagNames = useTagNames();
   const [scheduling, setScheduling] = useState<Task | null>(null);
+  const [menu, setMenu] = useState<Task | null>(null);
   const projectNames = useMemo(() => new Map((projects ?? []).map((project) => [project.id, project.name])), [projects]);
   const open = useCallback((task: Task) => router.push({ pathname: '/task/[id]', params: { id: task.id } }), []);
 
@@ -52,7 +54,8 @@ export function TaskList({ tasks, hideDate, sortable }: {
     <TaskRow
       task={task} hideDate={hideDate} projectName={task.project_id ? projectNames.get(task.project_id) : undefined}
       tagNames={tagNames.get(task.id)} subtaskCount={children.get(task.id)?.length}
-      onPress={open} onComplete={flow.complete} onSchedule={setScheduling} onDelete={flow.remove} />
+      onPress={open} onComplete={flow.complete} onSchedule={setScheduling} onDelete={flow.remove}
+      onLongPress={sortable ? undefined : setMenu} holdHandled={sortable} />
   );
 
   return (
@@ -60,7 +63,7 @@ export function TaskList({ tasks, hideDate, sortable }: {
       {sortable ? (
         <SortableList
           items={tasks} keyOf={(task) => task.id} renderItem={row}
-          onReorder={(ordered, moved) => flow.reorder(positionsFor(ordered, moved))} />
+          onReorder={(ordered, moved) => flow.reorder(positionsFor(ordered, moved))} onHold={setMenu} />
       ) : tasks.map((task) => (
         <Animated.View
           key={task.id} layout={LinearTransition.duration(180)} entering={FadeIn.duration(160)} exiting={FadeOut.duration(140)}
@@ -69,6 +72,7 @@ export function TaskList({ tasks, hideDate, sortable }: {
         </Animated.View>
       ))}
       <ScheduleSheet task={scheduling} onClose={() => setScheduling(null)} onPick={flow.reschedule} />
+      <TaskMenu task={menu} onClose={() => setMenu(null)} onSchedule={setScheduling} />
     </View>
   );
 }

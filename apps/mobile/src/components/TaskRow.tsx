@@ -6,7 +6,7 @@ import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/R
 import { describeRecurrence, dueBucket, dueMinutes, formatDue, formatTime, isPastDue } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Task } from '@/lib/shared';
-import { priorityColor, space, type, useTheme } from '@/theme';
+import { fontFamily, priorityColor, space, type, useTheme } from '@/theme';
 
 import { Checkbox } from './Checkbox';
 
@@ -22,6 +22,10 @@ export interface TaskRowProps {
   onComplete: (task: Task) => void;
   onSchedule?: (task: Task) => void;
   onDelete?: (task: Task) => void;
+  /** Long press: the quick menu. */
+  onLongPress?: (task: Task) => void;
+  /** The list handles long presses itself (drag or menu), so releasing one must not count as a tap. */
+  holdHandled?: boolean;
   swipeEnabled?: boolean;
 }
 
@@ -35,7 +39,7 @@ function SwipeAction({ icon, label, color, onPress }: { icon: 'clock' | 'trash-2
 }
 
 export const TaskRow = memo(function TaskRow({
-  task, projectName, tagNames, subtaskCount, hideDate, onPress, onComplete, onSchedule, onDelete, swipeEnabled = true,
+  task, projectName, tagNames, subtaskCount, hideDate, onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true,
 }: TaskRowProps) {
   const { colors } = useTheme();
   const swipe = useRef<SwipeableMethods>(null);
@@ -72,6 +76,11 @@ export const TaskRow = memo(function TaskRow({
     <Pressable
       accessibilityRole="button" accessibilityLabel={task.title} accessibilityHint="눌러서 자세히 보기"
       onPress={() => onPress(task)}
+      onLongPress={onLongPress ? () => {
+        haptic.medium();
+        onLongPress(task);
+      } : holdHandled ? () => {} : undefined}
+      delayLongPress={350}
       style={({ pressed }) => [styles.row, { backgroundColor: pressed ? colors.surfaceMuted : colors.background }]}>
       <View style={styles.check}>
         <Checkbox
@@ -157,9 +166,9 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   meta: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 2 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 190 },
-  metaText: { fontSize: 12, lineHeight: 16 },
+  metaText: { fontFamily, fontSize: 12, lineHeight: 16 },
   complete: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingLeft: space.xl },
   actions: { flexDirection: 'row' },
   action: { width: 76, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  actionLabel: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+  actionLabel: { fontFamily, color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
 });

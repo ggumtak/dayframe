@@ -1,26 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Linking, Platform, Pressable, Switch, View } from 'react-native';
 
-import { Button, Card, Chip, Icon, type IconName, Segmented, Txt } from '@/components/ui';
-import { pinWidget } from '@/features/widget/render';
-import { type WidgetName, WIDGETS } from '@/features/widget/names';
-import { showToast } from '@/lib/toast';
+import { Button, Card, Chip, Icon, Txt } from '@/components/ui';
 import { radius, space, useTheme } from '@/theme';
 
-import { type PermissionState, reminderPermission, requestReminderPermission } from './notify';
-import type { ReminderSettings, ReminderStyle } from './plan';
+import { openNotificationSettings, type PermissionState, reminderPermission, requestReminderPermission } from './notify';
+import type { ReminderSettings } from './plan';
 import { setReminderSettings, useReminderSettings } from './settings';
 
 const leads: { value: ReminderSettings['leadMinutes']; label: string }[] = [
   { value: 0, label: '정시' }, { value: 5, label: '5분 전' }, { value: 10, label: '10분 전' }, { value: 30, label: '30분 전' }, { value: 60, label: '1시간 전' },
-];
-const widgetChoices: { name: WidgetName; label: string; detail: string; icon: IconName }[] = [
-  { name: WIDGETS.today, label: '오늘 할 일', detail: '지연·오늘 목록, 동그라미로 바로 완료 (4×2)', icon: 'sun' },
-  { name: WIDGETS.upcoming, label: '예정', detail: '앞으로 7일을 날짜별로 (4×2)', icon: 'list' },
-  { name: WIDGETS.calendar, label: '달력', detail: '이번 달 일정 표시, 날짜를 누르면 그 날로 (4×4)', icon: 'calendar' },
-  { name: WIDGETS.habits, label: '습관', detail: '누르면 오늘 기록 (4×2)', icon: 'repeat' },
-  { name: WIDGETS.focus, label: '집중', detail: '25분·50분 바로 시작 (2×2)', icon: 'clock' },
-  { name: WIDGETS.quickAdd, label: '빠른 추가', detail: '눌러서 할 일 입력 (4×1)', icon: 'plus-circle' },
 ];
 const allDay: { value: number | null; label: string }[] = [{ value: null, label: '알리지 않음' }, { value: 8, label: '오전 8시' }, { value: 9, label: '오전 9시' }];
 
@@ -41,7 +30,6 @@ export function RemindersCard() {
   if (Platform.OS !== 'android') {
     return <Card><Txt tone="muted">알림은 Android 앱에서 설정할 수 있습니다.</Txt></Card>;
   }
-  const lead = settings.leadMinutes ? leads.find((item) => item.value === settings.leadMinutes)!.label.replace(' 전', ' 후') + ' · ' : '';
 
   return (
     <Card style={{ gap: space.md }}>
@@ -84,52 +72,17 @@ export function RemindersCard() {
               ))}
             </View>
           </View>
-          <View style={{ gap: space.sm }}>
-            <Txt variant="smallStrong" tone="muted">알림 모양</Txt>
-            <Segmented<ReminderStyle>
-              value={settings.style} onChange={(style) => setReminderSettings({ style })}
-              options={[{ value: 'brief', label: '간단히' }, { value: 'detailed', label: '자세히' }]} />
-            <View accessibilityLabel="알림 미리보기" style={{ borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: space.md, gap: 2 }}>
-              <Txt variant="caption" tone="muted">Dayframe · 지금</Txt>
-              <Txt variant="bodyStrong">보고서 제출</Txt>
-              <Txt variant="small" tone="muted">{lead + '오후 3:00' + (settings.style === 'detailed' ? ' · 매주 금 · #회사' : '')}</Txt>
-              {settings.style === 'detailed' ? (
-                <>
-                  <Txt variant="small" tone="muted">최종본은 공유 폴더에 올리기</Txt>
-                  <Txt variant="small" tone="muted">하위 작업 2개 남음</Txt>
-                  <View style={{ flexDirection: 'row', gap: space.xl, marginTop: space.xs }}>
-                    <Txt variant="smallStrong" tone="accent">완료</Txt>
-                    <Txt variant="smallStrong" tone="accent">10분 뒤에</Txt>
-                  </View>
-                </>
-              ) : null}
+          <Pressable
+            accessibilityRole="button" accessibilityLabel="휴대폰 알림 설정 열기" onPress={() => void openNotificationSettings()}
+            style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.xs, opacity: pressed ? 0.6 : 1 }]}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt variant="bodyStrong">팝업 모양·소리</Txt>
+              <Txt variant="small" tone="muted">간략한 팝업·자세한 팝업, 잠금화면 표시, 소리는 휴대폰 설정에서 정합니다.</Txt>
             </View>
-          </View>
+            <Icon name="external-link" size={18} color={colors.textMuted} />
+          </Pressable>
         </>
       ) : null}
-
-      <View style={{ height: 1, backgroundColor: colors.border }} />
-      <View style={{ gap: space.sm }}>
-        <Txt variant="bodyStrong">홈 화면 위젯</Txt>
-        <Txt variant="small" tone="muted">누르면 홈 화면에 놓을 수 있습니다. 홈 화면을 길게 눌러 위젯 → Dayframe에서 골라도 됩니다.</Txt>
-        {widgetChoices.map((choice) => (
-          <Pressable
-            key={choice.name} accessibilityRole="button" accessibilityLabel={choice.label + ' 위젯 추가'}
-            onPress={() => void pinWidget(choice.name).then((asked) => {
-              if (!asked) showToast('홈 화면을 길게 눌러 위젯 → Dayframe을 골라 주세요.');
-            })}
-            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.sm, opacity: pressed ? 0.6 : 1 })}>
-            <View style={{ width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name={choice.icon} size={18} color={colors.accent} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Txt variant="bodyStrong">{choice.label}</Txt>
-              <Txt variant="small" tone="muted">{choice.detail}</Txt>
-            </View>
-            <Icon name="plus" size={18} color={colors.accent} />
-          </Pressable>
-        ))}
-      </View>
     </Card>
   );
 }

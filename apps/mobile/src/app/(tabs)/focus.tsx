@@ -194,7 +194,7 @@ export default function Focus() {
           <Txt variant="caption" tone="muted" style={{ marginBottom: 4 }}>
             {running ? '집중 중' : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중') : '준비'}
           </Txt>
-          <Txt style={{ fontSize: 56, lineHeight: 64, fontWeight: '300', fontVariant: ['tabular-nums'] }}>{formatDuration(shown)}</Txt>
+          <Txt style={{ fontSize: 56, lineHeight: 64, fontWeight: '400', fontVariant: ['tabular-nums'] }}>{formatDuration(shown)}</Txt>
           {targetName ? (
             <Txt variant="small" tone="muted" numberOfLines={1} style={{ maxWidth: SIZE - 64, marginTop: 4 }}>{targetName}</Txt>
           ) : null}
