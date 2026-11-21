@@ -10,8 +10,3 @@ export async function downloadApk(_release: ReleaseInfo, _onProgress: (fraction:
   throw new UpdateError('download', 'Updates install on Android only');
 }
 export async function installApk(_file: unknown): Promise<void> {}
-export async function openStore(release: ReleaseInfo): Promise<boolean> {
-  if (!release.iosUrl) return false;
-  window.open(release.iosUrl, '_blank', 'noopener');
-  return true;
-}

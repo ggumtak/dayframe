@@ -11,7 +11,7 @@ export function installedApp(): InstalledApp {
   const build = Number(Application.nativeBuildVersion);
   return {
     version: Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? null,
-    // iOS build strings and the web have no Android build number to compare against.
+    // The web build has no Android build number to compare against.
     build: Platform.OS === 'android' && Number.isInteger(build) && build > 0 ? build : null,
   };
 }
@@ -22,7 +22,7 @@ async function fromBackend(): Promise<ReleaseInfo | null> {
   return {
     version: release.latestVersion, versionCode: release.versionCode, minSupportedVersion: release.minSupportedVersion,
     notes: release.releaseNotes.trim(), apkUrl: isTrustedApkUrl(release.apkDownloadUrl, env.githubRepo) ? release.apkDownloadUrl : null,
-    iosUrl: release.iosStoreOrTestFlightUrl, source: 'backend',
+    source: 'backend',
   };
 }
 

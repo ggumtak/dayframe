@@ -1,6 +1,6 @@
 # Dayframe 모바일 앱
 
-Expo SDK 58 · React Native · TypeScript. 한 코드베이스로 Android APK를 만들고 iOS로도 빌드할 수 있습니다.
+Expo SDK 58 · React Native · TypeScript. Android APK로 배포합니다. 웹 빌드는 개발·검증용입니다.
 
 ## 개발
 
@@ -45,13 +45,12 @@ npm test            # 업데이트 버전 비교 로직 단위 테스트
 1. 서버의 `/app/version`을 확인하고, 릴리스 정보가 없거나 서버에 닿지 않으면 GitHub Releases의 최신 릴리스를 확인합니다.
 2. 설치된 빌드 번호보다 새 릴리스가 있으면 오늘 화면 상단과 설정에 알립니다.
 3. Android: "지금 업데이트"를 누르면 설치 권한을 확인하고(없으면 설정 화면으로 안내하고 돌아오면 자동으로 이어감), APK를 진행률과 함께 내려받은 뒤, 같은 앱·같은 서명·더 높은 버전인지 검사하고 시스템 설치 화면을 엽니다.
-4. iOS: 변경 사항을 보여 주고 TestFlight/App Store 링크가 있으면 엽니다.
 
 내려받는 주소는 이 앱의 릴리스 저장소(`EXPO_PUBLIC_GITHUB_REPO`, 기본값 `ggumtak/dayframe`)의 `releases/download/...apk`만 허용합니다.
 
 ## 빌드와 릴리스
 
-`android/`, `ios/` 폴더는 저장소에 없으며 `npx expo prebuild`가 `app.config.ts`로부터 만듭니다.
+`android/` 폴더는 저장소에 없으며 `npx expo prebuild`가 `app.config.ts`로부터 만듭니다.
 
 릴리스는 저장소 루트의 `.github/workflows/build-android-apk.yml`이 담당합니다.
 
