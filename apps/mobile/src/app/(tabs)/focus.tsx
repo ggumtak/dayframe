@@ -1,13 +1,14 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
-import { Button, Card, Chip, Header, Icon, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
+import { Button, Card, Chip, Header, Icon, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useDeleteFocus, useFocusActions, useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
+import { clampInt, FOCUS_LIMITS, type FocusMode, type FocusPrefs, nextBreak, setFocusPrefs, useFocusPrefs } from '@/features/focus/prefs';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { cancelAlert, prepareAlerts, scheduleAlert } from '@/lib/alerts';
 import { useMinute } from '@/lib/clock';
@@ -15,23 +16,86 @@ import { deviceTimeZone, dueBucket, formatDuration, formatMinutes, formatTime, T
 import { haptic } from '@/lib/haptics';
 import type { FocusSession } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
-import { space, useTheme } from '@/theme';
+import { radius, space, type, useTheme } from '@/theme';
 
-/** Pomodoro rhythms: focus, a short break after each round, and a long break after every fourth. */
-const modes = [
-  { minutes: 15, rest: 3, longRest: 10, label: '15분', detail: '휴식 3분' },
-  { minutes: 25, rest: 5, longRest: 15, label: '25분', detail: '휴식 5분' },
-  { minutes: 50, rest: 10, longRest: 30, label: '50분', detail: '휴식 10분' },
-] as const;
-const ROUNDS = 4;
-const modeFor = (plannedSeconds: number) => (plannedSeconds <= 20 * 60 && plannedSeconds > 0 ? modes[0] : plannedSeconds > 40 * 60 ? modes[2] : modes[1]);
 const SIZE = 248;
 const STROKE = 10;
+
+const pomoPresets = [
+  { label: '15 / 3분', focus: 15, rest: 3, longRest: 10 },
+  { label: '25 / 5분', focus: 25, rest: 5, longRest: 15 },
+  { label: '50 / 10분', focus: 50, rest: 10, longRest: 30 },
+] as const;
+
+const timerPresets = [10, 15, 25, 45, 60, 90] as const;
+const roundChoices = [2, 3, 4, 6] as const;
 
 type Target = { kind: 'task' | 'habit'; id: string } | null;
 
 function elapsedSeconds(session: FocusSession, now: number): number {
   return Math.max(0, (now - new Date(session.started_at).getTime()) / 1000);
+}
+
+/** Stepper + direct number input for choosing minutes freely inside `min..max`. */
+function MinuteControl({
+  label, value, min, max, step, unit = '분', onChange,
+}: {
+  label: string; value: number; min: number; max: number; step: number; unit?: string; onChange: (next: number) => void;
+}) {
+  const { colors } = useTheme();
+  const [draft, setDraft] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+
+  const commit = (raw: string) => {
+    const parsed = Number(raw.replace(/[^0-9]/g, ''));
+    const next = raw.trim() ? clampInt(parsed, min, max, value) : value;
+    onChange(next);
+    setDraft(String(next));
+  };
+
+  const bump = (delta: number) => {
+    haptic.tap();
+    const next = clampInt(value + delta, min, max, value);
+    onChange(next);
+    setDraft(String(next));
+  };
+
+  return (
+    <View style={styles.controlRow}>
+      <Txt variant="bodyStrong" style={{ flex: 1 }}>{label}</Txt>
+      <View style={styles.stepper}>
+        <IconButton
+          name="minus" label={`${label} ${step}${unit} 줄이기`} size={18}
+          onPress={() => bump(-step)} style={{ backgroundColor: colors.surfaceMuted, width: 36, height: 36 }} />
+        <View style={[styles.numBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <TextInput
+            value={focused ? draft : String(value)}
+            onFocus={() => {
+              setFocused(true);
+              setDraft(String(value));
+            }}
+            onChangeText={(next) => {
+              const digits = next.replace(/[^0-9]/g, '');
+              setDraft(digits);
+              if (digits) {
+                const parsed = Number(digits);
+                if (parsed >= min && parsed <= max) onChange(parsed);
+              }
+            }}
+            onBlur={() => {
+              setFocused(false);
+              commit(draft);
+            }}
+            keyboardType="number-pad" returnKeyType="done" maxLength={3} accessibilityLabel={label}
+            style={[type.bodyStrong, { color: colors.text, textAlign: 'center', minWidth: 36, padding: 0 }]} />
+          <Txt variant="small" tone="muted">{unit}</Txt>
+        </View>
+        <IconButton
+          name="plus" label={`${label} ${step}${unit} 늘리기`} size={18}
+          onPress={() => bump(step)} style={{ backgroundColor: colors.surfaceMuted, width: 36, height: 36 }} />
+      </View>
+    </View>
+  );
 }
 
 export default function Focus() {
@@ -43,22 +107,22 @@ export default function Focus() {
   const actions = useFocusActions();
   const deleteFocus = useDeleteFocus();
   const flow = useTaskFlow();
-  const [chosen, setChosen] = useState<number | null>(null);
+  const prefs = useFocusPrefs();
+
   const [target, setTarget] = useState<Target>(null);
   const [picking, setPicking] = useState(false);
+  const [configuring, setConfiguring] = useState(false);
   const [pickedRecord, setPickedRecord] = useState<FocusSession | null>(null);
   const [rest, setRest] = useState<{ endsAt: number; seconds: number; long: boolean } | null>(null);
   const breakEndsAt = rest?.endsAt ?? null;
   const [now, setNow] = useState(() => Date.now());
   const finished = useRef(new Set<string>());
+  const runningPrefs = useRef<FocusPrefs>(prefs);
   const timeZone = deviceTimeZone();
   useMinute();
 
   const running = sessions?.find((session) => session.status === 'running') ?? null;
-  // Opens on the rhythm used last time.
-  const lastPlanned = sessions?.find((session) => session.status !== 'running')?.planned_seconds;
-  const mode = modes.find((item) => item.minutes === chosen) ?? modeFor(lastPlanned ?? 0);
-  const minutes = mode.minutes;
+  const minutes = prefs.mode === 'pomodoro' ? prefs.focusMinutes : prefs.timerMinutes;
   const ticking = !!running || breakEndsAt !== null;
 
   // Arriving from a task or habit attaches it to the next session.
@@ -81,13 +145,16 @@ export default function Focus() {
       sum + (new Date(session.ended_at!).getTime() - new Date(session.started_at).getTime()) / 1000, 0),
   };
 
-  /** Starts the break a finished round has earned: a long one after every fourth round of the day. */
-  const beginRest = (plannedSeconds: number, roundsBefore: number, from: number) => {
-    const rhythm = modeFor(plannedSeconds);
-    const long = (roundsBefore + 1) % ROUNDS === 0;
-    const seconds = (long ? rhythm.longRest : rhythm.rest) * 60;
-    setRest({ endsAt: from + seconds * 1000, seconds, long });
-    void scheduleAlert('rest', from + seconds * 1000, '휴식이 끝났습니다', '다음 집중을 시작해 보세요.');
+  /** Starts the break a finished Pomodoro round has earned, or does nothing in single-timer mode. */
+  const beginRest = (activePrefs: FocusPrefs, roundsBefore: number, from: number) => {
+    const earned = nextBreak(activePrefs, roundsBefore);
+    if (!earned) return;
+    setRest({ endsAt: from + earned.seconds * 1000, seconds: earned.seconds, long: earned.long });
+    void scheduleAlert(
+      'rest', from + earned.seconds * 1000,
+      earned.long ? '긴 휴식이 끝났습니다' : '휴식이 끝났습니다',
+      earned.long ? '한 사이클을 마쳤습니다. 준비되면 새 세트를 시작해 보세요.' : '다음 집중을 시작해 보세요.',
+    );
   };
   const endRest = () => {
     setRest(null);
@@ -98,9 +165,9 @@ export default function Focus() {
     ? byId.get(session.task_id)?.title : session.habit_id ? habits?.find((habit) => habit.id === session.habit_id)?.name : undefined);
 
   // The interval reads the newest state through this ref, so it never has to be torn down mid-session.
-  const latest = useRef({ running, breakEndsAt, byId, actions, flow, beginRest, rounds: todayStats.count });
+  const latest = useRef({ running, breakEndsAt, rest, byId, actions, flow, beginRest, rounds: todayStats.count });
   useEffect(() => {
-    latest.current = { running, breakEndsAt, byId, actions, flow, beginRest, rounds: todayStats.count };
+    latest.current = { running, breakEndsAt, rest, byId, actions, flow, beginRest, rounds: todayStats.count };
   });
 
   useEffect(() => {
@@ -117,13 +184,19 @@ export default function Focus() {
         state.actions.finish({ id: session.id, status: 'completed', ended_at: new Date(endsAt).toISOString() });
         haptic.success();
         const task = session.task_id ? state.byId.get(session.task_id) : undefined;
-        showToast(`집중 ${formatMinutes(session.planned_seconds)} 완료!`, task
-          ? { actionLabel: '할 일도 완료', onAction: () => state.flow.complete(task) } : {});
-        state.beginRest(session.planned_seconds, state.rounds, time);
+        const activePrefs = runningPrefs.current;
+        showToast(
+          activePrefs.mode === 'pomodoro'
+            ? `집중 ${formatMinutes(session.planned_seconds)} 완료!`
+            : `타이머 ${formatMinutes(session.planned_seconds)} 완료!`,
+          task ? { actionLabel: '할 일도 완료', onAction: () => state.flow.complete(task) } : {},
+        );
+        state.beginRest(activePrefs, state.rounds, time);
       } else if (!session && state.breakEndsAt !== null && time >= state.breakEndsAt) {
+        const wasLong = state.rest?.long ?? false;
         setRest(null);
         haptic.medium();
-        showToast('휴식이 끝났습니다. 다음 집중을 시작해 보세요.');
+        showToast(wasLong ? '긴 휴식이 끝났습니다. 준비되면 새 사이클을 시작해 보세요.' : '휴식이 끝났습니다. 다음 집중을 시작해 보세요.');
       }
     };
     const timer = setInterval(tick, 500);
@@ -141,9 +214,13 @@ export default function Focus() {
   const start = () => {
     haptic.medium();
     endRest();
+    runningPrefs.current = prefs;
+    const earned = nextBreak(prefs, todayStats.count);
+    const alertBody = earned
+      ? (earned.long ? `긴 휴식 ${earned.minutes}분 쉬어 가세요.` : `${earned.minutes}분 쉬어 가세요.`)
+      : '설정한 타이머가 끝났습니다.';
     // Scheduled with the system, so the round's end is announced even when the phone is locked.
-    const rhythm = modeFor(minutes * 60);
-    void prepareAlerts().then(() => scheduleAlert('focus', Date.now() + minutes * 60_000, `집중 ${minutes}분 완료`, `${rhythm.rest}분 쉬어 가세요.`));
+    void prepareAlerts().then(() => scheduleAlert('focus', Date.now() + minutes * 60_000, `집중 ${minutes}분 완료`, alertBody));
     actions.start({
       planned_seconds: minutes * 60,
       ...(target?.kind === 'task' ? { task_id: target.id } : target?.kind === 'habit' ? { habit_id: target.id } : {}),
@@ -158,7 +235,7 @@ export default function Focus() {
     actions.finish({ id: running.id, status, ended_at: new Date().toISOString() });
     if (status === 'completed') {
       showToast(`집중 ${formatMinutes(elapsed)} 기록했습니다.`);
-      beginRest(running.planned_seconds, todayStats.count, Date.now());
+      beginRest(runningPrefs.current, todayStats.count, Date.now());
     }
   };
 
@@ -174,7 +251,8 @@ export default function Focus() {
 
   const onBreak = !running && breakEndsAt !== null;
   const total = running ? running.planned_seconds : onBreak ? rest!.seconds : minutes * 60;
-  const round = todayStats.count % ROUNDS;
+  const rounds = prefs.roundsBeforeLongBreak;
+  const round = todayStats.count % rounds;
   const shown = Math.max(0, running ? remaining : onBreak ? breakRemaining : minutes * 60);
   const ratio = total > 0 ? Math.min(1, Math.max(0, 1 - shown / total)) : 0;
   const r = (SIZE - STROKE) / 2;
@@ -185,11 +263,40 @@ export default function Focus() {
   return (
     <Screen>
       <Header
-        title="집중" subtitle={todayStats.count ? `오늘 ${todayStats.count}회 · ${formatMinutes(todayStats.seconds)}` : '오늘 첫 집중을 시작해 보세요'} />
+        title="집중" subtitle={todayStats.count ? `오늘 ${todayStats.count}회 · ${formatMinutes(todayStats.seconds)}` : '오늘 첫 집중을 시작해 보세요'}
+        right={!ticking ? (
+          <IconButton name="sliders" label="시간 설정" onPress={() => setConfiguring(true)} color={colors.textMuted} />
+        ) : undefined} />
       <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.lg, alignItems: 'center' }}>
-        <View
-          style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center', marginTop: space.sm }}
-          accessibilityRole="timer" accessibilityLabel={`${onBreak ? '휴식' : '집중'} 남은 시간 ${formatDuration(shown)}`}>
+        {!running ? (
+          <View style={{ alignSelf: 'stretch' }}>
+            <Segmented<FocusMode>
+              value={prefs.mode}
+              onChange={(mode) => {
+                if (mode === 'timer' && onBreak) endRest();
+                setFocusPrefs({ mode });
+              }}
+              options={[
+                { value: 'pomodoro', label: '뽀모도로', icon: 'repeat' },
+                { value: 'timer', label: '일반 타이머', icon: 'clock' },
+              ]} />
+          </View>
+        ) : null}
+
+        <Pressable
+          disabled={ticking}
+          accessibilityRole={ticking ? 'timer' : 'button'}
+          accessibilityLabel={ticking
+            ? `${onBreak ? '휴식' : '집중'} 남은 시간 ${formatDuration(shown)}`
+            : `타이머 ${formatDuration(shown)}, 눌러서 시간 자유 설정`}
+          onPress={() => {
+            haptic.tap();
+            setConfiguring(true);
+          }}
+          style={({ pressed }) => ({
+            width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center', marginTop: space.xs,
+            opacity: !ticking && pressed ? 0.75 : 1,
+          })}>
           <Svg width={SIZE} height={SIZE} style={StyleSheet.absoluteFill}>
             <Circle cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={colors.surfaceMuted} strokeWidth={STROKE} fill="none" />
             {ratio > 0.002 ? (
@@ -199,13 +306,22 @@ export default function Focus() {
             ) : null}
           </Svg>
           <Txt variant="caption" tone="muted" style={{ marginBottom: 4 }}>
-            {running ? '집중 중' : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중') : '준비'}
+            {running ? '집중 중' : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중') : prefs.mode === 'pomodoro' ? '뽀모도로' : '일반 타이머'}
           </Txt>
-          <Txt style={{ fontSize: 56, lineHeight: 64, fontWeight: '400', fontVariant: ['tabular-nums'] }}>{formatDuration(shown)}</Txt>
+          <Txt
+            numberOfLines={1} adjustsFontSizeToFit
+            style={{ fontSize: 54, lineHeight: 62, fontWeight: '400', fontVariant: ['tabular-nums'], maxWidth: SIZE - 44 }}>
+            {formatDuration(shown)}
+          </Txt>
           {targetName ? (
             <Txt variant="small" tone="muted" numberOfLines={1} style={{ maxWidth: SIZE - 64, marginTop: 4 }}>{targetName}</Txt>
+          ) : !ticking ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
+              <Icon name="edit-2" size={11} color={colors.accent} />
+              <Txt variant="caption" tone="accent">눌러서 시간 설정</Txt>
+            </View>
           ) : null}
-        </View>
+        </Pressable>
 
         {running ? (
           <View style={{ flexDirection: 'row', gap: space.sm, alignSelf: 'stretch' }}>
@@ -214,27 +330,50 @@ export default function Focus() {
           </View>
         ) : (
           <>
-            <View style={{ alignSelf: 'stretch', gap: space.sm }}>
-              <Segmented<string>
-                value={String(minutes)} onChange={(value) => setChosen(Number(value))}
-                options={modes.map((item) => ({ value: String(item.minutes), label: item.label }))} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }} accessibilityLabel={`${ROUNDS}회 중 ${round}회 완료`}>
-                {Array.from({ length: ROUNDS }, (_, index) => (
-                  <View
-                    key={index}
-                    style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: index < round ? colors.accent : colors.surfaceMuted }} />
-                ))}
-                <Txt variant="small" tone="muted" style={{ marginLeft: 4 }}>
-                  {mode.detail} · {ROUNDS - round}회 더 하면 긴 휴식 {mode.longRest}분
-                </Txt>
+            {prefs.mode === 'pomodoro' ? (
+              <View style={{ alignSelf: 'stretch', gap: space.sm, alignItems: 'center' }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  {pomoPresets.map((preset) => {
+                    const selected = prefs.focusMinutes === preset.focus && prefs.shortBreakMinutes === preset.rest && prefs.longBreakMinutes === preset.longRest;
+                    return (
+                      <Chip
+                        key={preset.label} label={preset.label} selected={selected}
+                        onPress={() => setFocusPrefs({ focusMinutes: preset.focus, shortBreakMinutes: preset.rest, longBreakMinutes: preset.longRest })} />
+                    );
+                  })}
+                  <Chip icon="sliders" label="직접 설정" onPress={() => setConfiguring(true)} />
+                </ScrollView>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }} accessibilityLabel={`${rounds}세트 중 ${round}세트 완료`}>
+                  {Array.from({ length: rounds }, (_, index) => (
+                    <View
+                      key={index}
+                      style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: index < round ? colors.accent : colors.surfaceMuted }} />
+                  ))}
+                  <Txt variant="small" tone="muted" style={{ marginLeft: 4 }}>
+                    휴식 {prefs.shortBreakMinutes}분 · {rounds - round}세트 후 긴 휴식 {prefs.longBreakMinutes}분
+                  </Txt>
+                </View>
               </View>
-            </View>
+            ) : (
+              <View style={{ alignSelf: 'stretch', gap: space.sm, alignItems: 'center' }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                  {timerPresets.map((preset) => (
+                    <Chip
+                      key={preset} label={`${preset}분`} selected={prefs.timerMinutes === preset}
+                      onPress={() => setFocusPrefs({ timerMinutes: preset })} />
+                  ))}
+                  <Chip icon="sliders" label="직접 입력" onPress={() => setConfiguring(true)} />
+                </ScrollView>
+                <Txt variant="small" tone="muted">휴식 없이 설정한 시간이 끝나면 바로 종료됩니다</Txt>
+              </View>
+            )}
+
             <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
               <Chip icon="link" label={targetName ?? '할 일·습관 연결'} color={target ? colors.accent : undefined} onPress={() => setPicking(true)} style={{ maxWidth: 260 }} />
               {target ? <Chip icon="x" label="해제" onPress={() => setTarget(null)} /> : null}
             </View>
             <View style={{ alignSelf: 'stretch', gap: space.sm }}>
-              <Button label={onBreak ? '휴식 건너뛰고 집중 시작' : '집중 시작'} icon="play" onPress={start} />
+              <Button label={onBreak ? '휴식 건너뛰고 집중 시작' : prefs.mode === 'pomodoro' ? '집중 시작' : '타이머 시작'} icon="play" onPress={start} />
               {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={endRest} /> : null}
             </View>
           </>
@@ -267,6 +406,52 @@ export default function Focus() {
           </Card>
         ) : null}
       </ScrollView>
+
+      <Sheet visible={configuring} onClose={() => setConfiguring(false)} title={prefs.mode === 'pomodoro' ? '뽀모도로 시간 설정' : '타이머 시간 설정'}>
+        <View style={{ gap: space.md }}>
+          {prefs.mode === 'pomodoro' ? (
+            <>
+              <MinuteControl
+                label="집중 시간" value={prefs.focusMinutes} min={FOCUS_LIMITS.focus.min} max={FOCUS_LIMITS.focus.max} step={5}
+                onChange={(focusMinutes) => setFocusPrefs({ focusMinutes })} />
+              <MinuteControl
+                label="짧은 휴식" value={prefs.shortBreakMinutes} min={FOCUS_LIMITS.shortBreak.min} max={FOCUS_LIMITS.shortBreak.max} step={1}
+                onChange={(shortBreakMinutes) => setFocusPrefs({ shortBreakMinutes })} />
+              <MinuteControl
+                label="긴 휴식" value={prefs.longBreakMinutes} min={FOCUS_LIMITS.longBreak.min} max={FOCUS_LIMITS.longBreak.max} step={5}
+                onChange={(longBreakMinutes) => setFocusPrefs({ longBreakMinutes })} />
+              <View style={styles.controlRow}>
+                <Txt variant="bodyStrong" style={{ flex: 1 }}>긴 휴식 주기</Txt>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {roundChoices.map((count) => (
+                    <Chip
+                      key={count} label={`${count}세트`} selected={prefs.roundsBeforeLongBreak === count}
+                      onPress={() => setFocusPrefs({ roundsBeforeLongBreak: count })} />
+                  ))}
+                </View>
+              </View>
+              <Txt variant="small" tone="muted">
+                {prefs.roundsBeforeLongBreak}세트 완료 후 긴 휴식이 끝나면 자동으로 다시 시작하지 않고 대기하며, 다음 집중 시작 시 1세트부터 새 사이클이 시작됩니다.
+              </Txt>
+            </>
+          ) : (
+            <>
+              <MinuteControl
+                label="타이머 시간" value={prefs.timerMinutes} min={FOCUS_LIMITS.focus.min} max={FOCUS_LIMITS.focus.max} step={5}
+                onChange={(timerMinutes) => setFocusPrefs({ timerMinutes })} />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {[5, 10, 15, 25, 30, 45, 60, 90, 120].map((preset) => (
+                  <Chip
+                    key={preset} label={preset >= 60 && preset % 60 === 0 ? `${preset / 60}시간` : `${preset}분`}
+                    selected={prefs.timerMinutes === preset} onPress={() => setFocusPrefs({ timerMinutes: preset })} />
+                ))}
+              </View>
+              <Txt variant="small" tone="muted">1분부터 최대 480분(8시간)까지 숫자를 눌러 직접 입력할 수 있습니다.</Txt>
+            </>
+          )}
+          <Button label="완료" onPress={() => setConfiguring(false)} style={{ marginTop: space.xs }} />
+        </View>
+      </Sheet>
 
       <Sheet visible={picking} onClose={() => setPicking(false)} title="무엇에 집중할까요?">
         <ScrollView style={{ maxHeight: 420 }}>
@@ -302,6 +487,7 @@ export default function Focus() {
           ) : null}
         </ScrollView>
       </Sheet>
+
       <Sheet visible={!!pickedRecord} onClose={() => setPickedRecord(null)} title="집중 기록">
         {pickedRecord ? (() => {
           const started = Temporal.Instant.from(pickedRecord.started_at).toZonedDateTimeISO(timeZone);
@@ -328,3 +514,12 @@ export default function Focus() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  controlRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  numBox: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2,
+    borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.sm, height: 38, minWidth: 72,
+  },
+});
