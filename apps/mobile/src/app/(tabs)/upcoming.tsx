@@ -45,8 +45,7 @@ export default function Upcoming() {
   for (const task of tasks.filter((item) => dueBucket(item) === 'upcoming').sort(bySchedule)) {
     const date = dueDate(task)!;
     const key = date.toString();
-    const label = formatDate(date, today(task.timezone));
-    const title = /^\d/.test(label) ? label : `${label} · ${date.month}월 ${date.day}일 ${weekdayName(date)}`;
+    const title = dayTitle(date, today(task.timezone));
     groups.set(key, { title, tasks: [...(groups.get(key)?.tasks ?? []), task] });
   }
   const all = [...groups.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, group]) => ({ key, ...group }));
@@ -79,7 +78,6 @@ export default function Upcoming() {
             const key = date.toString();
             const active = key === selected;
             const count = groups.get(key)?.tasks.length ?? 0;
-            const weekend = date.dayOfWeek >= 6;
             return (
               <Pressable
                 key={key} accessibilityRole="button" accessibilityState={{ selected: active }}
@@ -89,7 +87,7 @@ export default function Upcoming() {
                   setPicked(active ? null : key);
                 }}
                 style={styles.day}>
-                <Txt variant="caption" style={{ color: weekend ? colors.danger : colors.textMuted }}>{weekdayName(date)}</Txt>
+                <Txt variant="caption" style={{ color: date.dayOfWeek === 7 ? colors.danger : date.dayOfWeek === 6 ? colors.accent : colors.textMuted }}>{weekdayName(date)}</Txt>
                 <View style={[styles.dayNumber, active && { backgroundColor: colors.accent }]}>
                   <Txt variant="bodyStrong" style={{ color: active ? colors.onAccent : colors.text }}>{date.day}</Txt>
                 </View>
@@ -120,12 +118,21 @@ export default function Upcoming() {
   );
 }
 
+/** "내일 · 11월 23일 월", "수요일 · 11월 25일", or the plain date when it is further away. */
+function dayTitle(date: Temporal.PlainDate, now: Temporal.PlainDate): string {
+  const label = formatDate(date, now);
+  if (/^\d/.test(label)) return label;
+  const day = `${date.month}월 ${date.day}일`;
+  return label.endsWith('요일') ? `${label} · ${day}` : `${label} · ${day} ${weekdayName(date)}`;
+}
+
 function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const { colors } = useTheme();
   return (
     <Pressable
       accessibilityRole="button" accessibilityLabel={label + '에 추가'} hitSlop={10} onPress={onPress}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 2, opacity: pressed ? 0.6 : 1 })}>
-      <Icon name="plus" size={16} color={undefined} />
+      <Icon name="plus" size={16} color={colors.accent} />
       <Txt variant="smallStrong" tone="accent">추가</Txt>
     </Pressable>
   );
@@ -183,11 +190,13 @@ function MonthView({ tasks, selected, onSelect, onAdd, refreshing, onRefresh }: 
   const now = today(deviceTimeZone());
   const picked = selected ? Temporal.PlainDate.from(selected) : null;
   const [month, setMonth] = useState(() => (picked ?? now).toPlainYearMonth());
-  const first = month.toPlainDate({ day: 1 });
-  const last = month.toPlainDate({ day: month.daysInMonth });
-
   // Every date each task falls on this month; only a task's current due date is a real, completable item.
+  // Keyed on the month's text, since a new PlainYearMonth object would redo this on every render.
+  const monthKey = month.toString();
   const days = useMemo(() => {
+    const shown = Temporal.PlainYearMonth.from(monthKey);
+    const first = shown.toPlainDate({ day: 1 });
+    const last = shown.toPlainDate({ day: shown.daysInMonth });
     const map = new Map<string, { real: Task[]; previews: Task[] }>();
     for (const task of tasks) {
       const due = dueDate(task)?.toString();
@@ -199,14 +208,11 @@ function MonthView({ tasks, selected, onSelect, onAdd, refreshing, onRefresh }: 
       }
     }
     return map;
-  }, [tasks, first, last]);
+  }, [tasks, monthKey]);
 
   const listed = [...days.keys()].filter((key) => !selected || key === selected).sort();
   if (selected && !days.has(selected)) listed.push(selected);
-  const title = (date: Temporal.PlainDate) => {
-    const label = formatDate(date, now);
-    return /^\d/.test(label) ? label : `${label} · ${date.month}월 ${date.day}일 ${weekdayName(date)}`;
-  };
+  const title = (date: Temporal.PlainDate) => dayTitle(date, now);
   const total = [...days.values()].reduce((sum, day) => sum + day.real.length + day.previews.length, 0);
 
   return (

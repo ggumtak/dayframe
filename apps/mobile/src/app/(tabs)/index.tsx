@@ -15,8 +15,12 @@ import { UpdateBanner } from '@/features/update/UpdateBanner';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { usePersistentState } from '@/lib/persist';
 import { showToast } from '@/lib/toast';
 import { space, useTheme } from '@/theme';
+
+type TodayView = 'list' | 'timeline';
+const isTodayView = (value: string): value is TodayView => value === 'list' || value === 'timeline';
 
 export default function Today() {
   const { colors } = useTheme();
@@ -24,7 +28,7 @@ export default function Today() {
   const { data: sessions } = useFocusSessions();
   const flow = useTaskFlow();
   const quickAdd = useQuickAdd();
-  const [view, setView] = useState<'list' | 'timeline'>('list');
+  const [view, setView] = usePersistentState<TodayView>('dayframe-today-view', 'list', isTodayView);
   const [refreshing, setRefreshing] = useState(false);
   useMinute();
   const timeZone = deviceTimeZone();

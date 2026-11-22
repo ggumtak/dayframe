@@ -2,8 +2,8 @@ import { useCallback } from 'react';
 
 import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
-import { hideTasks, unhideTasks, useTaskActions, withDescendants } from '@/data/tasks';
-import { dueMinutes, instantFor, type PlainDate, today } from '@/lib/dates';
+import { hideTasks, nextDueAfterComplete, unhideTasks, useTaskActions, withDescendants } from '@/data/tasks';
+import { dueMinutes, formatDue, instantFor, type PlainDate, sameInstant, today } from '@/lib/dates';
 import type { Task, TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 
@@ -28,8 +28,21 @@ export function useTaskFlow() {
 
   const complete = useCallback((task: Task) => {
     actions.complete(task);
-    if (task.recurrence_rule) showToast('완료했습니다. 다음 일정으로 넘어갑니다.');
-    else showToast('완료했습니다.', { actionLabel: '실행 취소', onAction: () => actions.reopen(task) });
+    if (!task.recurrence_rule) {
+      showToast('완료했습니다.', { actionLabel: '실행 취소', onAction: () => actions.reopen(task) });
+      return;
+    }
+    const next = nextDueAfterComplete(task);
+    const when = next ? formatDue({ due_at: next, timezone: task.timezone, all_day: task.all_day }) : null;
+    showToast(when ? `다음 일정: ${when}` : '완료했습니다. 다음 일정으로 넘어갑니다.', {
+      actionLabel: '실행 취소',
+      // A repeating task has no completed state to reopen; undo moves it back to the occurrence it was on.
+      onAction: () => {
+        const current = queryClient.getQueryData<Task[]>(keys.tasks)?.find((item) => item.id === task.id);
+        if (!task.due_at || !current?.due_at || sameInstant(current.due_at, task.due_at)) return;
+        actions.update(task.id, { due_at: task.due_at, expected_due_at: current.due_at, preserve_recurrence: true });
+      },
+    });
   }, [actions]);
 
   const remove = useCallback((task: Task) => {

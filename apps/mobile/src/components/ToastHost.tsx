@@ -59,7 +59,7 @@ export function ToastHost({ bottomOffset = 0, rightInset = 0 }: { bottomOffset?:
               toast.onAction?.();
               setToast(null);
             }}>
-            <Text style={[type.smallStrong as TextStyle, { color: isDark ? colors.accent : '#B9B9FF' }]}>
+            <Text style={[type.smallStrong as TextStyle, { color: isDark ? colors.accent : '#8DB3FF' }]}>
               {toast.actionLabel}
             </Text>
           </Pressable>
