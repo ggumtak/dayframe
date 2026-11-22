@@ -3000,7 +3000,11 @@ components:
           anyOf:
             - *a14
             - type: "null"
-        completed_at: &a23
+        occurrence_at: &a23
+          anyOf:
+            - *a6
+            - type: "null"
+        completed_at: &a24
           anyOf:
             - *a6
             - type: "null"
@@ -3022,6 +3026,7 @@ components:
         - recurrence_rule
         - recurrence_anchor_at
         - recurrence_local_time
+        - occurrence_at
         - completed_at
         - updated_at
       additionalProperties: false
@@ -3046,7 +3051,8 @@ components:
         recurrence_rule: *a20
         recurrence_anchor_at: *a21
         recurrence_local_time: *a22
-        completed_at: *a23
+        occurrence_at: *a23
+        completed_at: *a24
         updated_at: *a6
       required:
         - id
@@ -3065,6 +3071,7 @@ components:
         - recurrence_rule
         - recurrence_anchor_at
         - recurrence_local_time
+        - occurrence_at
         - completed_at
         - updated_at
       additionalProperties: false
@@ -3262,12 +3269,12 @@ components:
         versionCode: *a15
         minSupportedVersion: *a14
         releaseNotes: *a14
-        apkDownloadUrl: &a24
+        apkDownloadUrl: &a25
           type: string
           format: uri
         iosStoreOrTestFlightUrl:
           anyOf:
-            - *a24
+            - *a25
             - type: "null"
       required:
         - latestVersion
@@ -3303,7 +3310,7 @@ components:
           anyOf:
             - *a6
             - type: "null"
-        url: *a24
+        url: *a25
       required:
         - id
         - label

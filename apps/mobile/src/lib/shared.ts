@@ -2,4 +2,4 @@
 export type * from '../../../../packages/shared/types.ts';
 export { analyzeTask } from '../../../../supabase/functions/api/parser.ts';
 export type { TaskAnalysis, TaskToken, TaskTokenKind } from '../../../../supabase/functions/api/parser.ts';
-export { nextOccurrence, recurrence } from '../../../../supabase/functions/api/schedule.ts';
+export { movedOccurrenceSlot, nextOccurrence, occurrenceFloor, recurrence } from '../../../../supabase/functions/api/schedule.ts';

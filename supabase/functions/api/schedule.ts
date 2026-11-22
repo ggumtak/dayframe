@@ -71,3 +71,49 @@ export function nextOccurrence(
   }
   throw new InvalidSchedule("No next occurrence could be calculated");
 }
+
+/** The fields that place a repeating task's current occurrence in its series. */
+export interface OccurrenceFields {
+  due_at: string | null;
+  timezone: string;
+  all_day: boolean;
+  recurrence_rule: string | null;
+  recurrence_anchor_at: string | null;
+  recurrence_local_time: string | null;
+  /** The series slot the current occurrence was moved off, or null while it sits on its own slot. */
+  occurrence_at?: string | null;
+}
+
+/** Whether `at` is a time the series itself produces, rather than a moved one. */
+export function isSeriesSlot(task: OccurrenceFields, at: string): boolean {
+  if (!task.recurrence_rule || !task.recurrence_anchor_at) return false;
+  try {
+    const instant = Temporal.Instant.from(at);
+    const next = nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at,
+      instant.subtract({ nanoseconds: 1 }), task.all_day, task.recurrence_local_time);
+    return Temporal.Instant.from(next).equals(instant);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What `occurrence_at` becomes when the current occurrence moves to `to`. Moving it onto a slot of the series
+ * (such as undoing a completion) leaves nothing to remember; moving it elsewhere keeps the slot it came from,
+ * so completing it early does not bring that same slot back as the next occurrence.
+ */
+export function movedOccurrenceSlot(task: OccurrenceFields, to: string): string | null {
+  if (!task.due_at || isSeriesSlot(task, to)) return null;
+  return task.occurrence_at ?? task.due_at;
+}
+
+/** The time after which the next occurrence is searched: the current one, the slot it was moved off, and now. */
+export function occurrenceFloor(task: Pick<OccurrenceFields, "due_at" | "occurrence_at">, now: Temporal.Instant): Temporal.Instant {
+  let floor = now;
+  for (const at of [task.due_at, task.occurrence_at]) {
+    if (!at) continue;
+    const instant = Temporal.Instant.from(at);
+    if (Temporal.Instant.compare(instant, floor) > 0) floor = instant;
+  }
+  return floor;
+}

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Temporal } from "@js-temporal/polyfill";
 import { analyzeTask, parseTask } from "../supabase/functions/api/parser.ts";
-import { instantOn, nextOccurrence, recurrence } from "../supabase/functions/api/schedule.ts";
+import { instantOn, isSeriesSlot, movedOccurrenceSlot, nextOccurrence, occurrenceFloor, recurrence } from "../supabase/functions/api/schedule.ts";
 
 const parse = (text: string, now = "2026-11-22T09:00:00Z", timezone = "Asia/Seoul") =>
   parseTask({ text, now, timezone });
@@ -242,4 +242,21 @@ test("a draft entry reports its tokens before a title is typed", () => {
   const draft = analyzeTask(input, { draft: true });
   assert.deepEqual(draft.tokens.map((token) => [token.kind, token.text]), [["date", "오늘"], ["time", "7시"]]);
   assert.deepEqual([draft.task.title, draft.task.due_at], ["", "2026-11-21T10:00:00Z"]);
+});
+
+test("a moved occurrence remembers the slot it left, unless it lands on a slot of the series", () => {
+  // Weekly on Wednesday 19:00 in Seoul.
+  const task = { due_at: "2099-01-07T10:00:00Z", timezone: "Asia/Seoul", all_day: false, recurrence_rule: "FREQ=WEEKLY",
+    recurrence_anchor_at: "2099-01-07T10:00:00Z", recurrence_local_time: "19:00:00", occurrence_at: null };
+  assert.equal(isSeriesSlot(task, "2099-01-14T10:00:00Z"), true);
+  assert.equal(isSeriesSlot(task, "2099-01-05T10:00:00Z"), false);
+  // Done early on Monday: Wednesday is remembered, and later moves keep that first slot.
+  assert.equal(movedOccurrenceSlot(task, "2099-01-05T10:00:00Z"), "2099-01-07T10:00:00Z");
+  const monday = { ...task, due_at: "2099-01-05T10:00:00Z", occurrence_at: "2099-01-07T10:00:00Z" };
+  assert.equal(movedOccurrenceSlot(monday, "2099-01-06T10:00:00Z"), "2099-01-07T10:00:00Z");
+  // Undoing a completion moves the task back onto a real slot: nothing to remember.
+  assert.equal(movedOccurrenceSlot({ ...task, due_at: "2099-01-14T10:00:00Z" }, "2099-01-07T10:00:00Z"), null);
+  const now = Temporal.Instant.from("2099-01-05T11:00:00Z");
+  assert.equal(nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at, occurrenceFloor(monday, now),
+    false, task.recurrence_local_time), "2099-01-14T10:00:00Z");
 });

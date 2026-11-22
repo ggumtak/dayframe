@@ -60,7 +60,7 @@ For completion, generate a `request_id` UUID and send it with the unchanged task
 
 Rescheduling returns `{ "count": number }`. A past-date task moves to the current calendar date in its own zone and retains its wall time and recurrence anchor. Tasks already dated today stay where they are. Refresh the task list after receiving the count.
 
-To postpone one task occurrence while keeping the original repeat schedule, PATCH `/tasks/{id}` with the new `due_at`, the current `expected_due_at`, and `"preserve_recurrence": true`. A move of a different occurrence returns `409`. Retrying a move already applied to the current occurrence returns the current task. An ordinary schedule edit can change the recurrence anchor.
+To postpone one task occurrence while keeping the original repeat schedule, PATCH `/tasks/{id}` with the new `due_at`, the current `expected_due_at`, and `"preserve_recurrence": true`. A move of a different occurrence returns `409`. Retrying a move already applied to the current occurrence returns the current task. An ordinary schedule edit can change the recurrence anchor. A move that leaves the occurrence off the series records the slot it came from in `occurrence_at`; completing it then continues after that slot, so an occurrence done early never comes back as its own next one. Completion and ordinary schedule edits clear `occurrence_at`.
 
 ## Habits
 

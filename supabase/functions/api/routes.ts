@@ -7,7 +7,7 @@ import type {
 import { ApiProblem, onlyResult, queryInteger, readJson, requireChanges, Supabase, validate } from "./http.ts";
 import { connectionUrl, hashToken, newToken } from "./mcp.ts";
 import { parseTask } from "./parser.ts";
-import { nextOccurrence } from "./schedule.ts";
+import { movedOccurrenceSlot, nextOccurrence, occurrenceFloor } from "./schedule.ts";
 import * as schema from "./validation.ts";
 
 type Resource = "projects" | "sections" | "tags" | "tasks" | "subtasks" | "habits" | "focus_sessions";
@@ -98,15 +98,18 @@ async function editResource(request: Request, db: Supabase, table: Resource, fil
     case "tasks": {
       const patch = requireChanges(await readJson(request, schema.taskPatch));
       if ("preserve_recurrence" in patch) {
-        const moved = await db.rest<Task[]>(table, {
-          ...filter, due_at: "eq." + patch.expected_due_at, completed_at: "is.null", recurrence_rule: "not.is.null",
-        }, "PATCH", { due_at: patch.due_at }, "return=representation");
-        if (moved.length) return moved[0];
-        const current = onlyResult(await db.rest<Task[]>(table, filter));
-        if (current.recurrence_rule && !current.completed_at && current.due_at &&
-          Temporal.Instant.from(current.due_at).equals(patch.due_at)) {
-          return current;
+        const isOpenRepeat = (task: Task) => !!task.recurrence_rule && !task.completed_at && !!task.due_at;
+        let current = onlyResult(await db.rest<Task[]>(table, filter));
+        if (isOpenRepeat(current) && Temporal.Instant.from(current.due_at!).equals(patch.expected_due_at)) {
+          // The guard on due_at keeps a concurrent move or completion from being overwritten.
+          const moved = await db.rest<Task[]>(table, {
+            ...filter, due_at: "eq." + patch.expected_due_at, completed_at: "is.null", recurrence_rule: "not.is.null",
+          }, "PATCH", { due_at: patch.due_at, occurrence_at: movedOccurrenceSlot(current, patch.due_at) }, "return=representation");
+          if (moved.length) return moved[0];
+          current = onlyResult(await db.rest<Task[]>(table, filter));
         }
+        // A retry of a move that already landed.
+        if (isOpenRepeat(current) && Temporal.Instant.from(current.due_at!).equals(patch.due_at)) return current;
         throw new ApiProblem(409, "STALE_RESOURCE", "This occurrence changed before it could be moved");
       }
       const anchor = Object.hasOwn(patch, "due_at") ? { recurrence_anchor_at: patch.due_at } : {};
@@ -136,11 +139,10 @@ async function completeTask(request: Request, db: Supabase, id: string) {
   }
   const item = onlyResult(await db.rest<Task[]>("tasks", { id: uuidFilter(id) }));
   // Let the transaction detect completed requests that raced with this read.
-  const now = Temporal.Now.instant();
-  const due = item.due_at ? Temporal.Instant.from(item.due_at) : now;
+  // An occurrence moved earlier than its slot must not come back as its own next occurrence.
   const next = item.recurrence_rule && item.recurrence_anchor_at
     ? nextOccurrence(item.recurrence_rule, item.timezone, item.recurrence_anchor_at,
-      Temporal.Instant.compare(due, now) > 0 ? due : now, item.all_day, item.recurrence_local_time) : null;
+      occurrenceFloor(item, Temporal.Now.instant()), item.all_day, item.recurrence_local_time) : null;
   return db.rest<TaskCompletion>("rpc/complete_task", {}, "POST", { ...args, p_next_due: next });
 }
 

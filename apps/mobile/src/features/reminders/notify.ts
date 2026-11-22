@@ -7,7 +7,7 @@ import { nextCheckIn } from '@/features/habits/checkIn';
 import { widgetHabitChanged, widgetTaskChanged } from '@/features/widget/render';
 import { api } from '@/lib/api';
 import { describeRecurrence, formatTime, Temporal } from '@/lib/dates';
-import { nextOccurrence, type Task } from '@/lib/shared';
+import { nextOccurrence, occurrenceFloor, type Task } from '@/lib/shared';
 
 import { cancelOccurrence } from './cancel';
 import { completeOccurrence } from './complete';
@@ -112,7 +112,9 @@ export async function syncReminders(
   const granted = (await reminderPermission()) === 'granted';
   const planned: (PlannedReminder & { lead?: number })[] = granted ? planReminders(tasks, settings, Date.now(), (task, after) => {
     const full = byId.get(task.id)!;
-    return nextOccurrence(full.recurrence_rule!, full.timezone, full.recurrence_anchor_at ?? full.due_at!, Temporal.Instant.from(after),
+    // From the current occurrence, step past the slot it was moved off too, so that slot does not ring again.
+    const floor = after === full.due_at ? occurrenceFloor(full, Temporal.Instant.from(after)) : Temporal.Instant.from(after);
+    return nextOccurrence(full.recurrence_rule!, full.timezone, full.recurrence_anchor_at ?? full.due_at!, floor,
       full.all_day, full.recurrence_local_time);
   }, { leadFor: (task) => own[task.id] }) : [];
   const wanted = new Map<string, { item: { at: number }; content: Notifications.NotificationContentInput; signature: string; channel: string }>(

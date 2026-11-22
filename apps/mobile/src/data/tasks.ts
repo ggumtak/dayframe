@@ -4,7 +4,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { api, ApiFailure } from '@/lib/api';
 import { deviceTimeZone, dueBucket, dueMinutes, instantFor, sameInstant, Temporal, today } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
-import { nextOccurrence, type Project, type Tag, type Task, type TaskInput, type TaskPatch, type TaskTag, type User } from '@/lib/shared';
+import { movedOccurrenceSlot, nextOccurrence, occurrenceFloor, type Project, type Tag, type Task, type TaskInput, type TaskPatch, type TaskTag, type User } from '@/lib/shared';
 
 import { hold, queryClient, settle } from './client';
 import { keys, writes } from './keys';
@@ -87,7 +87,7 @@ queryClient.setMutationDefaults(writes.createTask, {
       timezone: input.timezone ?? queryClient.getQueryData<User>(keys.me)?.timezone ?? deviceTimeZone(),
       recurrence_rule: input.recurrence_rule ?? null,
       recurrence_anchor_at: input.recurrence_rule ? input.due_at ?? null : null,
-      recurrence_local_time: input.recurrence_local_time ?? null,
+      recurrence_local_time: input.recurrence_local_time ?? null, occurrence_at: null,
     };
     editTasks((tasks) => [...tasks.filter((task) => task.id !== vars.id), draft]);
   },
@@ -102,8 +102,14 @@ queryClient.setMutationDefaults(writes.updateTask, {
   mutationFn: (vars: UpdateTaskVars) => api.updateTask(vars.id, vars.patch),
   onMutate: async (vars: UpdateTaskVars) => {
     await hold(keys.tasks);
-    const patch = vars.patch.preserve_recurrence ? { due_at: vars.patch.due_at } : vars.patch;
-    editTasks((tasks) => tasks.map((task) => (task.id === vars.id ? { ...task, ...patch } : task)));
+    const { patch } = vars;
+    // Mirrors the server: a one-time move remembers the slot it left; any other schedule edit starts afresh.
+    editTasks((tasks) => tasks.map((task) => {
+      if (task.id !== vars.id) return task;
+      if (patch.preserve_recurrence) return { ...task, due_at: patch.due_at, occurrence_at: movedOccurrenceSlot(task, patch.due_at) };
+      const reanchors = 'due_at' in patch || 'recurrence_rule' in patch || 'timezone' in patch;
+      return { ...task, ...patch, ...(reanchors ? { occurrence_at: null } : {}) };
+    }));
   },
   onSuccess: (task: Task) => editTasks((tasks) => tasks.map((item) => (item.id === task.id ? task : item))),
   onSettled: () => settle(keys.tasks),
@@ -121,10 +127,8 @@ export interface CompleteTaskVars {
 export function nextDueAfterComplete(task: Task): string | null {
   if (!task.recurrence_rule || !task.recurrence_anchor_at) return null;
   try {
-    const now = Temporal.Now.instant();
-    const due = task.due_at ? Temporal.Instant.from(task.due_at) : now;
-    const after = Temporal.Instant.compare(due, now) > 0 ? due : now;
-    return nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at, after, task.all_day, task.recurrence_local_time);
+    return nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at,
+      occurrenceFloor(task, Temporal.Now.instant()), task.all_day, task.recurrence_local_time);
   } catch {
     return null;
   }
@@ -152,7 +156,7 @@ queryClient.setMutationDefaults(writes.completeTask, {
       if (task.id !== vars.id) return [task];
       if (!task.recurrence_rule || !task.recurrence_anchor_at) return [];
       const due_at = nextDueAfterComplete(task);
-      return due_at ? [{ ...task, due_at }] : [task];
+      return due_at ? [{ ...task, due_at, occurrence_at: null }] : [task];
     }));
   },
   onSettled: () => settle(keys.tasks, keys.completedTasks),
