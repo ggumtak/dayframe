@@ -96,16 +96,6 @@ export default function HabitDetail() {
             initial={day} today={day} marks={marks} min={Temporal.PlainDate.from(habit.start_date)} max={day} onSelect={toggle} />
         </Card>
 
-        {name === null ? null : (
-          <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
-            <TextInput
-              value={name} onChangeText={setName} autoFocus maxLength={120} returnKeyType="done" onSubmitEditing={rename}
-              accessibilityLabel="새 이름"
-              style={[type.body, { flex: 1, minHeight: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: space.md }]} />
-            <Button label="저장" onPress={rename} />
-          </View>
-        )}
-
         {Platform.OS === 'android' && !habit.archived_at ? (
           <Card style={{ gap: space.sm }}>
             <Txt variant="bodyStrong">알림</Txt>
@@ -131,6 +121,19 @@ export default function HabitDetail() {
         </Card>
       </ScrollView>
       </KeyboardAvoidingView>
+
+      <Sheet visible={name !== null} onClose={() => setName(null)} title="습관 이름 바꾸기">
+        <View style={{ gap: space.md }}>
+          <TextInput
+            value={name ?? ''} onChangeText={setName} autoFocus maxLength={120} returnKeyType="done" onSubmitEditing={rename}
+            placeholder="습관 이름" placeholderTextColor={colors.textFaint} accessibilityLabel="새 이름"
+            style={[type.body, { minHeight: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, color: colors.text, paddingHorizontal: space.md }]} />
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            <Button label="취소" kind="secondary" onPress={() => setName(null)} style={{ flex: 1 }} />
+            <Button label="저장" onPress={rename} disabled={!(name ?? '').trim()} style={{ flex: 1 }} />
+          </View>
+        </View>
+      </Sheet>
 
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="습관을 삭제할까요?">
         <Txt tone="muted" style={{ marginBottom: space.lg }}>모든 기록이 함께 지워지며 되돌릴 수 없습니다. 기록을 남기려면 보관을 선택하세요.</Txt>

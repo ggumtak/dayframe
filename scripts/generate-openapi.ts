@@ -21,7 +21,7 @@ const project = { ...owned, name: str, position: int };
 const task = {
   ...owned, project_id: nullable(uuid), section_id: nullable(uuid), parent_task_id: nullable(uuid),
   title: str, notes: nullable(str), priority: enumOf(1, 2, 3, 4), position: int, due_at: nullable(stamp),
-  all_day: bool, timezone: str, recurrence_rule: nullable(str), recurrence_anchor_at: nullable(stamp), recurrence_local_time: nullable(str),
+  all_day: bool, timezone: str, recurrence_rule: nullable(str), recurrence_anchor_at: nullable(stamp), recurrence_local_time: nullable(str), occurrence_at: nullable(stamp),
   completed_at: nullable(stamp), updated_at: stamp,
 };
 const schemas: Record<string, object> = {

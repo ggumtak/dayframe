@@ -34,7 +34,7 @@ before(async () => {
     grant usage on schema auth to anon, authenticated, service_role;
   `);
   for (const file of ["20261121000000_core.sql", "20261121000100_operations.sql", "20261122000000_mcp_connections.sql",
-    "20261122000100_calendar_recurrence.sql"]) {
+    "20261122000100_calendar_recurrence.sql", "20261123000000_occurrence_slot.sql"]) {
     await db.exec(await readFile(new URL("../supabase/migrations/" + file, import.meta.url), "utf8"));
   }
   await db.query("insert into auth.users values ($1), ($2)", [alice, bob]);
@@ -90,6 +90,26 @@ test("task completion is atomic, skips repeats on retry and uses optimistic revi
   await assert.rejects(db.query("select complete_task($1,gen_random_uuid(),$2,'2100-01-01T10:00Z')", [recurring, revision]), { code: "PT409" });
   await assert.rejects(db.query("select complete_task($1,$2,$3)", [task, completeId, revision]), { code: "23505" });
   await assert.rejects(db.query("delete from task_completions"), { code: "42501" });
+});
+
+test("a moved occurrence remembers its slot until it is completed or the series changes", async () => {
+  await as("authenticated", alice);
+  await db.query("insert into tasks(title,due_at,recurrence_rule) values ('Weekly','2099-01-07T10:00Z','FREQ=WEEKLY')");
+  const slot = async () => (await db.query<{ slot: string | null }>("select occurrence_at::text as slot from tasks where title='Weekly'")).rows[0].slot;
+  // A one-time move keeps the anchor, so the slot it came from is kept as sent.
+  await db.query("update tasks set due_at='2099-01-05T10:00Z', occurrence_at='2099-01-07T10:00Z' where title='Weekly'");
+  assert.equal(await slot(), "2099-01-07 10:00:00+00");
+  const { id, rev } = (await db.query<{ id: string; rev: string }>("select id, updated_at::text as rev from tasks where title='Weekly'")).rows[0];
+  await db.query("select complete_task($1,gen_random_uuid(),$2,'2099-01-14T10:00Z')", [id, rev]);
+  assert.equal(await slot(), null);
+  await db.query("update tasks set due_at='2099-01-12T10:00Z', occurrence_at='2099-01-14T10:00Z' where title='Weekly'");
+  // Editing the schedule itself re-anchors the series, which forgets the slot.
+  await db.query("update tasks set due_at='2099-01-20T10:00Z', recurrence_anchor_at='2099-01-20T10:00Z' where title='Weekly'");
+  assert.equal(await slot(), null);
+  await db.query("update tasks set due_at='2099-01-19T10:00Z', occurrence_at='2099-01-20T10:00Z' where title='Weekly'");
+  await db.query("update tasks set recurrence_rule=null where title='Weekly'");
+  assert.equal(await slot(), null);
+  await db.query("delete from tasks where title='Weekly'");
 });
 
 test("bulk rescheduling is owner-only, uses local dates, and retains anchor/time", async () => {

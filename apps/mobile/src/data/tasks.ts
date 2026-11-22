@@ -4,7 +4,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { api, ApiFailure } from '@/lib/api';
 import { deviceTimeZone, dueBucket, dueMinutes, instantFor, sameInstant, Temporal, today } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
-import { nextOccurrence, type Project, type Tag, type Task, type TaskInput, type TaskPatch, type TaskTag, type User } from '@/lib/shared';
+import { movedOccurrenceSlot, nextOccurrence, occurrenceFloor, type Project, type Tag, type Task, type TaskInput, type TaskPatch, type TaskTag, type User } from '@/lib/shared';
 
 import { hold, queryClient, settle } from './client';
 import { keys, writes } from './keys';
@@ -87,7 +87,7 @@ queryClient.setMutationDefaults(writes.createTask, {
       timezone: input.timezone ?? queryClient.getQueryData<User>(keys.me)?.timezone ?? deviceTimeZone(),
       recurrence_rule: input.recurrence_rule ?? null,
       recurrence_anchor_at: input.recurrence_rule ? input.due_at ?? null : null,
-      recurrence_local_time: input.recurrence_local_time ?? null,
+      recurrence_local_time: input.recurrence_local_time ?? null, occurrence_at: null,
     };
     editTasks((tasks) => [...tasks.filter((task) => task.id !== vars.id), draft]);
   },
@@ -102,8 +102,14 @@ queryClient.setMutationDefaults(writes.updateTask, {
   mutationFn: (vars: UpdateTaskVars) => api.updateTask(vars.id, vars.patch),
   onMutate: async (vars: UpdateTaskVars) => {
     await hold(keys.tasks);
-    const patch = vars.patch.preserve_recurrence ? { due_at: vars.patch.due_at } : vars.patch;
-    editTasks((tasks) => tasks.map((task) => (task.id === vars.id ? { ...task, ...patch } : task)));
+    const { patch } = vars;
+    // Mirrors the server: a one-time move remembers the slot it left; any other schedule edit starts afresh.
+    editTasks((tasks) => tasks.map((task) => {
+      if (task.id !== vars.id) return task;
+      if (patch.preserve_recurrence) return { ...task, due_at: patch.due_at, occurrence_at: movedOccurrenceSlot(task, patch.due_at) };
+      const reanchors = 'due_at' in patch || 'recurrence_rule' in patch || 'timezone' in patch;
+      return { ...task, ...patch, ...(reanchors ? { occurrence_at: null } : {}) };
+    }));
   },
   onSuccess: (task: Task) => editTasks((tasks) => tasks.map((item) => (item.id === task.id ? task : item))),
   onSettled: () => settle(keys.tasks),
@@ -115,6 +121,17 @@ export interface CompleteTaskVars {
   expected_updated_at: string;
   /** The occurrence the user checked off, so a stale retry never completes a later one. */
   occurrence_due_at: string | null;
+}
+
+/** Where a repeating task moves when its current occurrence is completed; the server applies the same rule. */
+export function nextDueAfterComplete(task: Task): string | null {
+  if (!task.recurrence_rule || !task.recurrence_anchor_at) return null;
+  try {
+    return nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at,
+      occurrenceFloor(task, Temporal.Now.instant()), task.all_day, task.recurrence_local_time);
+  } catch {
+    return null;
+  }
 }
 
 queryClient.setMutationDefaults(writes.completeTask, {
@@ -138,16 +155,8 @@ queryClient.setMutationDefaults(writes.completeTask, {
     editTasks((tasks) => tasks.flatMap((task) => {
       if (task.id !== vars.id) return [task];
       if (!task.recurrence_rule || !task.recurrence_anchor_at) return [];
-      try {
-        const now = Temporal.Now.instant();
-        const due = task.due_at ? Temporal.Instant.from(task.due_at) : now;
-        const after = Temporal.Instant.compare(due, now) > 0 ? due : now;
-        const due_at = nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at, after,
-          task.all_day, task.recurrence_local_time);
-        return [{ ...task, due_at }];
-      } catch {
-        return [task];
-      }
+      const due_at = nextDueAfterComplete(task);
+      return due_at ? [{ ...task, due_at, occurrence_at: null }] : [task];
     }));
   },
   onSettled: () => settle(keys.tasks, keys.completedTasks),
@@ -411,28 +420,29 @@ export function nextPosition(siblings: Task[]): number {
 }
 
 export function useTaskActions() {
-  const create = useMutation<Task, Error, CreateTaskVars>({ mutationKey: writes.createTask });
-  const update = useMutation<Task, Error, UpdateTaskVars>({ mutationKey: writes.updateTask });
-  const complete = useMutation<unknown, Error, CompleteTaskVars>({ mutationKey: writes.completeTask });
-  const reopen = useMutation<Task, Error, Task>({ mutationKey: writes.reopenTask });
-  const remove = useMutation<void, Error, string>({ mutationKey: writes.deleteTask });
-  const reorder = useMutation<void, Error, ReorderVars>({ mutationKey: writes.reorderTasks });
-  const rescheduleOverdue = useMutation<unknown, Error, void>({ mutationKey: writes.rescheduleOverdue });
-  const setTags = useMutation<void, Error, SetTaskTagsVars>({ mutationKey: writes.setTaskTags });
-  return {
+  // `mutate` keeps its identity across renders, so the returned actions do too and memoized rows stay put.
+  const { mutate: create } = useMutation<Task, Error, CreateTaskVars>({ mutationKey: writes.createTask });
+  const { mutate: update } = useMutation<Task, Error, UpdateTaskVars>({ mutationKey: writes.updateTask });
+  const { mutate: complete } = useMutation<unknown, Error, CompleteTaskVars>({ mutationKey: writes.completeTask });
+  const { mutate: reopen } = useMutation<Task, Error, Task>({ mutationKey: writes.reopenTask });
+  const { mutate: remove } = useMutation<void, Error, string>({ mutationKey: writes.deleteTask });
+  const { mutate: reorder } = useMutation<void, Error, ReorderVars>({ mutationKey: writes.reorderTasks });
+  const { mutate: rescheduleOverdue } = useMutation<unknown, Error, void>({ mutationKey: writes.rescheduleOverdue });
+  const { mutate: setTags } = useMutation<void, Error, SetTaskTagsVars>({ mutationKey: writes.setTaskTags });
+  return useMemo(() => ({
     create: (vars: Omit<CreateTaskVars, 'id'>) => {
       const id = uuid();
-      create.mutate({ ...vars, id });
+      create({ ...vars, id });
       return id;
     },
-    update: (id: string, patch: TaskPatch) => update.mutate({ id, patch }),
-    complete: (task: Task) => complete.mutate({
+    update: (id: string, patch: TaskPatch) => update({ id, patch }),
+    complete: (task: Task) => complete({
       id: task.id, request_id: uuid(), expected_updated_at: task.updated_at, occurrence_due_at: task.due_at,
     }),
-    reopen: (task: Task) => reopen.mutate(task),
-    remove: (id: string) => remove.mutate(id),
-    reorder: (vars: ReorderVars) => reorder.mutate(vars),
-    rescheduleOverdue: () => rescheduleOverdue.mutate(),
-    setTags: (vars: SetTaskTagsVars) => setTags.mutate(vars),
-  };
+    reopen: (task: Task) => reopen(task),
+    remove: (id: string) => remove(id),
+    reorder: (vars: ReorderVars) => reorder(vars),
+    rescheduleOverdue: () => rescheduleOverdue(),
+    setTags: (vars: SetTaskTagsVars) => setTags(vars),
+  }), [create, update, complete, reopen, remove, reorder, rescheduleOverdue, setTags]);
 }

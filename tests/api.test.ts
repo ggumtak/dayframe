@@ -138,7 +138,8 @@ test("one-time moves leave the series intact, retry safely and reject stale occu
       }
       current = patch.due_at;
     }
-    return Response.json([{ id: habitId, due_at: current, recurrence_rule: "FREQ=MONTHLY", completed_at: null }]);
+    return Response.json([{ id: habitId, due_at: current, recurrence_rule: "FREQ=MONTHLY", recurrence_anchor_at: oldDue,
+      timezone: "UTC", all_day: true, recurrence_local_time: null, occurrence_at: null, completed_at: null }]);
   } });
   const path = "tasks/" + habitId;
   const move = { due_at: newDue, expected_due_at: oldDue, preserve_recurrence: true };
@@ -153,8 +154,9 @@ test("one-time moves leave the series intact, retry safely and reject stale occu
   assert.equal((await handler(request(path, "PATCH", { due_at: newDue, preserve_recurrence: true }))).status, 400);
   assert.equal((await handler(request(path, "PATCH", { ...move, due_at: null }))).status, 400);
   assert.equal((await handler(request(path, "PATCH", { ...move, all_day: true }))).status, 400);
-  assert.deepEqual(updates, [{ due_at: newDue }, { due_at: newDue }, { due_at: newDue },
-    { due_at: newDue, recurrence_anchor_at: newDue }]);
+  // Only the first move writes: the retry finds it applied, and the stale one never reaches the database.
+  // 2027-02-01 is off the monthly series, so the slot it left is remembered.
+  assert.deepEqual(updates, [{ due_at: newDue, occurrence_at: oldDue }, { due_at: newDue, recurrence_anchor_at: newDue }]);
 });
 
 test("completing a monthly task sends the next valid date to the database", async () => {
@@ -177,6 +179,25 @@ test("completing a monthly task sends the next valid date to the database", asyn
   const result = await handler(request("tasks/" + habitId + "/complete", "POST", { request_id: userId, expected_updated_at: revision }));
   assert.equal(result.status, 200);
   assert.equal((await result.json()).occurrence_due_at, due_at);
+});
+
+test("completing an occurrence moved before its slot continues after that slot", async () => {
+  // A weekly Wednesday 19:00 (Seoul) task done early on Monday: the next one is the following Wednesday.
+  const slot = "2099-01-07T10:00:00Z";
+  const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input, init) => {
+    switch (new URL(String(input)).pathname) {
+      case "/auth/v1/user": return Response.json({ id: userId });
+      case "/rest/v1/task_completions": return Response.json([]);
+      case "/rest/v1/tasks": return Response.json([{ due_at: "2099-01-05T10:00:00Z", occurrence_at: slot, recurrence_anchor_at: slot,
+        all_day: false, recurrence_rule: "FREQ=WEEKLY", timezone: "Asia/Seoul", recurrence_local_time: "19:00:00", updated_at: slot }]);
+      case "/rest/v1/rpc/complete_task":
+        assert.equal(JSON.parse(String(init?.body)).p_next_due, "2099-01-14T10:00:00Z");
+        return Response.json({});
+      default: throw new Error("Unexpected request");
+    }
+  } });
+  const result = await handler(request("tasks/" + habitId + "/complete", "POST", { request_id: userId, expected_updated_at: slot }));
+  assert.equal(result.status, 200);
 });
 
 test("tag links are listed across tasks with an optional tag filter", async () => {

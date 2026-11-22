@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Temporal } from "@js-temporal/polyfill";
 import { analyzeTask, parseTask } from "../supabase/functions/api/parser.ts";
-import { instantOn, nextOccurrence, recurrence } from "../supabase/functions/api/schedule.ts";
+import { instantOn, isSeriesSlot, movedOccurrenceSlot, nextOccurrence, occurrenceFloor, recurrence } from "../supabase/functions/api/schedule.ts";
 
 const parse = (text: string, now = "2026-11-22T09:00:00Z", timezone = "Asia/Seoul") =>
   parseTask({ text, now, timezone });
@@ -124,12 +124,19 @@ test("Korean day periods, half hours and particles", () => {
   assert.equal(local("낮 1시 미팅"), "2026-11-23T13:00");
   assert.equal(local("밤 11시 취침"), "2026-11-22T23:00");
   assert.equal(local("내일 밤 12시 마감"), "2026-11-24T00:00");
+  // 밤 1시–5시 on a named day is the small hours after that day, like 밤 12시.
+  assert.equal(local("내일 밤 2시 약"), "2026-11-24T02:00");
   assert.equal(local("내일 자정 마감"), "2026-11-23T00:00");
   assert.equal(local("정오 점심"), "2026-11-23T12:00");
   assert.equal(local("at noon lunch"), "2026-11-23T12:00");
   assert.equal(local("7시 반 저녁식사"), "2026-11-22T19:30");
   assert.equal(parse("7시 반 저녁식사").title, "저녁식사");
   assert.equal(parse("7시 반복 학습").title, "반복 학습");
+  // 반 followed by a particle still means half past.
+  assert.equal(local("7시 반에 회의"), "2026-11-22T19:30");
+  assert.equal(parse("7시 반에 회의").title, "회의");
+  assert.equal(local("저녁 7시 반까지 제출"), "2026-11-22T19:30");
+  assert.equal(parse("7시 반찬 만들기").title, "반찬 만들기");
   assert.equal(parse("오후 3시쯤 전화").title, "전화");
   assert.equal(parse("내일 3시에 회의").title, "회의");
   assert.equal(parse("BMW 3시리즈 시승").due_at, null);
@@ -235,4 +242,21 @@ test("a draft entry reports its tokens before a title is typed", () => {
   const draft = analyzeTask(input, { draft: true });
   assert.deepEqual(draft.tokens.map((token) => [token.kind, token.text]), [["date", "오늘"], ["time", "7시"]]);
   assert.deepEqual([draft.task.title, draft.task.due_at], ["", "2026-11-21T10:00:00Z"]);
+});
+
+test("a moved occurrence remembers the slot it left, unless it lands on a slot of the series", () => {
+  // Weekly on Wednesday 19:00 in Seoul.
+  const task = { due_at: "2099-01-07T10:00:00Z", timezone: "Asia/Seoul", all_day: false, recurrence_rule: "FREQ=WEEKLY",
+    recurrence_anchor_at: "2099-01-07T10:00:00Z", recurrence_local_time: "19:00:00", occurrence_at: null };
+  assert.equal(isSeriesSlot(task, "2099-01-14T10:00:00Z"), true);
+  assert.equal(isSeriesSlot(task, "2099-01-05T10:00:00Z"), false);
+  // Done early on Monday: Wednesday is remembered, and later moves keep that first slot.
+  assert.equal(movedOccurrenceSlot(task, "2099-01-05T10:00:00Z"), "2099-01-07T10:00:00Z");
+  const monday = { ...task, due_at: "2099-01-05T10:00:00Z", occurrence_at: "2099-01-07T10:00:00Z" };
+  assert.equal(movedOccurrenceSlot(monday, "2099-01-06T10:00:00Z"), "2099-01-07T10:00:00Z");
+  // Undoing a completion moves the task back onto a real slot: nothing to remember.
+  assert.equal(movedOccurrenceSlot({ ...task, due_at: "2099-01-14T10:00:00Z" }, "2099-01-07T10:00:00Z"), null);
+  const now = Temporal.Instant.from("2099-01-05T11:00:00Z");
+  assert.equal(nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at, occurrenceFloor(monday, now),
+    false, task.recurrence_local_time), "2099-01-14T10:00:00Z");
 });

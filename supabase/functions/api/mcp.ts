@@ -155,6 +155,13 @@ const text = (value: unknown, field: string, max = 1000): string => {
   if (typeof value !== "string" || !value.trim() || value.length > max) throw new ToolFailure(field + " must be text of 1–" + max + " characters");
   return value.trim();
 };
+/** A habit's cadence cannot be changed later, so anything other than daily or weekly is refused rather than guessed. */
+const cadence = (value: unknown): "daily" | "weekly" => {
+  if (value === undefined) return "daily";
+  const word = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (word === "daily" || word === "weekly") return word;
+  throw new ToolFailure("cadence must be daily or weekly");
+};
 const identifier = (value: unknown, field: string): string => {
   if (typeof value !== "string" || !/^[0-9a-f-]{36}$/i.test(value)) throw new ToolFailure(field + " must be an ID returned by a list tool");
   return value.toLowerCase();
@@ -399,7 +406,7 @@ export const tools: Tool[] = [
     }, ["name"]),
     async run(api, args) {
       const habit = await api.call<Habit>("POST", "habits", {
-        name: text(args.name, "name", 120), cadence: args.cadence === "weekly" ? "weekly" : "daily", timezone: await api.timezone(),
+        name: text(args.name, "name", 120), cadence: cadence(args.cadence), timezone: await api.timezone(),
         ...(typeof args.target_count === "number" ? { target_count: Math.floor(args.target_count) } : {}),
       });
       return { added: { id: habit.id, name: habit.name, cadence: habit.cadence, target: habit.target_count } };

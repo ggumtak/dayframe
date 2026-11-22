@@ -2,7 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { Task } from './shared';
 
-export type OccurrenceTask = Pick<Task, 'id' | 'due_at' | 'all_day' | 'timezone' | 'recurrence_rule' | 'recurrence_anchor_at' | 'recurrence_local_time'>;
+export type OccurrenceTask = Pick<Task, 'id' | 'due_at' | 'all_day' | 'timezone' | 'recurrence_rule' | 'recurrence_anchor_at' | 'recurrence_local_time'>
+  & Partial<Pick<Task, 'occurrence_at'>>;
 export type NextOccurrence = (rule: string, timezone: string, anchorAt: string, after: Temporal.Instant, allDay: boolean, localTime?: string | null) => string;
 
 /**
@@ -20,7 +21,12 @@ export function occurrenceDates(task: OccurrenceTask, from: Temporal.PlainDate, 
     if (Temporal.PlainDate.compare(date, from) >= 0) dates.push(date);
     if (!task.recurrence_rule) break;
     try {
-      at = next(task.recurrence_rule, task.timezone, task.recurrence_anchor_at ?? task.due_at, Temporal.Instant.from(at), task.all_day, task.recurrence_local_time);
+      // The first step also passes the slot a moved occurrence came from, so that slot is not shown twice.
+      let after = Temporal.Instant.from(at);
+      if (count === 0 && task.occurrence_at && Temporal.Instant.compare(Temporal.Instant.from(task.occurrence_at), after) > 0) {
+        after = Temporal.Instant.from(task.occurrence_at);
+      }
+      at = next(task.recurrence_rule, task.timezone, task.recurrence_anchor_at ?? task.due_at, after, task.all_day, task.recurrence_local_time);
     } catch {
       at = null;
     }

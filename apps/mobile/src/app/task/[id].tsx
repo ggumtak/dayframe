@@ -12,7 +12,7 @@ import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
 import { localTimeString, useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { errorMessage } from '@/lib/api';
-import { describeRecurrence, deviceTimeZone, dueMinutes, formatDue, instantFor, isPastDue, today } from '@/lib/dates';
+import { describeRecurrence, deviceTimeZone, dueBucket, dueMinutes, formatDue, instantFor, isPastDue, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { analyzeTask, type Priority, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -41,7 +41,12 @@ export default function TaskDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { byId, isLoading } = useTaskIndex();
   const task = byId.get(id);
+  // Completing or deleting from here removes the task before the screen has finished closing;
+  // show a blank page for that moment instead of a "not found" message.
+  const [seen, setSeen] = useState(false);
+  if (task && !seen) setSeen(true);
   if (isLoading) return <Screen><Loading /></Screen>;
+  if (!task && seen) return <Screen>{null}</Screen>;
   if (!task) {
     return (
       <Screen>
@@ -245,7 +250,7 @@ function TaskEditor({ task }: { task: Task }) {
           <View style={[styles.pills, { borderBottomColor: colors.border }]}>
             <Chip
               icon="calendar" label={due ?? '일정'}
-              color={due ? (isPastDue(task) ? colors.danger : colors.success) : undefined}
+              color={!due ? undefined : isPastDue(task) ? colors.danger : dueBucket(task) === 'today' ? colors.success : colors.accent}
               onPress={() => setSheet('schedule')} />
             {repeat || due ? (
               <Chip

@@ -43,6 +43,8 @@ export interface Task extends OwnedRow {
   recurrence_rule: string | null;
   recurrence_anchor_at: Instant | null;
   recurrence_local_time: string | null;
+  /** For a repeating task whose current occurrence was moved off its slot: that slot. Otherwise null. */
+  occurrence_at: Instant | null;
   completed_at: Instant | null;
   updated_at: Instant;
 }

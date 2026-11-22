@@ -37,6 +37,13 @@ test('a repeating task shows on every date it will fall on, a one-off only on it
     { '2026-11-10': 2, '2026-11-23': 1, '2026-11-25': 1, '2026-11-27': 1, '2026-11-30': 1 });
 });
 
+test('an occurrence moved before its slot does not show that slot again', () => {
+  // Monday-and-Wednesday gym moved from Wednesday the 25th to Tuesday the 24th: the next one is Monday the 30th.
+  const moved = { ...base, due_at: '2026-11-24T10:00:00Z', occurrence_at: '2026-11-25T10:00:00Z', recurrence_rule: 'FREQ=WEEKLY;BYDAY=MO,WE' };
+  assert.deepEqual(occurrenceDates(moved, ...nov, nextOccurrence).map(String), ['2026-11-24', '2026-11-30']);
+  assert.deepEqual(occurrenceDates({ ...moved, occurrence_at: null }, ...nov, nextOccurrence).map(String), ['2026-11-24', '2026-11-25', '2026-11-30']);
+});
+
 test('the entry bar is prefilled with words the parser reads back as that date', () => {
   const today = Temporal.PlainDate.from('2026-11-21');
   assert.equal(datePhrase(today, today), '오늘');

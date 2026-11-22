@@ -8,6 +8,7 @@ import { byPosition, byPriority, bySchedule, useProjectActions, useProjects, use
 import { TaskList } from '@/features/tasks/TaskList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { haptic } from '@/lib/haptics';
+import { usePersistentState } from '@/lib/persist';
 import { showToast } from '@/lib/toast';
 import { radius, space, type, useTheme } from '@/theme';
 
@@ -15,14 +16,17 @@ type Scope = 'all' | 'inbox' | string;
 type SortMode = 'manual' | 'schedule' | 'priority';
 
 const sortLabels: Record<SortMode, string> = { manual: '내 순서', schedule: '일정순', priority: '우선순위순' };
+const isScope = (value: string): value is Scope => value.length > 0;
+const isSortMode = (value: string): value is SortMode => value in sortLabels;
 
 export default function Inbox() {
   const { colors } = useTheme();
   const { roots, isLoading, refetch } = useTaskIndex();
   const { data: projects } = useProjects();
   const projectActions = useProjectActions();
-  const [scope, setScope] = useState<Scope>('inbox');
-  const [sort, setSort] = useState<SortMode>('manual');
+  // The last list and sort the person chose come back after a restart.
+  const [scope, setScope] = usePersistentState<Scope>('dayframe-list-scope', 'inbox', isScope);
+  const [sort, setSort] = usePersistentState<SortMode>('dayframe-list-sort', 'manual', isSortMode);
   const [refreshing, setRefreshing] = useState(false);
   const [pickingSort, setPickingSort] = useState(false);
   const [projectMenu, setProjectMenu] = useState(false);
