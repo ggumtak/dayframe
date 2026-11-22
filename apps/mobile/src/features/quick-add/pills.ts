@@ -64,3 +64,18 @@ export function runs(text: string, from: number, to: number, all: Pill[]): Run[]
   }
   return parts;
 }
+
+/** Splits the full text into non-overlapping plain and highlighted spans for a single-pass `<Text>` render. */
+export function segments(text: string, all: Pill[]): { text: string; kind?: PillKind }[] {
+  if (!all.length) return text ? [{ text }] : [];
+  const parts: { text: string; kind?: PillKind }[] = [];
+  let cursor = 0;
+  for (const pill of all) {
+    if (pill.start < cursor || pill.end > text.length) continue;
+    if (pill.start > cursor) parts.push({ text: text.slice(cursor, pill.start) });
+    parts.push({ text: text.slice(pill.start, pill.end), kind: pill.kind });
+    cursor = pill.end;
+  }
+  if (cursor < text.length) parts.push({ text: text.slice(cursor) });
+  return parts;
+}

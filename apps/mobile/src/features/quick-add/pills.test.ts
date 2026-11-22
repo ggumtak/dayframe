@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { lineStarts, pills, runs } from './pills.ts';
+import { lineStarts, pills, runs, segments } from './pills.ts';
 
 const token = (kind: 'date' | 'time' | 'recurrence' | 'project' | 'tag' | 'priority', text: string, start: number) =>
   ({ kind, text, start, end: start + text.length });
@@ -40,4 +40,23 @@ test('reported lines map to offsets, with or without their trailing spaces', () 
   // A layout of older or different text is ignored rather than drawn in the wrong place.
   assert.equal(lineStarts(text + ' 그리고', kept), null);
   assert.equal(lineStarts('전혀 다른 글', kept), null);
+});
+
+test('segments partitions the entire string once without duplicating characters', () => {
+  const text = '내일 오후 7시 운동 #건강 p1';
+  const all = pills(text, [
+    token('date', '내일', 0),
+    token('time', '오후 7시', 3),
+    token('project', '#건강', 12),
+    token('priority', 'p1', 16),
+  ]);
+  const parts = segments(text, all);
+  assert.equal(parts.map((part) => part.text).join(''), text);
+  assert.deepEqual(parts, [
+    { text: '내일 오후 7시', kind: 'schedule' },
+    { text: ' 운동 ' },
+    { text: '#건강', kind: 'project' },
+    { text: ' ' },
+    { text: 'p1', kind: 'priority' },
+  ]);
 });

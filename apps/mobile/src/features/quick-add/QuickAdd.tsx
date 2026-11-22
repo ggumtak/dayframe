@@ -97,7 +97,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   }, [onClose]);
 
   const palette: PillPalette = {
-    schedule: { background: colors.schedule, foreground: colors.onSchedule },
+    schedule: { background: colors.accentSoft, foreground: colors.accent },
     project: { background: colors.accentSoft, foreground: colors.accent },
     tag: { background: colors.accentSoft, foreground: colors.accent },
     priority: { background: colors.warningSoft, foreground: colors.warning },
