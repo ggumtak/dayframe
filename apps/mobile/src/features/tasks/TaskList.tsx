@@ -47,16 +47,39 @@ export function TaskList({ tasks, hideDate, sortable }: {
   const tagNames = useTagNames();
   const [scheduling, setScheduling] = useState<Task | null>(null);
   const [menu, setMenu] = useState<Task | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const projectNames = useMemo(() => new Map((projects ?? []).map((project) => [project.id, project.name])), [projects]);
   const open = useCallback((task: Task) => router.push({ pathname: '/task/[id]', params: { id: task.id } }), []);
+  const toggleSubtasks = useCallback((task: Task) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(task.id)) next.delete(task.id);
+      else next.add(task.id);
+      return next;
+    });
+  }, []);
 
-  const row = (task: Task) => (
-    <TaskRow
-      task={task} hideDate={hideDate} projectName={task.project_id ? projectNames.get(task.project_id) : undefined}
-      tagNames={tagNames.get(task.id)} subtaskCount={children.get(task.id)?.length}
-      onPress={open} onComplete={flow.complete} onSchedule={setScheduling} onDelete={flow.remove}
-      onLongPress={sortable ? undefined : setMenu} holdHandled={sortable} />
-  );
+  const row = (task: Task, nested = false) => {
+    const subtasks = children.get(task.id) ?? [];
+    const isExpanded = !nested && expanded.has(task.id) && subtasks.length > 0;
+    return (
+      <View>
+        <TaskRow
+          task={task} hideDate={hideDate} projectName={task.project_id ? projectNames.get(task.project_id) : undefined}
+          tagNames={tagNames.get(task.id)} subtaskCount={subtasks.length || undefined}
+          subtasksExpanded={isExpanded} onToggleSubtasks={!nested && subtasks.length ? toggleSubtasks : undefined}
+          onPress={open} onComplete={flow.complete} onSchedule={setScheduling} onDelete={flow.remove}
+          onLongPress={sortable && !nested ? undefined : setMenu} holdHandled={sortable && !nested} />
+        {isExpanded ? (
+          <View style={{ marginLeft: 28, borderLeftWidth: 1.5, borderLeftColor: colors.border }}>
+            {subtasks.map((child) => (
+              <View key={child.id}>{row(child, true)}</View>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
 
   return (
     <View>

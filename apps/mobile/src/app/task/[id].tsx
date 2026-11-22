@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Card, Chip, EmptyState, Icon, IconButton, Loading, Row, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
+import { Button, Chip, EmptyState, Icon, IconButton, Loading, Row, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
 import { attachTagByName, useProjects, useTags, useTaskIndex, useTaskTags } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { parseErrorMessage } from '@/features/quick-add/messages';
@@ -190,6 +190,35 @@ function TaskEditor({ task }: { task: Task }) {
               style={[type.heading, { flex: 1, color: colors.text, padding: 0, textAlignVertical: 'top' }]} />
           </View>
 
+          {subtasks.length ? (
+            <>
+              <SectionTitle
+                title="하위 작업" count={subtasks.length}
+                action={(
+                  <Button
+                    label="추가" kind="ghost" icon="plus" onPress={() => quickAdd.open({ parentTaskId: task.id })}
+                    style={{ minHeight: 30, paddingHorizontal: space.sm }} />
+                )} />
+              <TaskList tasks={subtasks} sortable />
+            </>
+          ) : (
+            <Pressable
+              accessibilityRole="button" accessibilityLabel="하위 작업 추가"
+              onPress={() => quickAdd.open({ parentTaskId: task.id })}
+              style={({ pressed }) => [styles.addSubtask, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
+              <Icon name="plus" size={16} color={colors.accent} />
+              <Txt variant="smallStrong" tone="accent">하위 작업 추가</Txt>
+            </Pressable>
+          )}
+
+          <SectionTitle title="메모" />
+          <View style={styles.block}>
+            <TextInput
+              value={notes} onChangeText={setNotes} onBlur={saveNotes} multiline maxLength={10000} placeholder="메모를 남겨 보세요"
+              placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
+              style={[type.body, styles.input, field, { minHeight: 68, paddingVertical: space.sm, textAlignVertical: 'top' }]} />
+          </View>
+
           <SectionTitle title="일정" />
           <View style={styles.block}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
@@ -277,27 +306,6 @@ function TaskEditor({ task }: { task: Task }) {
               <Button label="추가" kind="secondary" onPress={addTag} disabled={!newTag.trim()} style={{ minHeight: 46 }} />
             </View>
           </View>
-
-          <SectionTitle title="메모" />
-          <View style={styles.block}>
-            <TextInput
-              value={notes} onChangeText={setNotes} onBlur={saveNotes} multiline maxLength={10000} placeholder="메모를 남겨 보세요"
-              placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
-              style={[type.body, styles.input, field, { minHeight: 96, paddingTop: space.md, textAlignVertical: 'top' }]} />
-          </View>
-
-          <SectionTitle
-            title="하위 작업" count={subtasks.length}
-            action={(
-              <Button
-                label="추가" kind="ghost" icon="plus" onPress={() => quickAdd.open({ parentTaskId: task.id })}
-                style={{ minHeight: 30, paddingHorizontal: space.sm }} />
-            )} />
-          {subtasks.length ? <TaskList tasks={subtasks} sortable /> : (
-            <Card style={{ marginHorizontal: space.lg, alignItems: 'center' }}>
-              <Txt variant="small" tone="muted">큰 일은 작은 단계로 나눠 보세요. 하위 작업 안에 다시 하위 작업을 만들 수 있습니다.</Txt>
-            </Card>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
       <ScheduleSheet task={calendar ? task : null} onClose={() => setCalendar(false)} onPick={flow.reschedule} />
@@ -321,6 +329,10 @@ function TaskEditor({ task }: { task: Task }) {
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.sm, minHeight: 48 },
   title: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.sm },
+  addSubtask: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: space.lg, marginTop: space.xs,
+    paddingHorizontal: space.md, minHeight: 40, borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed',
+  },
   block: { paddingHorizontal: space.lg, gap: space.sm },
   input: { minHeight: 46, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space.md },
   priority: {

@@ -16,6 +16,10 @@ export interface TaskRowProps {
   tagNames?: string[];
   /** Open and total direct subtasks, shown as a small counter. */
   subtaskCount?: number;
+  /** Whether inline subtasks beneath this row are currently expanded. */
+  subtasksExpanded?: boolean;
+  /** Toggles inline subtasks when tapping the subtask counter. */
+  onToggleSubtasks?: (task: Task) => void;
   /** Hides the date when the surrounding section already states it. */
   hideDate?: boolean;
   onPress: (task: Task) => void;
@@ -39,7 +43,7 @@ function SwipeAction({ icon, label, color, onPress }: { icon: 'clock' | 'trash-2
 }
 
 export const TaskRow = memo(function TaskRow({
-  task, projectName, tagNames, subtaskCount, hideDate, onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true,
+  task, projectName, tagNames, subtaskCount, subtasksExpanded, onToggleSubtasks, hideDate, onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true,
 }: TaskRowProps) {
   const { colors } = useTheme();
   const swipe = useRef<SwipeableMethods>(null);
@@ -70,7 +74,7 @@ export const TaskRow = memo(function TaskRow({
   }
   if (repeat) meta.push({ key: 'repeat', icon: 'repeat', text: repeat, color: colors.textMuted });
   for (const name of tagNames ?? []) meta.push({ key: 'tag-' + name, icon: 'tag', text: name, color: colors.accent });
-  if (subtaskCount) meta.push({ key: 'subtasks', icon: 'git-merge', text: String(subtaskCount), color: colors.textMuted });
+  if (subtaskCount && !onToggleSubtasks) meta.push({ key: 'subtasks', icon: 'git-merge', text: String(subtaskCount), color: colors.textMuted });
   if (task.notes?.trim()) meta.push({ key: 'notes', icon: 'align-left', text: '', color: colors.textFaint });
 
   const row = (
@@ -95,7 +99,7 @@ export const TaskRow = memo(function TaskRow({
             checked && { textDecorationLine: 'line-through' }]}>
           {task.title}
         </Text>
-        {meta.length || projectName ? (
+        {meta.length || projectName || (subtaskCount && onToggleSubtasks) ? (
           <View style={styles.metaRow}>
             <View style={styles.meta}>
               {meta.map((item) => (
@@ -104,6 +108,23 @@ export const TaskRow = memo(function TaskRow({
                   {item.text ? <Text style={[styles.metaText, { color: item.color }]} numberOfLines={1}>{item.text}</Text> : null}
                 </View>
               ))}
+              {subtaskCount && onToggleSubtasks ? (
+                <Pressable
+                  accessibilityRole="button" accessibilityLabel={`하위 작업 ${subtaskCount}개 ${subtasksExpanded ? '접기' : '펼치기'}`}
+                  hitSlop={8}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    haptic.tap();
+                    onToggleSubtasks(task);
+                  }}
+                  style={[styles.subtaskPill, { backgroundColor: subtasksExpanded ? colors.accentSoft : colors.surfaceMuted }]}>
+                  <Feather name="git-merge" size={11} color={subtasksExpanded ? colors.accent : colors.textMuted} />
+                  <Text style={[styles.metaText, { color: subtasksExpanded ? colors.accent : colors.textMuted, fontWeight: '600' }]}>
+                    {subtaskCount}
+                  </Text>
+                  <Feather name={subtasksExpanded ? 'chevron-up' : 'chevron-down'} size={12} color={subtasksExpanded ? colors.accent : colors.textMuted} />
+                </Pressable>
+              ) : null}
             </View>
             {projectName ? (
               <View style={styles.metaItem}>
@@ -167,6 +188,7 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   meta: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 2 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 190 },
+  subtaskPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 },
   metaText: { fontFamily, fontSize: 12, lineHeight: 16 },
   complete: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingLeft: space.xl },
   actions: { flexDirection: 'row' },
