@@ -170,7 +170,7 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
 
   // `open` marks an hour written without 오전/오후 or am/pm; it is stored as the morning reading until
   // the rest of the entry is known.
-  const clock: { time?: Temporal.PlainTime; nextDay?: boolean; open?: boolean } = {};
+  const clock: { time?: Temporal.PlainTime; nextDay?: boolean; smallHours?: boolean; open?: boolean } = {};
   function setTime(hourValue: string, minuteValue: string | undefined, period?: string) {
     if (clock.time) throw new InvalidSchedule("Use one due time per task");
     let hour = Number(hourValue);
@@ -188,13 +188,14 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
       else {
         // 밤 6시–11시 is the evening, 밤 12시 is the midnight that ends the day, 밤 1시–5시 is after midnight.
         clock.nextDay = hour === 12;
+        clock.smallHours = hour < 6;
         hour = hour === 12 ? 0 : hour >= 6 ? hour + 12 : hour;
       }
     }
     clock.time = Temporal.PlainTime.from({ hour, minute: Number(minuteValue ?? 0) }, { overflow: "reject" });
   }
   consume(new RegExp(left + "(?:(" + koPeriod + ")\\s*)?(\\d{1,2})\\s*시(?!간|리즈|즌)"
-    + "(?:\\s*(\\d{1,2})\\s*분|\\s*(반)(?![가-힣]))?(?:쯤|경)?(?:에|까지)?(?=$|\\s|[,.!?]|[가-힣])", "gu"), "time",
+    + "(?:\\s*(\\d{1,2})\\s*분|\\s*(반)(?=(?:쯤|경)?(?:에|까지)?(?:$|[^가-힣])))?(?:쯤|경)?(?:에|까지)?(?=$|\\s|[,.!?]|[가-힣])", "gu"), "time",
     (period, hour, minute, half) => setTime(hour!, half ? "30" : minute, period));
   consume(new RegExp(left + "(?:at\\s+)?(\\d{1,2})(?::(\\d{1,2}))?\\s*(am|pm)" + right, "giu"), "time",
     (hour, minute, period) => setTime(hour!, minute, period));
@@ -238,7 +239,8 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
       break;
     }
   } else if (explicitDate || time || rule) {
-    let date = explicitDate ? explicitDate.add({ days: clock.nextDay ? 1 : 0 }) : today;
+    // 밤 12시 ends the given date and 밤 1시–5시 falls after its midnight, so both land on the next calendar day.
+    let date = explicitDate ? explicitDate.add({ days: clock.nextDay || clock.smallHours ? 1 : 0 }) : today;
     for (let offset = 0; offset <= 7; offset++, date = date.add({ days: 1 })) {
       if (days.length && !days.includes(week[date.dayOfWeek - 1])) continue;
       const candidate = instantOn(date, time ?? null, input.timezone).toInstant();
