@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
-import { Button, EmptyState, Header, IconButton, Loading, ProgressBar, Screen, Txt } from '@/components/ui';
+import { Button, Card, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, Txt } from '@/components/ui';
 import { periodProgress, useHabitDetails, useHabits } from '@/data/habits';
 import { HabitCard } from '@/features/habits/HabitCard';
 import { useMinute } from '@/lib/clock';
@@ -13,9 +13,11 @@ export default function Habits() {
   const { colors } = useTheme();
   const { data, isLoading, refetch } = useHabits();
   const [refreshing, setRefreshing] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   // Re-renders the cards when the date rolls over, so a check-in always lands on the current day.
   useMinute();
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
+  const archived = useMemo(() => (data ?? []).filter((habit) => !!habit.archived_at), [data]);
   const details = useHabitDetails(habits);
   const done = habits.filter((habit) =>
     periodProgress(habit, details.get(habit.id)?.logs ?? [], today(habit.timezone).toString()) >= habit.target_count).length;
@@ -60,6 +62,29 @@ export default function Habits() {
                 </View>
               )} />
           )}
+          {archived.length ? (
+            <View style={{ gap: space.sm, marginTop: space.md }}>
+              <Pressable
+                accessibilityRole="button" accessibilityLabel={`보관한 습관 ${archived.length}개 ${showArchived ? '접기' : '보기'}`}
+                onPress={() => setShowArchived((open) => !open)}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: space.xs, opacity: pressed ? 0.6 : 1 })}>
+                <Icon name="archive" size={14} color={colors.textMuted} />
+                <Txt variant="smallStrong" tone="muted">보관한 습관 {archived.length}</Txt>
+                <Icon name={showArchived ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textFaint} />
+              </Pressable>
+              {showArchived ? (
+                <Card style={{ paddingVertical: space.xs }}>
+                  {archived.map((habit) => (
+                    <Row
+                      key={habit.id} icon="archive" label={habit.name}
+                      detail={(habit.cadence === 'daily' ? '매일 ' : '매주 ') + habit.target_count + (habit.cadence === 'daily' ? '회' : '일')}
+                      trailing={<Icon name="chevron-right" size={16} color={colors.textFaint} />}
+                      onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })} />
+                  ))}
+                </Card>
+              ) : null}
+            </View>
+          ) : null}
         </ScrollView>
       )}
     </Screen>

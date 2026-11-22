@@ -340,6 +340,31 @@ export function useProjectActions() {
   };
 }
 
+/** Rename or delete a tag; deleting removes its links from tasks on the server. */
+export function useTagActions() {
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.updateTag(id, name),
+    onMutate: async ({ id, name }) => {
+      await hold(keys.tags);
+      queryClient.setQueryData<Tag[]>(keys.tags, (list) => list?.map((tag) => (tag.id === id ? { ...tag, name } : tag)));
+    },
+    onSettled: () => settle(keys.tags),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteTag(id),
+    onMutate: async (id) => {
+      await hold(keys.tags, keys.taskTags);
+      queryClient.setQueryData<Tag[]>(keys.tags, (list) => list?.filter((tag) => tag.id !== id));
+      queryClient.setQueryData<TaskTag[]>(keys.taskTags, (links) => links?.filter((link) => link.tag_id !== id));
+    },
+    onSettled: () => settle(keys.tags, keys.taskTags),
+  });
+  return {
+    rename: (id: string, name: string) => rename.mutate({ id, name }),
+    remove: (id: string) => remove.mutate(id),
+  };
+}
+
 export interface TaskIndex {
   tasks: Task[];
   byId: Map<string, Task>;

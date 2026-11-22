@@ -117,6 +117,8 @@ export const api = {
   deleteProject: (id: string) => request<void>('/projects/' + id, { method: 'DELETE' }),
   tags: () => all<Tag>('/tags'),
   createTag: (name: string) => json<Tag>('/tags', 'POST', { name }),
+  updateTag: (id: string, name: string) => json<Tag>('/tags/' + id, 'PATCH', { name }),
+  deleteTag: (id: string) => request<void>('/tags/' + id, { method: 'DELETE' }),
 
   openTasks: () => all<Task>('/tasks', { state: 'open' }),
   completedTasks: () => all<Task>('/tasks', { state: 'completed' }),

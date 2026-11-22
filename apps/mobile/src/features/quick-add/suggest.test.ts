@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames } from './suggest.ts';
+import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames, removeTokens } from './suggest.ts';
 
 test('activeMention detects bare or partial #project and @tag at the end of input', () => {
   assert.deepEqual(activeMention('#'), { kind: 'project', query: '', start: 0, end: 1 });
@@ -34,4 +34,18 @@ test('applyScheduleWord swaps an existing date or recurrence token cleanly', () 
   const tokens = [{ kind: 'date' as const, start: 0, end: 2, text: '오늘' }];
   assert.equal(applyScheduleWord('오늘 운동', '내일', 'date', tokens), '내일 운동');
   assert.equal(applyScheduleWord('운동', '내일', 'date', []), '운동 내일 ');
+});
+
+test('removeTokens strips matching parsed tokens cleanly', () => {
+  const text = '내일 오후 7시 운동 #건강 @외출 p1';
+  const tokens = [
+    { kind: 'date' as const, start: 0, end: 2, text: '내일' },
+    { kind: 'time' as const, start: 3, end: 8, text: '오후 7시' },
+    { kind: 'project' as const, start: 12, end: 15, text: '#건강' },
+    { kind: 'tag' as const, start: 16, end: 19, text: '@외출' },
+    { kind: 'priority' as const, start: 20, end: 22, text: 'p1' },
+  ];
+  assert.equal(removeTokens(text, tokens, (t) => t.kind === 'date' || t.kind === 'time'), '운동 #건강 @외출 p1 ');
+  assert.equal(removeTokens(text, tokens, (t) => t.kind === 'project'), '내일 오후 7시 운동 @외출 p1 ');
+  assert.equal(removeTokens(text, tokens, (t) => t.kind === 'priority'), '내일 오후 7시 운동 #건강 @외출 ');
 });

@@ -15,7 +15,7 @@ import { elevation, priorityColor, radius, space, useTheme } from '@/theme';
 
 import { HighlightInput, type PillPalette } from './HighlightInput';
 import { parseErrorMessage } from './messages';
-import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames } from './suggest';
+import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames, removeTokens } from './suggest';
 
 export const TAB_BAR_HEIGHT = 58;
 
@@ -170,6 +170,12 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     input.current?.focus();
   };
 
+  const stripToken = (predicate: (token: (typeof tokens)[number]) => boolean) => {
+    haptic.tap();
+    setText((current) => removeTokens(current, tokens, predicate));
+    input.current?.focus();
+  };
+
   const due = draft?.due_at ? formatDue({ due_at: draft.due_at, timezone, all_day: draft.all_day }) : null;
   const repeat = describeRecurrence(draft?.recurrence_rule ?? null);
   const isNewProject = !!draft?.project
@@ -242,20 +248,37 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
         ) : null}
         {hasChips || defaultProject || (defaults.dueToday && !parent && !due) ? (
           <View style={styles.chips}>
-            {due ? <Animated.View entering={ZoomIn.duration(140)}><Chip icon="calendar" label={due} color={colors.schedule} /></Animated.View>
-              : defaults.dueToday && !parent ? <Chip icon="calendar" label="오늘" /> : null}
-            {repeat ? <Animated.View entering={ZoomIn.duration(140)}><Chip icon="repeat" label={repeat} color={colors.schedule} /></Animated.View> : null}
+            {due ? (
+              <Animated.View entering={ZoomIn.duration(140)}>
+                <Chip
+                  icon="calendar" label={due + ' ×'} color={colors.schedule}
+                  onPress={() => stripToken((token) => token.kind === 'date' || token.kind === 'time')} />
+              </Animated.View>
+            ) : defaults.dueToday && !parent ? <Chip icon="calendar" label="오늘" /> : null}
+            {repeat ? (
+              <Animated.View entering={ZoomIn.duration(140)}>
+                <Chip icon="repeat" label={repeat + ' ×'} color={colors.schedule} onPress={() => stripToken((token) => token.kind === 'recurrence')} />
+              </Animated.View>
+            ) : null}
             {draft?.project ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip icon="hash" label={draft.project + (isNewProject ? ' · 새 프로젝트' : '')} color={colors.accent} />
+                <Chip
+                  icon="hash" label={draft.project + (isNewProject ? ' · 새 프로젝트' : '') + ' ×'} color={colors.accent}
+                  onPress={() => stripToken((token) => token.kind === 'project')} />
               </Animated.View>
             ) : defaultProject ? <Chip icon="hash" label={defaultProject} /> : null}
             {draft?.tags.map((tag) => (
-              <Animated.View key={tag} entering={ZoomIn.duration(140)}><Chip icon="tag" label={tag} color={colors.accent} /></Animated.View>
+              <Animated.View key={tag} entering={ZoomIn.duration(140)}>
+                <Chip
+                  icon="tag" label={tag + ' ×'} color={colors.accent}
+                  onPress={() => stripToken((token) => token.kind === 'tag' && token.text.replace(/^@"?|"?$/g, '').toLowerCase() === tag.toLowerCase())} />
+              </Animated.View>
             ))}
             {draft && draft.priority < 4 ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip icon="flag" label={'P' + draft.priority} color={priorityColor(colors, draft.priority)} />
+                <Chip
+                  icon="flag" label={'P' + draft.priority + ' ×'} color={priorityColor(colors, draft.priority)}
+                  onPress={() => stripToken((token) => token.kind === 'priority')} />
               </Animated.View>
             ) : null}
           </View>

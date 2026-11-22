@@ -72,7 +72,8 @@ export default function HabitDetail() {
   return (
     <Screen>
       <Header
-        title={habit.name} subtitle={(habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${habit.start_date} 시작`}
+        title={habit.name}
+        subtitle={(habit.archived_at ? '보관됨 · ' : '') + (habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${habit.start_date} 시작`}
         left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl }} keyboardShouldPersistTaps="handled">
@@ -105,7 +106,7 @@ export default function HabitDetail() {
           </View>
         )}
 
-        {Platform.OS === 'android' ? (
+        {Platform.OS === 'android' && !habit.archived_at ? (
           <Card style={{ gap: space.sm }}>
             <Txt variant="bodyStrong">알림</Txt>
             <HabitReminderChips habitId={habit.id} />
@@ -113,15 +114,19 @@ export default function HabitDetail() {
         ) : null}
 
         <Card style={{ paddingVertical: space.xs }}>
-          <Row icon="clock" label="이 습관으로 집중 시작" onPress={() => router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } })} />
+          {habit.archived_at ? null : (
+            <Row icon="clock" label="이 습관으로 집중 시작" onPress={() => router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } })} />
+          )}
           <Row icon="edit-2" label="이름 바꾸기" onPress={() => setName(habit.name)} />
-          <Row
-            icon="archive" label="보관하기" detail="기록은 남습니다"
-            onPress={() => {
-              actions.archive(habit.id);
-              showToast('습관을 보관했습니다.');
-              router.back();
-            }} />
+          {habit.archived_at ? null : (
+            <Row
+              icon="archive" label="보관하기" detail="기록은 남습니다"
+              onPress={() => {
+                actions.archive(habit.id);
+                showToast('습관을 보관했습니다.');
+                router.back();
+              }} />
+          )}
           <Row icon="trash-2" label="삭제" tone="danger" onPress={() => setConfirm(true)} />
         </Card>
       </ScrollView>

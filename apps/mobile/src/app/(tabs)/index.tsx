@@ -63,6 +63,7 @@ export default function Today() {
         right={(
           <View style={{ flexDirection: 'row' }}>
             <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
+            <IconButton name="check-circle" label="완료한 일" onPress={() => router.push('/completed')} color={colors.textMuted} />
             <IconButton name="settings" label="설정" onPress={() => router.push('/settings')} color={colors.textMuted} />
           </View>
         )} />

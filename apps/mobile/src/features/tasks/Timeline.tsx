@@ -10,9 +10,9 @@ import type { FocusSession, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, type, useTheme } from '@/theme';
 
-const HOUR = 64;
+const HOUR = 76;
 const GUTTER = 62;
-const BLOCK = 30;
+const BLOCK = 36;
 
 const hourLabel = (hour: number) => (hour < 12 ? '오전 ' : '오후 ') + (hour % 12 === 0 ? 12 : hour % 12) + '시';
 
@@ -52,6 +52,7 @@ export function Timeline({ tasks, sessions, timeZone, onComplete, onAddAt }: {
 }) {
   const { colors } = useTheme();
   const scroll = useRef<ScrollViewInstance>(null);
+  const scrolled = useRef(false);
   const [now, setNow] = useState(() => Temporal.Now.zonedDateTimeISO(timeZone));
   const nowMinutes = now.hour * 60 + now.minute;
   const placed = useMemo(() => place(tasks), [tasks]);
@@ -94,7 +95,11 @@ export function Timeline({ tasks, sessions, timeZone, onComplete, onAddAt }: {
 
       <ScrollView
         ref={scroll} contentContainerStyle={{ paddingBottom: 140 }}
-        onLayout={() => scroll.current?.scrollTo({ y: Math.max(0, (nowMinutes / 60 - 1.5) * HOUR), animated: false })}>
+        onLayout={() => {
+          if (scrolled.current) return;
+          scrolled.current = true;
+          scroll.current?.scrollTo({ y: Math.max(0, (nowMinutes / 60 - 1.5) * HOUR), animated: false });
+        }}>
         <View style={{ height: HOUR * 24, marginTop: space.md }}>
           {Array.from({ length: 24 }, (_, hour) => (
             <Pressable

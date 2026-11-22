@@ -4,7 +4,7 @@ import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { MonthCalendar } from '@/components/MonthCalendar';
-import { EmptyState, Header, Icon, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
+import { Button, EmptyState, Header, Icon, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { TaskList } from '@/features/tasks/TaskList';
@@ -107,7 +107,10 @@ export default function Upcoming() {
             )) : (
               <EmptyState
                 icon="calendar" title={selected ? '이 날은 예정된 일이 없습니다' : '예정된 일이 없습니다'}
-                message={selected ? '날짜를 다시 누르면 전체 일정이 보입니다.' : '‘내일 오후 3시 회의’처럼 날짜를 함께 적으면 여기에 모입니다.'} />
+                message={selected ? '날짜를 다시 누르면 전체 일정이 보입니다.' : '‘내일 오후 3시 회의’처럼 날짜를 함께 적으면 여기에 모입니다.'}
+                action={selected ? (
+                  <Button label="이 날에 할 일 추가" icon="plus" onPress={() => addOn(Temporal.PlainDate.from(selected))} />
+                ) : undefined} />
             )}
           </ScrollView>
         )}

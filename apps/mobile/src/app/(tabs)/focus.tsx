@@ -19,11 +19,12 @@ import { space, useTheme } from '@/theme';
 
 /** Pomodoro rhythms: focus, a short break after each round, and a long break after every fourth. */
 const modes = [
-  { minutes: 25, rest: 5, longRest: 15, label: '25분 집중', detail: '휴식 5분' },
-  { minutes: 50, rest: 10, longRest: 30, label: '50분 집중', detail: '휴식 10분' },
+  { minutes: 15, rest: 3, longRest: 10, label: '15분', detail: '휴식 3분' },
+  { minutes: 25, rest: 5, longRest: 15, label: '25분', detail: '휴식 5분' },
+  { minutes: 50, rest: 10, longRest: 30, label: '50분', detail: '휴식 10분' },
 ] as const;
 const ROUNDS = 4;
-const modeFor = (plannedSeconds: number) => (plannedSeconds > 40 * 60 ? modes[1] : modes[0]);
+const modeFor = (plannedSeconds: number) => (plannedSeconds <= 20 * 60 && plannedSeconds > 0 ? modes[0] : plannedSeconds > 40 * 60 ? modes[2] : modes[1]);
 const SIZE = 248;
 const STROKE = 10;
 
@@ -163,6 +164,10 @@ export default function Focus() {
 
   const candidates = useMemo(() => tasks
     .filter((task) => ['overdue', 'today'].includes(dueBucket(task))).sort(bySchedule).slice(0, 12), [tasks]);
+  const otherTasks = useMemo(() => {
+    const shown = new Set(candidates.map((task) => task.id));
+    return tasks.filter((task) => !shown.has(task.id) && !task.parent_task_id).sort(bySchedule).slice(0, 12);
+  }, [tasks, candidates]);
   const activeHabits = (habits ?? []).filter((habit) => !habit.archived_at);
   const targetName = running ? nameOf(running)
     : target ? nameOf({ task_id: target.kind === 'task' ? target.id : null, habit_id: target.kind === 'habit' ? target.id : null }) : undefined;
@@ -181,7 +186,7 @@ export default function Focus() {
     <Screen>
       <Header
         title="집중" subtitle={todayStats.count ? `오늘 ${todayStats.count}회 · ${formatMinutes(todayStats.seconds)}` : '오늘 첫 집중을 시작해 보세요'} />
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.xxl, gap: space.lg, alignItems: 'center' }}>
+      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.lg, alignItems: 'center' }}>
         <View
           style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center', marginTop: space.sm }}
           accessibilityRole="timer" accessibilityLabel={`${onBreak ? '휴식' : '집중'} 남은 시간 ${formatDuration(shown)}`}>
@@ -212,7 +217,7 @@ export default function Focus() {
             <View style={{ alignSelf: 'stretch', gap: space.sm }}>
               <Segmented<string>
                 value={String(minutes)} onChange={(value) => setChosen(Number(value))}
-                options={modes.map((item) => ({ value: String(item.minutes), label: item.label + ' · ' + item.detail }))} />
+                options={modes.map((item) => ({ value: String(item.minutes), label: item.label }))} />
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }} accessibilityLabel={`${ROUNDS}회 중 ${round}회 완료`}>
                 {Array.from({ length: ROUNDS }, (_, index) => (
                   <View
@@ -220,7 +225,7 @@ export default function Focus() {
                     style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: index < round ? colors.accent : colors.surfaceMuted }} />
                 ))}
                 <Txt variant="small" tone="muted" style={{ marginLeft: 4 }}>
-                  {ROUNDS - round}회 더 하면 긴 휴식 {mode.longRest}분
+                  {mode.detail} · {ROUNDS - round}회 더 하면 긴 휴식 {mode.longRest}분
                 </Txt>
               </View>
             </View>
@@ -274,6 +279,15 @@ export default function Focus() {
                 setPicking(false);
               }} />
           ))}
+          {otherTasks.length ? <Txt variant="section" tone="muted" style={{ marginTop: space.md }}>다른 할 일</Txt> : null}
+          {otherTasks.map((task) => (
+            <Row
+              key={task.id} icon="check-square" label={task.title}
+              onPress={() => {
+                setTarget({ kind: 'task', id: task.id });
+                setPicking(false);
+              }} />
+          ))}
           {activeHabits.length ? <Txt variant="section" tone="muted" style={{ marginTop: space.md }}>습관</Txt> : null}
           {activeHabits.map((habit) => (
             <Row
@@ -283,8 +297,8 @@ export default function Focus() {
                 setPicking(false);
               }} />
           ))}
-          {!candidates.length && !activeHabits.length ? (
-            <Txt tone="muted" style={{ paddingVertical: space.lg }}>오늘 할 일이나 습관이 있으면 여기에서 연결할 수 있습니다.</Txt>
+          {!candidates.length && !otherTasks.length && !activeHabits.length ? (
+            <Txt tone="muted" style={{ paddingVertical: space.lg }}>할 일이나 습관이 있으면 여기에서 연결할 수 있습니다.</Txt>
           ) : null}
         </ScrollView>
       </Sheet>

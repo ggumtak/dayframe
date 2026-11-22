@@ -64,3 +64,16 @@ export function applyScheduleWord(text: string, word: string, kind: 'date' | 're
   const trimmed = text.replace(/\s+$/, '');
   return (trimmed ? trimmed + ' ' : '') + word + ' ';
 }
+
+/** Removes tokens matching `predicate` from `text`, keeping spacing tidy. */
+export function removeTokens(text: string, tokens: TaskToken[], predicate: (token: TaskToken) => boolean): string {
+  const targets = tokens.filter(predicate).sort((a, b) => b.start - a.start);
+  if (!targets.length) return text;
+  let next = text;
+  for (const token of targets) {
+    const before = next.slice(0, token.start).replace(/\s+$/, '');
+    const after = next.slice(token.end).replace(/^\s+/, '');
+    next = before && after ? before + ' ' + after : before || after;
+  }
+  return next ? next + ' ' : '';
+}
