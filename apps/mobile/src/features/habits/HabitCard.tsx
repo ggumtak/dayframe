@@ -6,7 +6,7 @@ import Svg, { Circle } from 'react-native-svg';
 
 import { Card, Icon, Row, Sheet, Txt } from '@/components/ui';
 import { periodProgress, useHabitActions } from '@/data/habits';
-import { Temporal, today, weekdayName } from '@/lib/dates';
+import { Temporal, today, weekdayName, weekStart } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Habit, HabitLog, HabitStats } from '@/lib/shared';
 import { radius, space, useTheme } from '@/theme';
@@ -63,7 +63,9 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
   const done = progress >= habit.target_count;
   const weekly = habit.cadence === 'weekly';
   const byDate = new Map(logs.map((log) => [log.log_date, log]));
-  const week = Array.from({ length: 7 }, (_, index) => day.subtract({ days: 6 - index }));
+  // This week, Monday first, the same week the weekly goal counts; days still to come are dimmed.
+  const monday = weekStart(day);
+  const week = Array.from({ length: 7 }, (_, index) => monday.add({ days: index }));
   const streak = stats?.current_streak ?? 0;
 
   const checkIn = () => {
@@ -97,10 +99,13 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
             <View style={{ flexDirection: 'row', gap: 6 }}>
               {week.map((item) => {
                 const log = byDate.get(item.toString());
-                const beforeStart = Temporal.PlainDate.compare(item, Temporal.PlainDate.from(habit.start_date)) < 0;
-                const fill = log?.status === 'completed' ? colors.success : log ? colors.border : colors.surfaceMuted;
+                const outside = Temporal.PlainDate.compare(item, Temporal.PlainDate.from(habit.start_date)) < 0
+                  || Temporal.PlainDate.compare(item, day) > 0;
+                // A day short of a daily goal (2 of 4) is lighter than a day that met it.
+                const met = log?.status === 'completed' && (weekly || log.count >= habit.target_count);
+                const fill = met ? colors.success : log?.status === 'completed' ? colors.successSoft : log ? colors.border : colors.surfaceMuted;
                 return (
-                  <View key={item.toString()} style={{ alignItems: 'center', gap: 3, opacity: beforeStart ? 0.35 : 1 }}>
+                  <View key={item.toString()} style={{ alignItems: 'center', gap: 3, opacity: outside ? 0.35 : 1 }}>
                     <View style={[styles.dot, { backgroundColor: fill }]}>
                       {log?.status === 'frozen' ? <Icon name="pause" size={9} color={colors.textMuted} /> : null}
                       {log?.status === 'skipped' ? <Icon name="minus" size={9} color={colors.textMuted} /> : null}
