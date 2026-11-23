@@ -106,4 +106,9 @@ test('suggestForToday recommends in-progress checklists and high-priority items 
   const suggestions = suggestForToday([alreadyToday, tomorrow, p1Unscheduled, inProgress], progress, nowMs, 5);
   assert.deepEqual(suggestions.map((s) => s.task.id), ['in-prog', 'p1-box', 'tmrw']);
   assert.match(suggestions[0].reason, /진행 중/);
+
+  // An appointment a month away stays where it was put, even with a half-done checklist or a high priority.
+  const nextMonth = makeTask('meet', { priority: 1, due_at: '2026-12-26T15:00:00Z', all_day: true });
+  const later = suggestForToday([nextMonth, inProgress], new Map([...progress, ['meet', { open: 2, completed: 1, total: 3 }]]), nowMs, 5);
+  assert.deepEqual(later.map((s) => s.task.id), ['in-prog']);
 });
