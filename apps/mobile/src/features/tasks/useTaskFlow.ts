@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 
 import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
-import { hideTasks, nextDueAfterComplete, unhideTasks, useTaskActions, withDescendants } from '@/data/tasks';
+import { hideTasks, nextDueAfterComplete, nextPosition, unhideTasks, useTaskActions, withDescendants } from '@/data/tasks';
 import { dueMinutes, formatDue, instantFor, type PlainDate, sameInstant, today } from '@/lib/dates';
 import type { Task, TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -14,7 +14,7 @@ export function localTimeString(minutes: number): string {
 
 /** The schedule fields for moving a task to `date`, keeping or updating its time of day. A null date clears the schedule. */
 export function schedulePatch(task: Task, date: PlainDate | null, minutes: number | null | undefined = undefined): TaskPatch {
-  if (!date) return { due_at: null, all_day: false, recurrence_rule: null, recurrence_local_time: null };
+  if (!date) return { due_at: null, all_day: false, recurrence_rule: null, recurrence_mode: 'schedule', recurrence_local_time: null };
   const time = minutes === undefined ? dueMinutes(task) : minutes;
   const all_day = time === null;
   const patch: TaskPatch = { due_at: instantFor(date, time, task.timezone), all_day };
@@ -22,7 +22,18 @@ export function schedulePatch(task: Task, date: PlainDate | null, minutes: numbe
   return patch;
 }
 
-/** Task gestures with their feedback: completion and deletion can both be undone from the toast. */
+/** Formats a task and its subtasks as a Markdown checklist for sharing. */
+export function toMarkdownChecklist(task: Task, openSubtasks: Task[], completedSubtasks: Task[] = []): string {
+  const lines = [`- [${task.completed_at ? 'x' : ' '}] ${task.title}`];
+  if (task.notes?.trim()) {
+    for (const line of task.notes.trim().split('\n')) lines.push(`  ${line}`);
+  }
+  for (const sub of openSubtasks) lines.push(`  - [ ] ${sub.title}`);
+  for (const sub of completedSubtasks) lines.push(`  - [x] ${sub.title}`);
+  return lines.join('\n');
+}
+
+/** Task gestures with their feedback: completion (including repeats) and deletion can both be undone from the toast. */
 export function useTaskFlow() {
   const actions = useTaskActions();
 
@@ -41,10 +52,21 @@ export function useTaskFlow() {
   }, [actions]);
 
   const complete = useCallback((task: Task) => {
+    const completedChildren = (queryClient.getQueryData<Task[]>(keys.completedTasks) ?? [])
+      .filter((item) => item.parent_task_id === task.id);
     actions.complete(task);
+    if (task.recurrence_rule) {
+      // Recurring checklists (e.g. weekly packing/review) automatically reset completed subtasks for the next cycle.
+      for (const child of completedChildren) actions.reopen(child);
+    }
     const next = nextDueAfterComplete(task);
     const when = next ? formatDue({ due_at: next, timezone: task.timezone, all_day: task.all_day }) : null;
-    showToast(!task.recurrence_rule ? '완료했습니다.' : when ? `다음 일정: ${when}` : '완료했습니다. 다음 일정으로 넘어갑니다.', {
+    const message = !task.recurrence_rule
+      ? '완료했습니다.'
+      : completedChildren.length > 0
+        ? (when ? `다음 일정: ${when} (하위 ${completedChildren.length}개 초기화)` : `완료! 하위 작업 ${completedChildren.length}개를 초기화했습니다.`)
+        : (when ? `다음 일정: ${when}` : '완료했습니다. 다음 일정으로 넘어갑니다.');
+    showToast(message, {
       actionLabel: '실행 취소', onAction: () => uncomplete(task, task.due_at),
     });
   }, [actions, uncomplete]);
@@ -76,5 +98,53 @@ export function useTaskFlow() {
     showToast('내일로 옮겼습니다.');
   }, [reschedule]);
 
-  return { ...actions, complete, uncomplete, remove, reschedule, postpone };
+  const duplicate = useCallback((task: Task, options: { openSubtasks?: Task[]; completedSubtasks?: Task[]; tagNames?: string[] } = {}) => {
+    const allOpen = queryClient.getQueryData<Task[]>(keys.tasks) ?? [];
+    const siblings = allOpen.filter((item) => (task.parent_task_id
+      ? item.parent_task_id === task.parent_task_id
+      : !item.parent_task_id && item.project_id === task.project_id));
+    const newId = actions.create({
+      input: {
+        title: task.title,
+        notes: task.notes,
+        priority: task.priority,
+        timezone: task.timezone,
+        position: nextPosition(siblings),
+        ...(task.parent_task_id ? { parent_task_id: task.parent_task_id } : {
+          ...(task.project_id ? { project_id: task.project_id } : {}),
+          ...(task.section_id ? { section_id: task.section_id } : {}),
+        }),
+        ...(task.due_at ? { due_at: task.due_at, all_day: task.all_day } : {}),
+        ...(task.recurrence_rule ? { recurrence_rule: task.recurrence_rule, recurrence_mode: task.recurrence_mode } : {}),
+        ...(task.recurrence_local_time ? { recurrence_local_time: task.recurrence_local_time } : {}),
+        ...(task.duration_minutes ? { duration_minutes: task.duration_minutes } : {}),
+      },
+      tagNames: options.tagNames,
+    });
+    const allChildren = [...(options.openSubtasks ?? []), ...(options.completedSubtasks ?? [])];
+    allChildren.forEach((child, index) => {
+      actions.create({
+        input: {
+          title: child.title,
+          notes: child.notes,
+          priority: child.priority,
+          timezone: child.timezone,
+          position: (index + 1) * 1024,
+          parent_task_id: newId,
+        },
+      });
+    });
+    showToast(allChildren.length
+      ? `‘${task.title}’와 하위 작업 ${allChildren.length}개를 복제했습니다.`
+      : `‘${task.title}’을 복제했습니다.`);
+    return newId;
+  }, [actions]);
+
+  const resetChecklist = useCallback((completedSubtasks: Task[]) => {
+    if (!completedSubtasks.length) return;
+    for (const sub of completedSubtasks) actions.reopen(sub);
+    showToast(`완료한 하위 작업 ${completedSubtasks.length}개를 다시 열었습니다.`);
+  }, [actions]);
+
+  return { ...actions, complete, uncomplete, remove, reschedule, postpone, duplicate, resetChecklist };
 }

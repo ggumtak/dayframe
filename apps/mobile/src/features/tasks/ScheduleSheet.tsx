@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { MonthCalendar } from '@/components/MonthCalendar';
-import { Button, Chip, Sheet, Txt } from '@/components/ui';
+import { Button, Chip, IconButton, Sheet, Txt } from '@/components/ui';
 import { useTaskActions } from '@/data/tasks';
 import { parseErrorMessage } from '@/features/quick-add/messages';
-import { describeRecurrence, dueDate, dueMinutes, formatDue, formatTime, type PlainDate, today } from '@/lib/dates';
+import { describeRecurrence, dueDate, dueMinutes, formatDue, formatDurationMinutes, formatTime, type PlainDate, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { analyzeTask, type Task, type TaskPatch } from '@/lib/shared';
 import { radius, space, type, useTheme } from '@/theme';
@@ -21,7 +21,7 @@ const timePresets: { minutes: number | null; label: string }[] = [
   { minutes: 21 * 60, label: '오후 9시' },
 ];
 
-/** Quick reschedule: common days as chips, quick time slots, calendar, and optional natural-language entry. */
+/** Quick reschedule: common days as chips, quick time slots + fine stepper, calendar, and natural-language entry. */
 export function ScheduleSheet({ task, onClose, onPick }: {
   task: Task | null; onClose: () => void; onPick: (task: Task, date: PlainDate | null, minutes?: number | null) => void;
 }) {
@@ -49,13 +49,20 @@ function ScheduleContent({ task, onClose, onPick }: {
       const { task: parsed } = analyzeTask({ text: when + ' ' + PLACEHOLDER, timezone: task.timezone });
       const leftover = parsed.title.replace(PLACEHOLDER, '').trim();
       if (leftover) return { error: `‘${leftover}’ 부분을 이해하지 못했습니다.` };
-      if (!parsed.due_at) return { error: '날짜나 시간을 찾지 못했습니다.' };
+      if (!parsed.due_at && !parsed.duration_minutes) return { error: '날짜, 시간 또는 소요시간을 찾지 못했습니다.' };
       const patch: TaskPatch = {
-        due_at: parsed.due_at, all_day: parsed.all_day, recurrence_rule: parsed.recurrence_rule,
-        recurrence_local_time: parsed.recurrence_local_time ?? null,
+        ...(parsed.due_at ? {
+          due_at: parsed.due_at, all_day: parsed.all_day, recurrence_rule: parsed.recurrence_rule,
+          recurrence_mode: parsed.recurrence_mode,
+          recurrence_local_time: parsed.recurrence_local_time ?? null,
+        } : {}),
+        ...(parsed.duration_minutes ? { duration_minutes: parsed.duration_minutes } : {}),
       };
-      const label = [formatDue({ due_at: parsed.due_at, all_day: parsed.all_day, timezone: task.timezone }),
-        describeRecurrence(parsed.recurrence_rule)].filter(Boolean).join(' · ');
+      const label = [
+        parsed.due_at ? formatDue({ due_at: parsed.due_at, all_day: parsed.all_day, timezone: task.timezone }) : null,
+        parsed.duration_minutes ? formatDurationMinutes(parsed.duration_minutes) : null,
+        describeRecurrence(parsed.recurrence_rule, parsed.recurrence_mode),
+      ].filter(Boolean).join(' · ');
       return { patch, label };
     } catch (error) {
       return { error: parseErrorMessage(error) ?? '날짜나 시간을 입력해 주세요.' };
@@ -74,9 +81,15 @@ function ScheduleContent({ task, onClose, onPick }: {
     onClose();
   };
 
+  const nudgeMinutes = (delta: number) => {
+    haptic.tap();
+    const base = minutes ?? 9 * 60;
+    setMinutes((base + delta + 1440) % 1440);
+  };
+
   const saturday = now.add({ days: (6 - now.dayOfWeek + 7) % 7 || 7 });
   const monday = now.add({ days: 8 - now.dayOfWeek });
-  const hasCustomInitial = initialMinutes !== null && !timePresets.some((item) => item.minutes === initialMinutes);
+  const hasCustomTime = minutes !== null && !timePresets.some((item) => item.minutes === minutes);
 
   return (
     <Sheet visible onClose={onClose} title="일정 변경">
@@ -93,7 +106,7 @@ function ScheduleContent({ task, onClose, onPick }: {
         <View style={{ gap: space.sm, marginBottom: space.md }}>
           <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
             <TextInput
-              value={when} onChangeText={setWhen} autoFocus placeholder="예: 내일 오후 7시 30분, 매주 월수금"
+              value={when} onChangeText={setWhen} autoFocus placeholder="예: 30분 후, 내일 오후 7시 30분, 매주 월수금"
               placeholderTextColor={colors.textFaint} autoCapitalize="none" autoCorrect={false}
               returnKeyType="done" onSubmitEditing={applyTyped} accessibilityLabel="일정을 글로 입력"
               style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, flex: 1 }]} />
@@ -105,10 +118,27 @@ function ScheduleContent({ task, onClose, onPick }: {
       ) : (
         <>
           <View style={{ gap: 6, marginBottom: space.md }}>
-            <Txt variant="caption" tone="muted">시간</Txt>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Txt variant="caption" tone="muted">시간</Txt>
+              {minutes !== null ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <IconButton
+                    name="minus" label="15분 앞당기기" size={14}
+                    onPress={() => nudgeMinutes(-15)}
+                    style={{ backgroundColor: colors.surfaceMuted, width: 26, height: 26 }} />
+                  <Txt variant="smallStrong" tone="accent" style={{ minWidth: 74, textAlign: 'center' }}>
+                    {formatTime(minutes)}
+                  </Txt>
+                  <IconButton
+                    name="plus" label="15분 뒤로" size={14}
+                    onPress={() => nudgeMinutes(15)}
+                    style={{ backgroundColor: colors.surfaceMuted, width: 26, height: 26 }} />
+                </View>
+              ) : null}
+            </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {hasCustomInitial ? (
-                <Chip icon="clock" label={formatTime(initialMinutes)} selected={minutes === initialMinutes} onPress={() => setMinutes(initialMinutes)} />
+              {hasCustomTime ? (
+                <Chip icon="clock" label={formatTime(minutes)} selected onPress={() => setMinutes(minutes)} />
               ) : null}
               {timePresets.map((item) => (
                 <Chip

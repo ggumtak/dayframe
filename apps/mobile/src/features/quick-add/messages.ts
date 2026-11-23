@@ -2,6 +2,8 @@ const known: [RegExp, string][] = [
   [/one due date/, '날짜는 하나만 입력해 주세요.'],
   [/one due time/, '시간은 하나만 입력해 주세요.'],
   [/one recurrence/, '반복은 하나만 입력해 주세요.'],
+  [/one duration/, '소요시간은 하나만 입력해 주세요.'],
+  [/Duration must be/, '소요시간은 1분에서 24시간(1440분) 사이로 입력해 주세요.'],
   [/one #project/, '#프로젝트는 하나만 지정할 수 있습니다.'],
   [/one priority/, '우선순위는 하나만 지정할 수 있습니다.'],
   [/1–12 with AM\/PM/, '오전·오후와 함께 쓸 때는 1–12시로 입력해 주세요.'],

@@ -1,20 +1,23 @@
+import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, type TextInputInstance, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, TextInput, type TextInputInstance, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Chip, EmptyState, Icon, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
-import { attachTagByName, nextPosition, useProjects, useTags, useTaskIndex, useTaskTags } from '@/data/tasks';
+import { Button, Chip, EmptyState, Icon, IconButton, Loading, ProgressBar, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { attachTagByName, nextPosition, useProjects, useSections, useSubtaskProgress, useTags, useTaskIndex, useTaskTags } from '@/data/tasks';
 import { TaskReminderChips } from '@/features/reminders/ReminderChips';
 import { useReminderOverrides } from '@/features/reminders/overrides';
 import { useReminderSettings } from '@/features/reminders/settings';
+import { RepeatSheet } from '@/features/tasks/RepeatSheet';
 import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
-import { localTimeString, useTaskFlow } from '@/features/tasks/useTaskFlow';
+import { saveCustomTemplate } from '@/features/tasks/templates';
+import { localTimeString, toMarkdownChecklist, useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { errorMessage } from '@/lib/api';
-import { describeRecurrence, deviceTimeZone, dueBucket, dueMinutes, formatDue, instantFor, isPastDue, today } from '@/lib/dates';
+import { describeRecurrence, deviceTimeZone, dueBucket, dueMinutes, formatDue, formatDurationMinutes, instantFor, isPastDue, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { analyzeTask, type Priority, type Task, type TaskPatch } from '@/lib/shared';
+import { analyzeTask, type Priority, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, type, useTheme } from '@/theme';
 
@@ -23,18 +26,6 @@ const priorities: { value: Priority; label: string }[] = [
   { value: 2, label: 'P2 · 높음' },
   { value: 3, label: 'P3 · 보통' },
   { value: 4, label: 'P4 · 없음' },
-];
-
-const repeatOptions: { rule: string | null; label: string; detail?: string }[] = [
-  { rule: null, label: '반복 없음' },
-  { rule: 'FREQ=DAILY', label: '매일' },
-  { rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: '평일', detail: '월–금' },
-  { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', label: '주말', detail: '토–일' },
-  { rule: 'FREQ=WEEKLY', label: '매주' },
-  { rule: 'FREQ=WEEKLY;INTERVAL=2', label: '격주' },
-  { rule: 'FREQ=MONTHLY', label: '매월' },
-  { rule: 'FREQ=MONTHLY;BYMONTHDAY=-1', label: '매월 말일' },
-  { rule: 'FREQ=YEARLY', label: '매년' },
 ];
 
 export default function TaskDetail() {
@@ -60,12 +51,16 @@ export default function TaskDetail() {
   return <TaskEditor key={task.id} task={task} />;
 }
 
-type ModalKind = null | 'schedule' | 'repeat' | 'reminder' | 'priority' | 'project' | 'tags';
+type ModalKind = null | 'schedule' | 'duration' | 'repeat' | 'reminder' | 'priority' | 'project' | 'tags' | 'more';
+
+const durationPresets = [15, 30, 45, 60, 90, 120, 180] as const;
 
 function TaskEditor({ task }: { task: Task }) {
   const { colors } = useTheme();
   const { byId, children } = useTaskIndex();
+  const { completedChildren } = useSubtaskProgress();
   const { data: projects } = useProjects();
+  const { data: sections } = useSections();
   const { data: tags } = useTags();
   const { data: links } = useTaskTags();
   const reminderSettings = useReminderSettings();
@@ -77,16 +72,23 @@ function TaskEditor({ task }: { task: Task }) {
   const [subtaskText, setSubtaskText] = useState('');
   const [newTag, setNewTag] = useState('');
   const [sheet, setSheet] = useState<ModalKind>(null);
+  const [showCompletedSubs, setShowCompletedSubs] = useState(true);
   const [done, setDone] = useState(false);
   const subtaskInput = useRef<TextInputInstance>(null);
 
   const parent = task.parent_task_id ? byId.get(task.parent_task_id) : undefined;
   const subtasks = children.get(task.id) ?? [];
+  const completedSubtasks = completedChildren.get(task.id) ?? [];
+  const totalSubtasks = subtasks.length + completedSubtasks.length;
+  const subRatio = totalSubtasks > 0 ? completedSubtasks.length / totalSubtasks : 0;
+
   const attachedIds = new Set((links ?? []).filter((link) => link.task_id === task.id).map((link) => link.tag_id));
   const attachedTags = (tags ?? []).filter((tag) => attachedIds.has(tag.id));
   const projectName = task.project_id ? projects?.find((item) => item.id === task.project_id)?.name : undefined;
+  const sectionName = task.section_id ? sections?.find((item) => item.id === task.section_id)?.name : undefined;
   const due = formatDue(task);
-  const repeat = describeRecurrence(task.recurrence_rule);
+  const repeat = describeRecurrence(task.recurrence_rule, task.recurrence_mode);
+  const durationLabel = task.duration_minutes ? formatDurationMinutes(task.duration_minutes) : null;
 
   // Compact reminder summary for the metadata pill.
   const ownReminder = reminderOverrides.tasks[task.id];
@@ -135,8 +137,9 @@ function TaskEditor({ task }: { task: Task }) {
           title: parsed.title, priority: parsed.priority, timezone, position: nextPosition(subtasks),
           parent_task_id: task.id,
           ...(parsed.due_at ? { due_at: parsed.due_at, all_day: parsed.all_day } : {}),
-          ...(parsed.recurrence_rule ? { recurrence_rule: parsed.recurrence_rule } : {}),
+          ...(parsed.recurrence_rule ? { recurrence_rule: parsed.recurrence_rule, recurrence_mode: parsed.recurrence_mode } : {}),
           ...(parsed.recurrence_local_time ? { recurrence_local_time: parsed.recurrence_local_time } : {}),
+          ...(parsed.duration_minutes ? { duration_minutes: parsed.duration_minutes } : {}),
         };
         tagNames = parsed.tags;
       }
@@ -149,19 +152,27 @@ function TaskEditor({ task }: { task: Task }) {
     subtaskInput.current?.focus();
   };
 
-  const applyRepeat = (rule: string | null) => {
+  const applyRepeat = (rule: string | null, mode: RecurrenceMode) => {
     setSheet(null);
-    if (rule === task.recurrence_rule) return;
+    if (rule === task.recurrence_rule && mode === task.recurrence_mode) return;
     if (!rule) {
-      flow.update(task.id, { recurrence_rule: null, recurrence_local_time: null });
+      flow.update(task.id, { recurrence_rule: null, recurrence_mode: 'schedule', recurrence_local_time: null });
       return;
     }
     const minutes = dueMinutes(task);
     const patch: TaskPatch = task.due_at
-      ? { recurrence_rule: rule, recurrence_local_time: task.all_day || minutes === null ? null : localTimeString(minutes) }
-      : { due_at: instantFor(today(task.timezone), null, task.timezone), all_day: true, recurrence_rule: rule, recurrence_local_time: null };
+      ? { recurrence_rule: rule, recurrence_mode: mode, recurrence_local_time: task.all_day || minutes === null ? null : localTimeString(minutes) }
+      : {
+        due_at: instantFor(today(task.timezone), null, task.timezone), all_day: true,
+        recurrence_rule: rule, recurrence_mode: mode, recurrence_local_time: null,
+      };
     flow.update(task.id, patch);
     haptic.tap();
+  };
+
+  const applyDuration = (minutes: number | null) => {
+    haptic.tap();
+    flow.update(task.id, { duration_minutes: minutes });
   };
 
   const addTag = async () => {
@@ -185,6 +196,28 @@ function TaskEditor({ task }: { task: Task }) {
     }, 240);
   };
 
+  const saveAsTemplate = () => {
+    const items = [...subtasks, ...completedSubtasks].map((sub) => sub.title);
+    saveCustomTemplate({
+      title: title.trim() || task.title,
+      icon: 'check-square',
+      notes: notes.trim() || undefined,
+      priority: task.priority,
+      items,
+    });
+    setSheet(null);
+    haptic.success();
+    showToast(`‘${title.trim() || task.title}’을 체크리스트 템플릿으로 저장했습니다.`);
+  };
+
+  const copyMarkdown = () => {
+    setSheet(null);
+    const md = toMarkdownChecklist(task, subtasks, completedSubtasks);
+    void Clipboard.setStringAsync(md)
+      .then(() => showToast('체크리스트를 마크다운으로 복사했습니다.'))
+      .catch(() => {});
+  };
+
   const pColor = priorityColor(colors, task.priority);
 
   return (
@@ -201,11 +234,13 @@ function TaskEditor({ task }: { task: Task }) {
           </Pressable>
         ) : (
           <Pressable
-            accessibilityRole="button" accessibilityLabel="프로젝트 변경"
+            accessibilityRole="button" accessibilityLabel="프로젝트·섹션 변경"
             onPress={() => setSheet('project')}
             style={({ pressed }) => [styles.crumb, { opacity: pressed ? 0.6 : 1 }]}>
             <Icon name={projectName ? 'hash' : 'inbox'} size={14} color={colors.textMuted} />
-            <Txt variant="smallStrong" tone="muted" numberOfLines={1}>{projectName ?? '미분류'}</Txt>
+            <Txt variant="smallStrong" tone="muted" numberOfLines={1}>
+              {projectName ? (sectionName ? `${projectName} · ${sectionName}` : projectName) : '미분류'}
+            </Txt>
             <Icon name="chevron-down" size={13} color={colors.textFaint} />
           </Pressable>
         )}
@@ -219,13 +254,14 @@ function TaskEditor({ task }: { task: Task }) {
         </Pressable>
         <IconButton
           name="clock" label="이 할 일로 집중 시작" color={colors.textMuted}
-          onPress={() => router.navigate({ pathname: '/focus', params: { taskId: task.id, at: String(Date.now()) } })} />
-        <IconButton
-          name="trash-2" label="삭제" color={colors.danger}
-          onPress={() => {
-            flow.remove(task);
-            router.back();
-          }} />
+          onPress={() => router.navigate({
+            pathname: '/focus',
+            params: {
+              taskId: task.id, at: String(Date.now()),
+              ...(task.duration_minutes ? { duration: String(task.duration_minutes) } : {}),
+            },
+          })} />
+        <IconButton name="more-horizontal" label="더 보기" color={colors.textMuted} onPress={() => setSheet('more')} />
       </View>
 
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
@@ -252,6 +288,10 @@ function TaskEditor({ task }: { task: Task }) {
               icon="calendar" label={due ?? '일정'}
               color={!due ? undefined : isPastDue(task) ? colors.danger : dueBucket(task) === 'today' ? colors.success : colors.accent}
               onPress={() => setSheet('schedule')} />
+            <Chip
+              icon="clock" label={durationLabel ?? '소요시간'}
+              selected={!!durationLabel} color={durationLabel ? colors.accent : undefined}
+              onPress={() => setSheet('duration')} />
             {repeat || due ? (
               <Chip
                 icon="repeat" label={repeat ?? '반복'} color={repeat ? colors.info : undefined}
@@ -269,11 +309,34 @@ function TaskEditor({ task }: { task: Task }) {
           </View>
 
           <View style={styles.subtaskHeader}>
-            <Txt variant="section" tone="muted">하위 작업</Txt>
-            {subtasks.length ? <Txt variant="small" tone="faint">{subtasks.length}</Txt> : null}
+            <Txt variant="section" tone="muted">체크리스트 · 하위 작업</Txt>
+            {totalSubtasks ? (
+              <Txt variant="smallStrong" tone={completedSubtasks.length === totalSubtasks ? 'success' : 'faint'}>
+                {completedSubtasks.length}/{totalSubtasks}
+              </Txt>
+            ) : null}
             <View style={{ flex: 1 }} />
-            {subtasks.length > 1 ? <Txt variant="caption" tone="faint">길게 눌러 순서 변경</Txt> : null}
+            {completedSubtasks.length > 0 ? (
+              <Pressable
+                accessibilityRole="button" accessibilityLabel="완료한 하위 작업 모두 초기화" hitSlop={8}
+                onPress={() => {
+                  haptic.tap();
+                  flow.resetChecklist(completedSubtasks);
+                }}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: pressed ? 0.6 : 1 })}>
+                <Icon name="rotate-ccw" size={12} color={colors.accent} />
+                <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>모두 초기화</Txt>
+              </Pressable>
+            ) : subtasks.length > 1 ? (
+              <Txt variant="caption" tone="faint">길게 눌러 순서 변경</Txt>
+            ) : null}
           </View>
+
+          {totalSubtasks > 0 ? (
+            <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+              <ProgressBar value={subRatio} color={subRatio === 1 ? colors.success : colors.accent} height={5} />
+            </View>
+          ) : null}
 
           {subtasks.length ? <TaskList tasks={subtasks} sortable /> : null}
 
@@ -293,23 +356,86 @@ function TaskEditor({ task }: { task: Task }) {
               </Pressable>
             ) : null}
           </View>
+
+          {completedSubtasks.length > 0 ? (
+            <View style={{ marginTop: space.md }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`완료한 하위 작업 ${completedSubtasks.length}개 ${showCompletedSubs ? '접기' : '보기'}`}
+                onPress={() => {
+                  haptic.tap();
+                  setShowCompletedSubs((open) => !open);
+                }}
+                style={({ pressed }) => [styles.completedToggle, { opacity: pressed ? 0.6 : 1 }]}>
+                <Icon name={showCompletedSubs ? 'chevron-down' : 'chevron-right'} size={15} color={colors.textFaint} />
+                <Txt variant="smallStrong" tone="muted">완료됨 {completedSubtasks.length}</Txt>
+              </Pressable>
+              {showCompletedSubs ? completedSubtasks.map((sub) => (
+                <View key={sub.id} style={styles.completedSubRow}>
+                  <Checkbox
+                    checked size={20} color={colors.success}
+                    onPress={() => {
+                      haptic.tap();
+                      flow.reopen(sub);
+                    }}
+                    label={sub.title + ' 다시 열기'} />
+                  <View style={[styles.completedSubBody, { borderBottomColor: colors.border }]}>
+                    <Text numberOfLines={2} style={[type.body as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
+                      {sub.title}
+                    </Text>
+                    <IconButton
+                      name="trash-2" label={sub.title + ' 삭제'} size={15} color={colors.textFaint}
+                      onPress={() => flow.remove(sub)} style={{ width: 32, height: 32 }} />
+                  </View>
+                </View>
+              )) : null}
+            </View>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
 
       <ScheduleSheet task={sheet === 'schedule' ? task : null} onClose={() => setSheet(null)} onPick={flow.reschedule} />
+      <RepeatSheet
+        visible={sheet === 'repeat'} currentRule={task.recurrence_rule} currentMode={task.recurrence_mode}
+        onClose={() => setSheet(null)} onSelect={applyRepeat} />
 
-      <Sheet visible={sheet === 'repeat'} onClose={() => setSheet(null)} title="반복">
-        <ScrollView style={{ maxHeight: 380 }}>
-          {repeatOptions.map((item) => {
-            const active = task.recurrence_rule === item.rule;
-            return (
-              <Row
-                key={item.label} icon={item.rule ? 'repeat' : 'slash'} label={item.label} detail={item.detail}
-                trailing={active ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
-                onPress={() => applyRepeat(item.rule)} />
-            );
-          })}
-        </ScrollView>
+      <Sheet visible={sheet === 'duration'} onClose={() => setSheet(null)} title="예상 소요시간">
+        <View style={{ gap: space.md }}>
+          <Txt variant="small" tone="muted">
+            타임라인 블록 크기에 반영되며, 이 할 일로 집중 타이머를 열면 자동으로 시간이 맞춰집니다.
+          </Txt>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+            <Chip
+              icon="slash" label="없음" selected={task.duration_minutes === null}
+              onPress={() => {
+                applyDuration(null);
+                setSheet(null);
+              }} />
+            {durationPresets.map((mins) => (
+              <Chip
+                key={mins} icon="clock" label={formatDurationMinutes(mins)} selected={task.duration_minutes === mins}
+                onPress={() => {
+                  applyDuration(mins);
+                  setSheet(null);
+                }} />
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <Txt variant="bodyStrong" style={{ flex: 1 }}>직접 조정</Txt>
+            <IconButton
+              name="minus" label="5분 줄이기" size={18}
+              onPress={() => applyDuration(Math.max(5, (task.duration_minutes ?? 30) - 5))}
+              style={{ backgroundColor: colors.surfaceMuted, width: 36, height: 36 }} />
+            <Txt variant="bodyStrong" style={{ minWidth: 82, textAlign: 'center' }}>
+              {task.duration_minutes ? formatDurationMinutes(task.duration_minutes) : '30분'}
+            </Txt>
+            <IconButton
+              name="plus" label="5분 늘리기" size={18}
+              onPress={() => applyDuration(Math.min(1440, (task.duration_minutes ?? 25) + 5))}
+              style={{ backgroundColor: colors.surfaceMuted, width: 36, height: 36 }} />
+          </View>
+          <Button label="완료" onPress={() => setSheet(null)} />
+        </View>
       </Sheet>
 
       <Sheet visible={sheet === 'reminder'} onClose={() => setSheet(null)} title="알림">
@@ -337,8 +463,8 @@ function TaskEditor({ task }: { task: Task }) {
         })}
       </Sheet>
 
-      <Sheet visible={sheet === 'project'} onClose={() => setSheet(null)} title="프로젝트">
-        <ScrollView style={{ maxHeight: 360 }}>
+      <Sheet visible={sheet === 'project'} onClose={() => setSheet(null)} title="프로젝트 · 섹션">
+        <ScrollView style={{ maxHeight: 380 }}>
           <Row
             icon="inbox" label="미분류"
             trailing={!task.project_id ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
@@ -346,15 +472,31 @@ function TaskEditor({ task }: { task: Task }) {
               flow.update(task.id, { project_id: null, section_id: null });
               setSheet(null);
             }} />
-          {(projects ?? []).map((project) => (
-            <Row
-              key={project.id} icon="hash" label={project.name}
-              trailing={task.project_id === project.id ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
-              onPress={() => {
-                flow.update(task.id, { project_id: project.id, section_id: null });
-                setSheet(null);
-              }} />
-          ))}
+          {(projects ?? []).map((project) => {
+            const projSections = (sections ?? []).filter((s) => s.project_id === project.id);
+            return (
+              <View key={project.id}>
+                <Row
+                  icon="hash" label={project.name}
+                  trailing={task.project_id === project.id && !task.section_id ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+                  onPress={() => {
+                    flow.update(task.id, { project_id: project.id, section_id: null });
+                    setSheet(null);
+                  }} />
+                {projSections.map((section) => (
+                  <View key={section.id} style={{ paddingLeft: space.xl }}>
+                    <Row
+                      icon="bookmark" label={section.name}
+                      trailing={task.section_id === section.id ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+                      onPress={() => {
+                        flow.update(task.id, { project_id: project.id, section_id: section.id });
+                        setSheet(null);
+                      }} />
+                  </View>
+                ))}
+              </View>
+            );
+          })}
         </ScrollView>
       </Sheet>
 
@@ -381,13 +523,41 @@ function TaskEditor({ task }: { task: Task }) {
           </View>
         </View>
       </Sheet>
+
+      <Sheet visible={sheet === 'more'} onClose={() => setSheet(null)} title="할 일 작업">
+        <Row
+          icon="copy" label="할 일 복제" detail={totalSubtasks > 0 ? `하위 작업 ${totalSubtasks}개 포함` : undefined}
+          onPress={() => {
+            setSheet(null);
+            flow.duplicate(task, { openSubtasks: subtasks, completedSubtasks, tagNames: attachedTags.map((t) => t.name) });
+          }} />
+        <Row icon="clipboard" label="체크리스트 복사 (Markdown)" onPress={copyMarkdown} />
+        <Row
+          icon="bookmark" label="체크리스트 템플릿으로 저장" detail="재사용 목록"
+          onPress={saveAsTemplate} />
+        {completedSubtasks.length > 0 ? (
+          <Row
+            icon="rotate-ccw" label="완료한 하위 작업 모두 초기화"
+            onPress={() => {
+              setSheet(null);
+              flow.resetChecklist(completedSubtasks);
+            }} />
+        ) : null}
+        <Row
+          icon="trash-2" label="할 일 삭제" tone="danger"
+          onPress={() => {
+            setSheet(null);
+            flow.remove(task);
+            router.back();
+          }} />
+      </Sheet>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.sm, minHeight: 48, gap: 2 },
-  crumb: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: space.sm, paddingVertical: 6, maxWidth: 170 },
+  crumb: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: space.sm, paddingVertical: 6, maxWidth: 200 },
   priorityBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 40, paddingHorizontal: 8 },
   hero: { paddingHorizontal: space.lg, paddingTop: space.xs, gap: 6 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
@@ -397,13 +567,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   subtaskHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: 6,
   },
   inlineAdd: {
     flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, minHeight: 48,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   inlineSend: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  completedToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingVertical: space.sm,
+  },
+  completedSubRow: {
+    flexDirection: 'row', alignItems: 'center', gap: space.md, paddingLeft: space.lg,
+  },
+  completedSubBody: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 10, paddingRight: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   sheetRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 48 },
   tagInput: { minHeight: 46, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space.md },
 });

@@ -32,6 +32,8 @@ const taskFields = z.strictObject({
   position: position.optional(), due_at: instant.nullable().optional(), all_day: z.boolean().optional(),
   timezone: timezone.optional(),
   recurrence_local_time: z.iso.time().nullable().optional(),
+  recurrence_mode: z.enum(["schedule", "completion"]).optional(),
+  duration_minutes: z.int().min(1).max(1440).nullable().optional(),
   recurrence_rule: z.string().max(100).refine((rule) => {
     try { recurrence(rule); return true; } catch { return false; }
   }, "Use a supported daily, weekly, monthly or yearly RRULE").nullable().optional(),

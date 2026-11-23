@@ -10,14 +10,16 @@ const parse = (text: string, now = "2026-11-22T09:00:00Z", timezone = "Asia/Seou
 test("Korean recurring task, title quantity, #project and P1", () => {
   assert.deepEqual(parse("매일 오전 8시 영단어 30개 #공부 p1"), {
     title: "영단어 30개", due_at: "2026-11-22T23:00:00Z", all_day: false,
-    timezone: "Asia/Seoul", recurrence_rule: "FREQ=DAILY", recurrence_local_time: "08:00:00", project: "공부", tags: [], priority: 1,
+    timezone: "Asia/Seoul", recurrence_rule: "FREQ=DAILY", recurrence_mode: "schedule",
+    recurrence_local_time: "08:00:00", duration_minutes: null, project: "공부", tags: [], priority: 1,
   });
 });
 
 test("English task with explicit tomorrow and weekly Monday/Wednesday", () => {
   assert.deepEqual(parse("Tomorrow 7pm gym every Mon, Wed #health p2"), {
     title: "gym", due_at: "2026-11-23T10:00:00Z", all_day: false,
-    timezone: "Asia/Seoul", recurrence_rule: "FREQ=WEEKLY;BYDAY=MO,WE", recurrence_local_time: "19:00:00", project: "health", tags: [], priority: 2,
+    timezone: "Asia/Seoul", recurrence_rule: "FREQ=WEEKLY;BYDAY=MO,WE", recurrence_mode: "schedule",
+    recurrence_local_time: "19:00:00", duration_minutes: null, project: "health", tags: [], priority: 2,
   });
   assert.equal(parse("Tomorrow 7pm gym every Mon, Wed", "2026-11-23T09:00:00Z").due_at, "2026-11-25T10:00:00Z");
 });
@@ -259,4 +261,76 @@ test("a moved occurrence remembers the slot it left, unless it lands on a slot o
   const now = Temporal.Instant.from("2099-01-05T11:00:00Z");
   assert.equal(nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at, occurrenceFloor(monday, now),
     false, task.recurrence_local_time), "2099-01-14T10:00:00Z");
+});
+
+test("relative time offsets, weekend, month-end, 글피, and dot/slash ISO dates", () => {
+  const local = (text: string, now = "2026-11-22T09:00:00Z") => {
+    const due = parse(text, now).due_at;
+    return due && Temporal.Instant.from(due).toZonedDateTimeISO("Asia/Seoul").toPlainDateTime().toString().slice(0, 16);
+  };
+  // Reference: 2026-11-22 18:00 KST (Sunday)
+  assert.equal(local("30분 후 세탁기 꺼내기"), "2026-11-22T18:30");
+  assert.equal(parse("30분 후 세탁기 꺼내기").title, "세탁기 꺼내기");
+  assert.equal(local("2시간 뒤 회의 준비"), "2026-11-22T20:00");
+  assert.equal(local("1시간 30분 후 약 먹기"), "2026-11-22T19:30");
+  assert.equal(local("in 45 mins call back"), "2026-11-22T18:45");
+  assert.equal(local("in 2 hours check oven"), "2026-11-22T20:00");
+  // Non-offset durations still stay in title
+  assert.equal(parse("오늘의 기록 1시간").due_at, null);
+  // 글피 = +3 days (2026-11-25)
+  assert.equal(local("글피 병원"), "2026-11-25T00:00");
+  // 이번 주말 on Monday 2026-11-23 -> Saturday 2026-11-28; 다음 주말 -> 2026-12-05
+  assert.equal(local("이번 주말 등산", "2026-11-23T00:00:00Z"), "2026-11-28T00:00");
+  assert.equal(local("다음 주말 여행", "2026-11-23T00:00:00Z"), "2026-12-05T00:00");
+  // 월말 / 이번 달 말일 -> 2026-11-30
+  assert.equal(local("월말 정산"), "2026-11-30T00:00");
+  assert.equal(local("이번 달 말일까지 세금 납부"), "2026-11-30T00:00");
+  // Months offset & dot/slash dates
+  assert.equal(local("2개월 후 정기검진"), "2027-01-22T00:00");
+  assert.equal(local("in 3 months renew"), "2027-02-22T00:00");
+  assert.equal(local("2026.12.25 크리스마스"), "2026-12-25T00:00");
+  assert.equal(local("2026/12/31 연말 정리"), "2026-12-31T00:00");
+});
+
+test("completion-based recurrence parsing and nextOccurrence calculation", () => {
+  const ko = parse("완료 후 3일마다 필터 교체");
+  assert.equal(ko.title, "필터 교체");
+  assert.equal(ko.recurrence_rule, "FREQ=DAILY;INTERVAL=3");
+  assert.equal(ko.recurrence_mode, "completion");
+
+  assert.equal(parse("3일마다! 화분 물주기").recurrence_mode, "completion");
+  assert.equal(parse("매일! 영양제").recurrence_mode, "completion");
+  assert.equal(parse("every! 2 weeks haircut").recurrence_rule, "FREQ=WEEKLY;INTERVAL=2");
+  assert.equal(parse("every! 2 weeks haircut").recurrence_mode, "completion");
+  assert.equal(parse("daily! stretch").recurrence_mode, "completion");
+  assert.equal(parse("every! other week clean").recurrence_mode, "completion");
+
+  // Completion-based nextOccurrence calculates from completion date, clamping month-end safely.
+  const completedAt = Temporal.Instant.from("2027-01-31T05:00:00Z"); // 2027-01-31 14:00 KST
+  assert.equal(
+    nextOccurrence("FREQ=DAILY;INTERVAL=3", "Asia/Seoul", "2026-11-01T00:00:00Z", completedAt, true, null, "completion"),
+    "2027-02-02T15:00:00Z", // 2027-02-03 00:00 KST
+  );
+  assert.equal(
+    nextOccurrence("FREQ=MONTHLY", "Asia/Seoul", "2026-11-01T00:00:00Z", completedAt, true, null, "completion"),
+    "2027-02-27T15:00:00Z", // 2027-02-28 00:00 KST (Jan 31 + 1 month clamped to Feb 28!)
+  );
+  assert.equal(
+    nextOccurrence("FREQ=DAILY", "Asia/Seoul", "2027-01-31T10:00:00Z", completedAt, false, "19:00:00", "completion"),
+    "2027-02-01T10:00:00Z", // Completed early at 14:00 -> next day 19:00 KST
+  );
+});
+
+test("estimated duration parsing in Korean and English", () => {
+  assert.equal(parse("내일 오후 2시 30분간 회의").duration_minutes, 30);
+  assert.equal(parse("내일 오후 2시 30분간 회의").title, "회의");
+  assert.equal(parse("1시간 동안 독서").duration_minutes, 60);
+  assert.equal(parse("1시간 30분 동안 스터디").duration_minutes, 90);
+  assert.equal(parse("1시간 반 동안 운동").duration_minutes, 90);
+  assert.equal(parse("Meeting at 3pm for 45m").duration_minutes, 45);
+  assert.equal(parse("Deep work for 1h 30m").duration_minutes, 90);
+  assert.equal(parse("Workshop for 2 hours").duration_minutes, 120);
+  assert.equal(parse("오늘의 기록 1시간").duration_minutes, null);
+  assert.throws(() => parse("30분간 1시간 동안 회의"));
+  assert.throws(() => parse("25시간 동안 작업"));
 });

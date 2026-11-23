@@ -117,6 +117,13 @@ test("add_task parses natural language, creates the project and stores the task 
   assert.deepEqual(calls.find((item) => item.path === "/rest/v1/projects" && item.method === "POST")!.body, { name: "건강" });
   const added = JSON.parse(result.text).added;
   assert.deepEqual([added.title, added.priority, added.project, added.status], ["운동", "p1", "건강", "upcoming"]);
+
+  const timed = await call("add_task", { text: "내일 오후 2시 1시간 30분 동안 디자인 리뷰 완료 후 2주마다" });
+  assert.equal(timed.isError, false);
+  const timedBody = calls.filter((item) => item.path === "/rest/v1/tasks" && item.method === "POST").at(-1)!.body!;
+  assert.equal(timedBody.duration_minutes, 90);
+  assert.equal(timedBody.recurrence_mode, "completion");
+  assert.equal(timedBody.recurrence_rule, "FREQ=WEEKLY;INTERVAL=2");
 });
 
 test("add_task puts an undated task on today unless the user keeps undated tasks in the list", async () => {

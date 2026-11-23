@@ -53,8 +53,8 @@ export function applyPriority(text: string, priority: Priority, tokens: TaskToke
   return (trimmed ? trimmed + ' ' : '') + next + ' ';
 }
 
-/** Inserts a date or recurrence shortcut, replacing any existing token of the same kind to avoid parse errors. */
-export function applyScheduleWord(text: string, word: string, kind: 'date' | 'recurrence', tokens: TaskToken[]): string {
+/** Inserts a date, time, or recurrence shortcut, replacing any existing token of the same kind to avoid parse errors. */
+export function applyScheduleWord(text: string, word: string, kind: 'date' | 'time' | 'recurrence', tokens: TaskToken[]): string {
   const existing = tokens.find((token) => token.kind === kind);
   if (existing) {
     const before = text.slice(0, existing.start);
@@ -63,6 +63,14 @@ export function applyScheduleWord(text: string, word: string, kind: 'date' | 're
   }
   const trimmed = text.replace(/\s+$/, '');
   return (trimmed ? trimmed + ' ' : '') + word + ' ';
+}
+
+/** Splits pasted/multi-line checklist text into clean lines, stripping common bullet or checkbox prefixes. */
+export function parseChecklistLines(raw: string): string[] {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^(?:[-*•·▪▸]\s*(?:\[[ xX]\]\s*)?|\d+[.)]\s*)/, '').trim())
+    .filter(Boolean);
 }
 
 /** Removes tokens matching `predicate` from `text`, keeping spacing tidy. */

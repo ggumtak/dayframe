@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { getCalendars } from 'expo-localization';
 
-import { recurrence, type Task } from './shared';
+import { recurrence, type RecurrenceMode, type Task } from './shared';
 
 export { Temporal };
 export type PlainDate = Temporal.PlainDate;
@@ -95,24 +95,33 @@ export function formatDue(task: Pick<Task, 'due_at' | 'timezone' | 'all_day'>): 
   return minutes === null ? day : day + ' ' + formatTime(minutes);
 }
 
-export function describeRecurrence(rule: string | null): string | null {
+export function describeRecurrence(rule: string | null, mode: RecurrenceMode = 'schedule'): string | null {
   if (!rule) return null;
+  const prefix = mode === 'completion' ? '완료 후 ' : '';
   try {
     const { frequency, interval, weekdays, lastDay } = recurrence(rule);
-    if (frequency === 'DAILY') return interval === 1 ? '매일' : interval + '일마다';
-    if (frequency === 'YEARLY') return interval === 1 ? '매년' : interval + '년마다';
+    if (frequency === 'DAILY') return prefix + (interval === 1 ? '매일' : interval + '일마다');
+    if (frequency === 'YEARLY') return prefix + (interval === 1 ? '매년' : interval + '년마다');
     if (frequency === 'MONTHLY') {
       const every = interval === 1 ? '매월' : interval + '개월마다';
-      return lastDay ? every + ' 말일' : every;
+      return prefix + (lastDay ? every + ' 말일' : every);
     }
     const every = interval === 1 ? '매주' : interval === 2 ? '격주' : interval + '주마다';
     const days = weekdays.join(',');
-    if (days === 'MO,TU,WE,TH,FR') return interval === 1 ? '평일' : every + ' 평일';
-    if (days === 'SA,SU') return interval === 1 ? '주말' : every + ' 주말';
-    return weekdays.length ? every + ' ' + weekdays.map((day) => byDay[day]).join('·') : every;
+    if (days === 'MO,TU,WE,TH,FR') return prefix + (interval === 1 ? '평일' : every + ' 평일');
+    if (days === 'SA,SU') return prefix + (interval === 1 ? '주말' : every + ' 주말');
+    return prefix + (weekdays.length ? every + ' ' + weekdays.map((day) => byDay[day]).join('·') : every);
   } catch {
-    return '반복';
+    return prefix + '반복';
   }
+}
+
+/** Formats an estimated duration in minutes: "30분", "1시간", "1시간 30분". */
+export function formatDurationMinutes(minutes: number): string {
+  if (minutes < 60) return minutes + '분';
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem ? `${hours}시간 ${rem}분` : `${hours}시간`;
 }
 
 /** ISO instant for the start of `date`, or for `minutes` past its local midnight. */

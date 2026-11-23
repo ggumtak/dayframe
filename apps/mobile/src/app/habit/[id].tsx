@@ -6,6 +6,7 @@ import { type DayMark, MonthCalendar } from '@/components/MonthCalendar';
 import { Button, Card, EmptyState, Header, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import { useHabitActions, useHabitLogs, useHabits, useHabitStats } from '@/data/habits';
 import { Heatmap, heatmapWidth } from '@/features/habits/Heatmap';
+import { computeHabitStrength } from '@/features/habits/strength';
 import { HabitReminderChips } from '@/features/reminders/ReminderChips';
 import { type PlainDate, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -55,6 +56,8 @@ export default function HabitDetail() {
   const unit = habit.cadence === 'weekly' ? '주' : '일';
   const rate = stats?.completion_rate;
   const perDay = habit.cadence === 'daily' ? habit.target_count : 1;
+  const strength = computeHabitStrength(habit, logs ?? [], day);
+  const trendGlyph = strength.trend === 'up' ? ' ↑' : strength.trend === 'down' ? ' ↓' : '';
 
   const toggle = (date: PlainDate) => {
     const key = date.toString();
@@ -78,6 +81,7 @@ export default function HabitDetail() {
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl }} keyboardShouldPersistTaps="handled">
         <View style={{ flexDirection: 'row', gap: space.sm }}>
+          <Stat label="습관 강도" value={strength.score + '%' + trendGlyph} />
           <Stat label="현재 연속" value={(stats?.current_streak ?? 0) + unit} />
           <Stat label="최장 연속" value={(stats?.longest_streak ?? 0) + unit} />
           <Stat label="달성률" value={rate === null || rate === undefined ? '–' : Math.round(rate * 100) + '%'} />

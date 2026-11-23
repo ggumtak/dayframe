@@ -11,7 +11,7 @@ export interface Run { text: string; kind?: PillKind; joinsBefore?: boolean; joi
 export const firstLine: Line[] = [{ start: 0, top: 0, left: 0 }];
 
 const kindOf = (token: TaskToken): PillKind =>
-  (token.kind === 'date' || token.kind === 'time' || token.kind === 'recurrence' ? 'schedule' : token.kind);
+  (token.kind === 'date' || token.kind === 'time' || token.kind === 'recurrence' || token.kind === 'duration' ? 'schedule' : token.kind);
 
 /** Turns tokens into pills, joining schedule tokens that have only spaces between them. */
 export function pills(text: string, tokens: TaskToken[]): Pill[] {

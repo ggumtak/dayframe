@@ -1,6 +1,7 @@
 export const keys = {
   me: ['me'] as const,
   projects: ['projects'] as const,
+  sections: ['sections'] as const,
   tags: ['tags'] as const,
   tasks: ['tasks', 'open'] as const,
   completedTasks: ['tasks', 'completed'] as const,
@@ -26,6 +27,9 @@ export const writes = {
   reorderTasks: ['write', 'task', 'reorder'] as const,
   rescheduleOverdue: ['write', 'task', 'reschedule-overdue'] as const,
   setTaskTags: ['write', 'task', 'tags'] as const,
+  createSection: ['write', 'section', 'create'] as const,
+  updateSection: ['write', 'section', 'update'] as const,
+  deleteSection: ['write', 'section', 'delete'] as const,
   createHabit: ['write', 'habit', 'create'] as const,
   updateHabit: ['write', 'habit', 'update'] as const,
   deleteHabit: ['write', 'habit', 'delete'] as const,
