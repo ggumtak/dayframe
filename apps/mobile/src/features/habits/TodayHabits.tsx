@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { Icon, SectionTitle } from '@/components/ui';
+import { FoldHeader } from '@/components/ui';
 import { periodProgress, useHabitActions, useHabitDetails, useHabits } from '@/data/habits';
 import { today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -70,18 +71,12 @@ export function TodayHabits() {
 
   return (
     <View>
-      <SectionTitle
-        title="습관" count={undefined}
-        action={(
-          <Pressable
-            accessibilityRole="button" accessibilityLabel={`오늘의 습관 ${open ? '접기' : '펼치기'}`} hitSlop={12}
-            onPress={() => setFold(open ? 'closed' : 'open')}
-            style={({ pressed }) => [styles.fold, { opacity: pressed ? 0.6 : 1 }]}>
-            <Text style={[styles.count, { color: settledCount === rows.length ? colors.success : colors.textMuted }]}>{settledCount}/{rows.length}</Text>
-            <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textFaint} />
-          </Pressable>
-        )} />
-      {open ? rows.map(({ habit, date, todayCount, progress, weekly, settled }) => (
+      <FoldHeader
+        title="습관" detail={`${settledCount}/${rows.length}`} detailTone={settledCount === rows.length ? 'success' : 'muted'}
+        open={open} onToggle={() => setFold(open ? 'closed' : 'open')} label="오늘의 습관" />
+      {open ? (
+        <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(100)}>
+          {rows.map(({ habit, date, todayCount, progress, weekly, settled }) => (
         <Pressable
           key={habit.id} accessibilityRole="button" accessibilityLabel={habit.name + ' 자세히 보기'}
           onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
@@ -104,13 +99,14 @@ export function TodayHabits() {
             </Text>
           </View>
         </Pressable>
-      )) : null}
+          ))}
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fold: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingLeft: space.lg },
   check: { paddingRight: space.md },
   body: {

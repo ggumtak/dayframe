@@ -4,6 +4,7 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, type PressableProps, type StyleProp, StyleSheet, Text, type TextProps, type TextStyle,
   View, type ViewStyle,
 } from 'react-native';
+import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptic } from '@/lib/haptics';
@@ -127,6 +128,36 @@ export function SectionTitle({ title, count, action, tone }: { title: string; co
   );
 }
 
+/**
+ * A section heading that folds its section: the whole line is the button, it shows the press, and the
+ * arrow turns as the section opens.
+ */
+export function FoldHeader({ title, count, detail, detailTone = 'muted', open, onToggle, label }: {
+  title: string; count?: number; detail?: string; detailTone?: Tone; open: boolean; onToggle: () => void;
+  /** What the section holds, for screen readers: "오늘 완료한 일". */
+  label: string;
+}) {
+  const { colors } = useTheme();
+  const turn = useDerivedValue(() => withTiming(open ? 1 : 0, { duration: 180 }));
+  const arrow = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value * 180}deg` }] }));
+  return (
+    <Pressable
+      accessibilityRole="button" accessibilityLabel={`${label} ${open ? '접기' : '펼치기'}`} accessibilityState={{ expanded: open }}
+      android_ripple={{ color: colors.border }}
+      onPress={() => {
+        haptic.tap();
+        onToggle();
+      }}
+      style={({ pressed }) => [styles.fold, { backgroundColor: pressed ? colors.surfaceMuted : 'transparent' }]}>
+      <Txt variant="section" accessibilityRole="header">{title}</Txt>
+      {count ? <Txt variant="small" tone="faint">{count}</Txt> : null}
+      <View style={{ flex: 1 }} />
+      {detail ? <Txt variant="small" tone={detailTone}>{detail}</Txt> : null}
+      <Animated.View style={arrow}><Icon name="chevron-down" size={18} color={colors.textMuted} /></Animated.View>
+    </Pressable>
+  );
+}
+
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const { colors } = useTheme();
   return (
@@ -240,6 +271,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, minHeight: 30, borderRadius: radius.sm, borderWidth: 1,
   },
   section: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingTop: space.xl, paddingBottom: 6, minHeight: 50 },
+  fold: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, minHeight: 48, marginTop: space.md },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: space.lg },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm, padding: space.xxl, minHeight: 240 },
   emptyIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
