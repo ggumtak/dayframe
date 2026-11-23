@@ -11,6 +11,7 @@ import { TAB_BAR_HEIGHT } from '@/features/quick-add/QuickAdd';
 import { useMinute } from '@/lib/clock';
 import { dueBucket } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { emitTabReselect } from '@/lib/tabScroll';
 import { fontFamily, useTheme } from '@/theme';
 
 const icons: Record<string, IconName> = { index: 'sun', inbox: 'list', upcoming: 'calendar', habits: 'repeat', focus: 'clock' };
@@ -42,7 +43,10 @@ function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProp
               style={styles.tab}
               onPress={() => {
                 const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-                if (!focused && !event.defaultPrevented) {
+                if (focused) {
+                  haptic.tap();
+                  emitTabReselect(route.name);
+                } else if (!event.defaultPrevented) {
                   haptic.tap();
                   navigateToTab(route.key);
                 }

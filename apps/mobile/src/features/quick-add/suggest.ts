@@ -53,8 +53,10 @@ export function applyPriority(text: string, priority: Priority, tokens: TaskToke
   return (trimmed ? trimmed + ' ' : '') + next + ' ';
 }
 
-/** Inserts a date, time, or recurrence shortcut, replacing any existing token of the same kind to avoid parse errors. */
-export function applyScheduleWord(text: string, word: string, kind: 'date' | 'time' | 'recurrence', tokens: TaskToken[]): string {
+/** Inserts a date, time, duration, or recurrence shortcut, replacing any existing token of the same kind to avoid parse errors. */
+export function applyScheduleWord(
+  text: string, word: string, kind: 'date' | 'time' | 'duration' | 'recurrence', tokens: TaskToken[],
+): string {
   const existing = tokens.find((token) => token.kind === kind);
   if (existing) {
     const before = text.slice(0, existing.start);

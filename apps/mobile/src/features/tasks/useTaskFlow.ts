@@ -83,6 +83,13 @@ export function useTaskFlow() {
   }, [actions]);
 
   const reschedule = useCallback((task: Task, date: PlainDate | null, minutes?: number | null) => {
+    const previousPatch: TaskPatch = {
+      due_at: task.due_at,
+      all_day: task.all_day,
+      recurrence_rule: task.recurrence_rule,
+      recurrence_mode: task.recurrence_mode,
+      recurrence_local_time: task.recurrence_local_time,
+    };
     const currentMinutes = dueMinutes(task);
     const timeChanged = minutes !== undefined && minutes !== currentMinutes;
     if (date && task.recurrence_rule && task.due_at && !timeChanged) {
@@ -90,13 +97,31 @@ export function useTaskFlow() {
         ? date.toZonedDateTime({ timeZone: task.timezone, plainTime: task.recurrence_local_time }).toInstant().toString()
         : instantFor(date, currentMinutes, task.timezone);
       actions.update(task.id, { due_at, expected_due_at: task.due_at, preserve_recurrence: true });
-    } else actions.update(task.id, schedulePatch(task, date, minutes));
+    } else {
+      actions.update(task.id, schedulePatch(task, date, minutes));
+    }
+    if (!date && task.due_at) {
+      showToast('일정을 지웠습니다.', {
+        actionLabel: '실행 취소',
+        onAction: () => actions.update(task.id, previousPatch),
+      });
+    }
   }, [actions]);
 
   const postpone = useCallback((task: Task) => {
+    const previousPatch: TaskPatch = {
+      due_at: task.due_at,
+      all_day: task.all_day,
+      recurrence_rule: task.recurrence_rule,
+      recurrence_mode: task.recurrence_mode,
+      recurrence_local_time: task.recurrence_local_time,
+    };
     reschedule(task, today(task.timezone).add({ days: 1 }));
-    showToast('내일로 옮겼습니다.');
-  }, [reschedule]);
+    showToast('내일로 옮겼습니다.', {
+      actionLabel: '실행 취소',
+      onAction: () => actions.update(task.id, previousPatch),
+    });
+  }, [actions, reschedule]);
 
   const duplicate = useCallback((task: Task, options: { openSubtasks?: Task[]; completedSubtasks?: Task[]; tagNames?: string[] } = {}) => {
     const allOpen = queryClient.getQueryData<Task[]>(keys.tasks) ?? [];

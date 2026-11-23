@@ -17,7 +17,7 @@ import { ToastHost } from '@/components/ToastHost';
 import { EmptyState } from '@/components/ui';
 import { persistOptions, queryClient, resumeWrites } from '@/data/client';
 import { SessionProvider, useSession } from '@/data/session';
-import { QuickAddProvider, TAB_BAR_HEIGHT } from '@/features/quick-add/QuickAdd';
+import { QuickAddProvider, TAB_BAR_HEIGHT, useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BackgroundSync } from '@/features/reminders/BackgroundSync';
 import { UpdateProvider } from '@/features/update/useUpdate';
 import { isConfigured } from '@/lib/env';
@@ -50,6 +50,12 @@ function Routes({ signedIn }: { signedIn: boolean }) {
   );
 }
 
+function SignedInToast() {
+  const { fabHidden } = useQuickAdd();
+  // Lifts above BatchBar when multi-select hides the FAB, and leaves room for the FAB otherwise.
+  return <ToastHost bottomOffset={fabHidden ? TAB_BAR_HEIGHT + 92 : TAB_BAR_HEIGHT} rightInset={fabHidden ? 0 : 70} />;
+}
+
 function App() {
   const { colors, isDark } = useTheme();
   const { account, isLoading } = useSession();
@@ -76,9 +82,18 @@ function App() {
       value={{ ...base, colors: { ...base.colors, background: colors.background, card: colors.surface, text: colors.text, border: colors.border, primary: colors.accent } }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <UpdateProvider>
-        {signedIn ? <QuickAddProvider><Routes signedIn /><BackgroundSync /></QuickAddProvider> : <Routes signedIn={false} />}
-        {/* Leaves room for the floating add button, which sits to the right at the same height. */}
-        <ToastHost bottomOffset={signedIn ? TAB_BAR_HEIGHT : 0} rightInset={signedIn ? 70 : 0} />
+        {signedIn ? (
+          <QuickAddProvider>
+            <Routes signedIn />
+            <BackgroundSync />
+            <SignedInToast />
+          </QuickAddProvider>
+        ) : (
+          <>
+            <Routes signedIn={false} />
+            <ToastHost bottomOffset={0} rightInset={0} />
+          </>
+        )}
       </UpdateProvider>
     </NavigationTheme>
   );

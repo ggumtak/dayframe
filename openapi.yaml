@@ -3764,7 +3764,6 @@ components:
           maxLength: 120
         archive:
           type: boolean
-          const: true
       additionalProperties: false
     HabitLogInput:
       type: object

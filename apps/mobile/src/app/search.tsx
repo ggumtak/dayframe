@@ -1,5 +1,6 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, TextInput, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
@@ -19,6 +20,8 @@ import { fontFamily, radius, space, type, useTheme } from '@/theme';
 
 type QuickFilter = null | 'overdue' | 'today' | 'week' | 'p1' | 'repeating' | 'checklist' | 'stale' | 'unscheduled';
 
+const RECENT_KEY = 'dayframe-recent-searches-v1';
+
 const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
   overdue: '지연된 할 일',
   today: '오늘 할 일',
@@ -32,7 +35,7 @@ const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
 
 /**
  * Finds tasks with Korean 초성 (chosung) matching, structured `#project`, `@tag`, `p1`–`p4` filters,
- * relevance ranking, smart 1-tap views, and optional unified completed-task search.
+ * combinable smart 1-tap filters, recent searches, and optional unified completed-task search.
  */
 export default function Search() {
   const { colors } = useTheme();
@@ -48,9 +51,36 @@ export default function Search() {
   const [query, setQuery] = useState('');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
   const [includeCompleted, setIncludeCompleted] = useState(false);
+  const [recent, setRecent] = useState<string[]>([]);
   const [managingTag, setManagingTag] = useState<Tag | null>(null);
   const [renamingTag, setRenamingTag] = useState<Tag | null>(null);
   const [tagInput, setTagInput] = useState('');
+
+  useEffect(() => {
+    AsyncStorage.getItem(RECENT_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) setRecent(parsed.filter((item): item is string => typeof item === 'string').slice(0, 6));
+      })
+      .catch(() => {});
+  }, []);
+
+  const recordRecent = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    setRecent((prev) => {
+      const next = [trimmed, ...prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 6);
+      AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  };
+
+  const clearRecent = () => {
+    haptic.tap();
+    setRecent([]);
+    AsyncStorage.removeItem(RECENT_KEY).catch(() => {});
+  };
 
   const nowMs = useMinute() * 60_000;
   const zone = deviceTimeZone();
@@ -58,10 +88,11 @@ export default function Search() {
   const projectNames = useMemo(() => new Map((projects ?? []).map((project) => [project.id, project.name])), [projects]);
 
   const results = useMemo(() => {
+    let pool = tasks;
     if (quickFilter) {
       const tz = deviceTimeZone();
       const todayRef = Temporal.Instant.fromEpochMilliseconds(nowMs).toZonedDateTimeISO(tz).toPlainDate();
-      return tasks.filter((task) => {
+      pool = tasks.filter((task) => {
         if (quickFilter === 'overdue') return dueBucket(task) === 'overdue';
         if (quickFilter === 'today') return dueBucket(task) === 'today';
         if (quickFilter === 'week') {
@@ -75,16 +106,17 @@ export default function Search() {
         if (quickFilter === 'checklist') return (subtaskProgress.get(task.id)?.total ?? 0) > 0;
         if (quickFilter === 'stale') return isStaleTask(task, nowMs, 14);
         return !task.due_at;
-      }).sort(bySchedule);
+      });
     }
-    if (!query.trim()) return [];
-    return searchTasks(tasks, query, { projectNames, tagNames });
+    if (query.trim()) return searchTasks(pool, query, { projectNames, tagNames });
+    if (quickFilter) return [...pool].sort(bySchedule);
+    return [];
   }, [query, quickFilter, tasks, projectNames, tagNames, subtaskProgress, nowMs]);
 
   const completedResults = useMemo(() => {
-    if (!includeCompleted || !query.trim() || quickFilter) return [];
+    if (!includeCompleted || !query.trim()) return [];
     return searchTasks(completedAll ?? [], query, { projectNames, tagNames }).slice(0, 30);
-  }, [includeCompleted, query, quickFilter, completedAll, projectNames, tagNames]);
+  }, [includeCompleted, query, completedAll, projectNames, tagNames]);
 
   const active = !!query.trim() || quickFilter !== null;
   const counts = useMemo(() => {
@@ -138,11 +170,10 @@ export default function Search() {
           <Icon name="search" size={18} color={colors.textMuted} />
           <TextInput
             value={query}
-            onChangeText={(next) => {
-              setQuery(next);
-              if (next) setQuickFilter(null);
-            }}
-            autoFocus placeholder="제목, 초성(ㅈㅂㄱ), #프로젝트, @태그, p1" accessibilityLabel="검색어"
+            onChangeText={setQuery}
+            onSubmitEditing={() => recordRecent(query)}
+            autoFocus placeholder={quickFilter ? `${filterLabels[quickFilter]} 안에서 검색...` : '제목, 초성(ㅈㅂㄱ), #프로젝트, @태그, p1'}
+            accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
             style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 15, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
           {active ? (
@@ -156,12 +187,21 @@ export default function Search() {
         </View>
       </View>
 
-      {query.trim() && !quickFilter ? (
-        <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-          <Chip
-            icon="check-circle" label="완료한 일 포함" selected={includeCompleted}
-            onPress={() => setIncludeCompleted((prev) => !prev)} />
-          <Txt variant="caption" tone="faint">초성 · #프로젝트 · @태그 · p1 조합 가능</Txt>
+      {active ? (
+        <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm, flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
+          {quickFilter ? (
+            <Chip
+              icon="filter" label={filterLabels[quickFilter] + ' ×'} selected
+              onPress={() => setQuickFilter(null)} />
+          ) : null}
+          {query.trim() ? (
+            <Chip
+              icon="check-circle" label="완료한 일 포함" selected={includeCompleted}
+              onPress={() => setIncludeCompleted((prev) => !prev)} />
+          ) : null}
+          {quickFilter && !query.trim() ? (
+            <Txt variant="caption" tone="faint">검색어나 #프로젝트를 추가로 입력해 좁힐 수 있습니다</Txt>
+          ) : null}
         </View>
       ) : null}
 
@@ -169,6 +209,22 @@ export default function Search() {
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: space.xxl * 2, flexGrow: 1 }}>
           {!active ? (
             <View style={{ padding: space.lg, gap: space.lg }}>
+              {recent.length > 0 ? (
+                <View style={{ gap: space.sm }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Txt variant="section" tone="muted">최근 검색</Txt>
+                    <Pressable hitSlop={8} onPress={clearRecent}>
+                      <Txt variant="caption" tone="faint">지우기</Txt>
+                    </Pressable>
+                  </View>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+                    {recent.map((item) => (
+                      <Chip key={item} icon="clock" label={item} onPress={() => setQuery(item)} />
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+
               <View style={{ gap: space.sm }}>
                 <Txt variant="section" tone="muted">스마트 필터</Txt>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
@@ -208,7 +264,11 @@ export default function Search() {
                     {projects.map((project) => (
                       <Chip
                         key={project.id} icon="hash" label={project.name}
-                        onPress={() => setQuery('#' + project.name + ' ')} />
+                        onPress={() => {
+                          const q = '#' + project.name + ' ';
+                          setQuery(q);
+                          recordRecent('#' + project.name);
+                        }} />
                     ))}
                   </View>
                 </View>
@@ -227,6 +287,7 @@ export default function Search() {
                         onPress={() => {
                           haptic.tap();
                           setQuery('@' + tag.name);
+                          recordRecent('@' + tag.name);
                         }}
                         onLongPress={() => {
                           haptic.medium();
@@ -254,12 +315,7 @@ export default function Search() {
               {results.length > 0 ? (
                 <>
                   <SectionTitle
-                    title={quickFilter ? filterLabels[quickFilter] : '할 일'} count={results.length}
-                    action={quickFilter ? (
-                      <Pressable onPress={() => setQuickFilter(null)} hitSlop={8}>
-                        <Txt variant="smallStrong" tone="accent">필터 해제</Txt>
-                      </Pressable>
-                    ) : undefined} />
+                    title={quickFilter ? filterLabels[quickFilter] : '할 일'} count={results.length} />
                   <TaskList tasks={results} />
                 </>
               ) : null}
@@ -294,15 +350,13 @@ export default function Search() {
             </>
           ) : (
             <EmptyState
-              icon="search" title={quickFilter ? `${filterLabels[quickFilter]}이 없습니다` : '찾는 할 일이 없습니다'}
-              message={quickFilter
-                ? undefined
-                : includeCompleted
-                  ? '다른 키워드나 초성으로 검색해 보세요.'
-                  : '위의 ‘완료한 일 포함’을 켜면 완료 기록까지 함께 찾습니다.'}
-              action={quickFilter ? (
+              icon="search" title={quickFilter && !query.trim() ? `${filterLabels[quickFilter]}이 없습니다` : '찾는 할 일이 없습니다'}
+              message={query.trim()
+                ? (includeCompleted ? '다른 키워드나 초성으로 검색해 보세요.' : '위의 ‘완료한 일 포함’을 켜면 완료 기록까지 함께 찾습니다.')
+                : undefined}
+              action={quickFilter && !query.trim() ? (
                 <Button label="필터 해제" kind="secondary" onPress={() => setQuickFilter(null)} />
-              ) : !includeCompleted ? (
+              ) : query.trim() && !includeCompleted ? (
                 <Button label="완료한 일에서도 찾기" kind="secondary" onPress={() => setIncludeCompleted(true)} />
               ) : undefined} />
           )}

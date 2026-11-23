@@ -1,24 +1,28 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, type TextStyle, TextInput, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
-import { Button, Card, Chip, Header, Icon, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
+import { Checkbox } from '@/components/Checkbox';
+import { Button, Card, Chip, Header, Icon, IconButton, ProgressBar, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useDeleteFocus, useFocusActions, useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
-import { bySchedule, useTaskIndex } from '@/data/tasks';
+import { bySchedule, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
 import {
-  clampInt, FOCUS_LIMITS, type FocusMode, type FocusPrefs, nextBreak, setFocusPrefs, STOPWATCH_MAX_SECONDS, useFocusPrefs, weeklyFocusStats,
+  clampInt, EMPTY_SESSION_MOD, FOCUS_LIMITS, type FocusMode, type FocusPrefs, nextBreak, setFocusPrefs, setFocusSessionMod,
+  STOPWATCH_MAX_SECONDS, useFocusPrefs, useFocusSessionMod, weeklyFocusStats,
 } from '@/features/focus/prefs';
+import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { cancelAlert, prepareAlerts, scheduleAlert } from '@/lib/alerts';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, formatDuration, formatMinutes, formatTime, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { FocusSession } from '@/lib/shared';
+import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
-import { radius, space, type, useTheme } from '@/theme';
+import { priorityColor, radius, space, type, useTheme } from '@/theme';
 
 const SIZE = 248;
 const STROKE = 10;
@@ -39,6 +43,7 @@ const sessionSeconds = (session: FocusSession) =>
   (session.ended_at ? (new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 1000 : 0);
 /** Stopped within a minute of starting: kept out of the lists so an accidental tap leaves no trace. */
 const isFalseStart = (session: FocusSession) => session.status === 'cancelled' && sessionSeconds(session) < MIN_RECORD_SECONDS;
+
 /** Stepper + direct number input for choosing minutes freely inside `min..max`. */
 function MinuteControl({
   label, value, min, max, step, unit = '분', onChange,
@@ -106,34 +111,41 @@ export default function Focus() {
   const params = useLocalSearchParams<{ taskId?: string; habitId?: string; duration?: string; at?: string }>();
   const { data: sessions } = useFocusSessions();
   const { data: habits } = useHabits();
-  const { tasks, byId } = useTaskIndex();
+  const { tasks, byId, children } = useTaskIndex();
+  const { completedChildren } = useSubtaskProgress();
   const actions = useFocusActions();
   const deleteFocus = useDeleteFocus();
   const flow = useTaskFlow();
+  const quickAdd = useQuickAdd();
   const prefs = useFocusPrefs();
+  const sessionMod = useFocusSessionMod();
 
   const [target, setTarget] = useState<Target>(null);
   const [picking, setPicking] = useState(false);
   const [configuring, setConfiguring] = useState(false);
   const [pickedRecord, setPickedRecord] = useState<FocusSession | null>(null);
   const [rest, setRest] = useState<{ endsAt: number; seconds: number; long: boolean } | null>(null);
-  // Local pause & extension state keyed by running session ID.
-  const [sessionMod, setSessionMod] = useState<{ id: string; pausedAt: number | null; pausedMs: number; extraSeconds: number }>({
-    id: '', pausedAt: null, pausedMs: 0, extraSeconds: 0,
-  });
   const breakEndsAt = rest?.endsAt ?? null;
   const [now, setNow] = useState(() => Date.now());
   const finished = useRef(new Set<string>());
   const runningPrefs = useRef<FocusPrefs>(prefs);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  useTabScrollTop('focus', scrollRef);
   const timeZone = deviceTimeZone();
   useMinute();
 
   const running = sessions?.find((session) => session.status === 'running') ?? null;
   const activeMod = running && sessionMod.id === running.id
     ? sessionMod
-    : { id: running?.id ?? '', pausedAt: null, pausedMs: 0, extraSeconds: 0 };
+    : { ...EMPTY_SESSION_MOD, id: running?.id ?? '' };
   const isPaused = !!running && activeMod.pausedAt !== null;
   const isRunningStopwatch = !!running && running.planned_seconds === STOPWATCH_MAX_SECONDS;
+
+  // Keep the focus view distraction-free by hiding the floating + button while a session is running.
+  useEffect(() => {
+    quickAdd.setFabHidden(!!running);
+    return () => quickAdd.setFabHidden(false);
+  }, [quickAdd, running]);
 
   const minutes = prefs.mode === 'pomodoro' ? prefs.focusMinutes : prefs.timerMinutes;
   const ticking = (!!running && !isPaused) || breakEndsAt !== null;
@@ -210,6 +222,7 @@ export default function Focus() {
           finished.current.add(session.id);
           const netEnd = Math.max(new Date(session.started_at).getTime() + 1000, endsAt - state.activeMod.pausedMs);
           state.actions.finish({ id: session.id, status: 'completed', ended_at: new Date(netEnd).toISOString() });
+          setFocusSessionMod(EMPTY_SESSION_MOD);
           haptic.success();
           const task = session.task_id ? state.byId.get(session.task_id) : undefined;
           const activePrefs = runningPrefs.current;
@@ -257,6 +270,7 @@ export default function Focus() {
   const start = () => {
     haptic.medium();
     endRest();
+    setFocusSessionMod(EMPTY_SESSION_MOD);
     runningPrefs.current = prefs;
     const isStopwatch = prefs.mode === 'stopwatch';
     const seconds = isStopwatch ? STOPWATCH_MAX_SECONDS : minutes * 60;
@@ -273,12 +287,12 @@ export default function Focus() {
     const t = Date.now();
     if (isPaused) {
       const nextPausedMs = activeMod.pausedMs + (t - activeMod.pausedAt!);
-      setSessionMod({ id: running.id, pausedAt: null, pausedMs: nextPausedMs, extraSeconds: activeMod.extraSeconds });
+      setFocusSessionMod({ id: running.id, pausedAt: null, pausedMs: nextPausedMs, extraSeconds: activeMod.extraSeconds });
       setNow(t);
       if (!isRunningStopwatch) scheduleRunningAlert(remaining, runningPrefs.current);
     } else {
       void cancelAlert('focus');
-      setSessionMod({ id: running.id, pausedAt: t, pausedMs: activeMod.pausedMs, extraSeconds: activeMod.extraSeconds });
+      setFocusSessionMod({ id: running.id, pausedAt: t, pausedMs: activeMod.pausedMs, extraSeconds: activeMod.extraSeconds });
     }
   };
 
@@ -286,7 +300,7 @@ export default function Focus() {
     if (!running || isRunningStopwatch) return;
     haptic.tap();
     const nextExtra = activeMod.extraSeconds + 300;
-    setSessionMod({ id: running.id, pausedAt: activeMod.pausedAt, pausedMs: activeMod.pausedMs, extraSeconds: nextExtra });
+    setFocusSessionMod({ id: running.id, pausedAt: activeMod.pausedAt, pausedMs: activeMod.pausedMs, extraSeconds: nextExtra });
     if (!isPaused) scheduleRunningAlert(remaining + 300, runningPrefs.current);
     showToast('집중 시간을 5분 연장했습니다.');
   };
@@ -303,7 +317,7 @@ export default function Focus() {
     const counts = status === 'completed' && netSeconds >= MIN_RECORD_SECONDS;
     const endedAt = new Date(startedMs + netElapsedMs).toISOString();
     actions.finish({ id: running.id, status: counts ? 'completed' : 'cancelled', ended_at: endedAt });
-    setSessionMod({ id: '', pausedAt: null, pausedMs: 0, extraSeconds: 0 });
+    setFocusSessionMod(EMPTY_SESSION_MOD);
     if (counts) {
       const task = running.task_id ? byId.get(running.task_id) : undefined;
       showToast(
@@ -323,6 +337,13 @@ export default function Focus() {
     return tasks.filter((task) => !shown.has(task.id) && !task.parent_task_id).sort(bySchedule).slice(0, 12);
   }, [tasks, candidates]);
   const activeHabits = (habits ?? []).filter((habit) => !habit.archived_at);
+
+  const linkedTaskId = running ? running.task_id : (target?.kind === 'task' ? target.id : null);
+  const linkedTask = linkedTaskId ? byId.get(linkedTaskId) : undefined;
+  const linkedOpenSubs = linkedTask ? (children.get(linkedTask.id) ?? []) : [];
+  const linkedDoneSubs = linkedTask ? (completedChildren.get(linkedTask.id) ?? []) : [];
+  const linkedTotalSubs = linkedOpenSubs.length + linkedDoneSubs.length;
+
   const targetName = running ? nameOf(running)
     : target ? nameOf({ task_id: target.kind === 'task' ? target.id : null, habit_id: target.kind === 'habit' ? target.id : null }) : undefined;
 
@@ -348,7 +369,7 @@ export default function Focus() {
         right={canConfigure ? (
           <IconButton name="sliders" label="시간 설정" onPress={() => setConfiguring(true)} color={colors.textMuted} />
         ) : undefined} />
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.lg, alignItems: 'center' }}>
+      <ScrollView ref={scrollRef} contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.lg, alignItems: 'center' }}>
         {!running ? (
           <View style={{ alignSelf: 'stretch' }}>
             <Segmented<FocusMode>
@@ -481,6 +502,55 @@ export default function Focus() {
           </>
         )}
 
+        {linkedTask ? (
+          <Card style={{ alignSelf: 'stretch', gap: space.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+              <Checkbox
+                checked={false} size={20} color={priorityColor(colors, linkedTask.priority)} tinted={linkedTask.priority < 4}
+                onPress={() => flow.complete(linkedTask)} label={linkedTask.title + ' 완료'} />
+              <Pressable
+                onPress={() => router.push({ pathname: '/task/[id]', params: { id: linkedTask.id } })}
+                style={{ flex: 1 }}>
+                <Txt variant="bodyStrong" numberOfLines={1}>{linkedTask.title}</Txt>
+                {linkedTotalSubs > 0 ? (
+                  <Txt variant="caption" tone="muted">
+                    체크리스트 {linkedDoneSubs.length}/{linkedTotalSubs} 완료
+                  </Txt>
+                ) : null}
+              </Pressable>
+              <IconButton
+                name="maximize-2" label="할 일 자세히 보기" size={16} color={colors.textFaint}
+                onPress={() => router.push({ pathname: '/task/[id]', params: { id: linkedTask.id } })}
+                style={{ width: 32, height: 32 }} />
+            </View>
+            {linkedTotalSubs > 0 ? (
+              <>
+                <ProgressBar value={linkedDoneSubs.length / linkedTotalSubs} color={colors.success} height={4} />
+                <View style={{ gap: 2 }}>
+                  {linkedOpenSubs.map((sub) => (
+                    <View key={sub.id} style={styles.focusSubRow}>
+                      <Checkbox
+                        checked={false} size={18} color={priorityColor(colors, sub.priority)}
+                        onPress={() => flow.complete(sub)} label={sub.title + ' 완료'} />
+                      <Txt variant="small" numberOfLines={2} style={{ flex: 1 }}>{sub.title}</Txt>
+                    </View>
+                  ))}
+                  {linkedDoneSubs.map((sub) => (
+                    <View key={sub.id} style={styles.focusSubRow}>
+                      <Checkbox
+                        checked size={18} color={colors.success}
+                        onPress={() => flow.reopen(sub)} label={sub.title + ' 다시 열기'} />
+                      <Text numberOfLines={1} style={[type.small as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
+                        {sub.title}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+          </Card>
+        ) : null}
+
         {weekly.totalCount > 0 ? (
           <Card style={{ alignSelf: 'stretch', gap: space.md }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -602,8 +672,12 @@ export default function Focus() {
           {candidates.map((task) => (
             <Row
               key={task.id} icon="check-square" label={task.title}
+              detail={task.duration_minutes ? `${task.duration_minutes}분` : undefined}
               onPress={() => {
                 setTarget({ kind: 'task', id: task.id });
+                if (task.duration_minutes && task.duration_minutes <= FOCUS_LIMITS.focus.max) {
+                  setFocusPrefs({ timerMinutes: task.duration_minutes, focusMinutes: task.duration_minutes });
+                }
                 setPicking(false);
               }} />
           ))}
@@ -611,8 +685,12 @@ export default function Focus() {
           {otherTasks.map((task) => (
             <Row
               key={task.id} icon="check-square" label={task.title}
+              detail={task.duration_minutes ? `${task.duration_minutes}분` : undefined}
               onPress={() => {
                 setTarget({ kind: 'task', id: task.id });
+                if (task.duration_minutes && task.duration_minutes <= FOCUS_LIMITS.focus.max) {
+                  setFocusPrefs({ timerMinutes: task.duration_minutes, focusMinutes: task.duration_minutes });
+                }
                 setPicking(false);
               }} />
           ))}
@@ -664,6 +742,9 @@ const styles = StyleSheet.create({
   numBox: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2,
     borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.sm, height: 38, minWidth: 72,
+  },
+  focusSubRow: {
+    flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 6,
   },
   chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 102 },
   barCol: { flex: 1, alignItems: 'center', gap: 4 },

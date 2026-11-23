@@ -2,8 +2,9 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, ScrollView, TextInput, View } from 'react-native';
 
-import { Button, Header, IconButton, Screen, Segmented, Txt } from '@/components/ui';
+import { Button, Chip, Header, IconButton, Screen, Segmented, Txt } from '@/components/ui';
 import { useHabitActions } from '@/data/habits';
+import { HABIT_TIME_GROUPS, type HabitTimeOfDay, setHabitMeta } from '@/features/habits/habitMeta';
 import { deviceTimeZone } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { HabitCadence } from '@/lib/shared';
@@ -17,12 +18,14 @@ export default function NewHabit() {
   const [name, setName] = useState('');
   const [cadence, setCadence] = useState<HabitCadence>('daily');
   const [target, setTarget] = useState(1);
+  const [timeOfDay, setTimeOfDay] = useState<HabitTimeOfDay>('anytime');
   const max = cadence === 'weekly' ? 7 : 20;
   const ready = name.trim().length > 0;
 
   const save = () => {
     if (!ready) return;
-    actions.create({ name: name.trim(), cadence, target_count: Math.min(target, max), timezone: deviceTimeZone() });
+    const id = actions.create({ name: name.trim(), cadence, target_count: Math.min(target, max), timezone: deviceTimeZone() });
+    if (timeOfDay !== 'anytime') setHabitMeta(id, { timeOfDay });
     haptic.success();
     router.back();
   };
@@ -50,6 +53,18 @@ export default function NewHabit() {
                 setTarget((current) => Math.min(current, value === 'weekly' ? 7 : 20));
               }}
               options={[{ value: 'daily', label: '매일' }, { value: 'weekly', label: '매주' }]} />
+          </View>
+
+          <View style={{ gap: space.sm }}>
+            <Txt variant="section" tone="muted">실천 시간대</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {HABIT_TIME_GROUPS.map((group) => (
+                <Chip
+                  key={group.key} icon={group.icon} label={group.label}
+                  selected={timeOfDay === group.key}
+                  onPress={() => setTimeOfDay(group.key)} />
+              ))}
+            </View>
           </View>
 
           <View style={{ gap: space.sm }}>

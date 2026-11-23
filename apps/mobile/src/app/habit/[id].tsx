@@ -3,8 +3,9 @@ import { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
 
 import { type DayMark, MonthCalendar } from '@/components/MonthCalendar';
-import { Button, Card, EmptyState, Header, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, Header, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import { useHabitActions, useHabitLogs, useHabits, useHabitStats } from '@/data/habits';
+import { deleteHabitMeta, HABIT_TIME_GROUPS, setHabitMeta, useHabitMetaMap } from '@/features/habits/habitMeta';
 import { Heatmap, heatmapWidth } from '@/features/habits/Heatmap';
 import { computeHabitStrength } from '@/features/habits/strength';
 import { HabitReminderChips } from '@/features/reminders/ReminderChips';
@@ -29,6 +30,7 @@ export default function HabitDetail() {
   const { data: habits, isLoading } = useHabits();
   const { data: logs } = useHabitLogs(id);
   const { data: stats } = useHabitStats(id);
+  const habitMeta = useHabitMetaMap();
   const actions = useHabitActions();
   const habit = habits?.find((item) => item.id === id);
   const [name, setName] = useState<string | null>(null);
@@ -100,6 +102,23 @@ export default function HabitDetail() {
             initial={day} today={day} marks={marks} min={Temporal.PlainDate.from(habit.start_date)} max={day} onSelect={toggle} />
         </Card>
 
+        {!habit.archived_at ? (
+          <Card style={{ gap: space.sm }}>
+            <Txt variant="bodyStrong">실천 시간대</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {HABIT_TIME_GROUPS.map((group) => {
+                const currentGroup = habitMeta[habit.id]?.timeOfDay ?? 'anytime';
+                return (
+                  <Chip
+                    key={group.key} icon={group.icon} label={group.label}
+                    selected={currentGroup === group.key}
+                    onPress={() => setHabitMeta(habit.id, { timeOfDay: group.key })} />
+                );
+              })}
+            </View>
+          </Card>
+        ) : null}
+
         {Platform.OS === 'android' && !habit.archived_at ? (
           <Card style={{ gap: space.sm }}>
             <Txt variant="bodyStrong">알림</Txt>
@@ -108,7 +127,16 @@ export default function HabitDetail() {
         ) : null}
 
         <Card style={{ paddingVertical: space.xs }}>
-          {habit.archived_at ? null : (
+          {habit.archived_at ? (
+            <Row
+              icon="rotate-ccw" label="보관 해제 (다시 활성화)" detail="습관 목록으로 복원"
+              onPress={() => {
+                haptic.success();
+                actions.unarchive(habit.id);
+                showToast(`‘${habit.name}’ 습관을 다시 활성화했습니다.`);
+                router.back();
+              }} />
+          ) : (
             <Row icon="clock" label="이 습관으로 집중 시작" onPress={() => router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } })} />
           )}
           <Row icon="edit-2" label="이름 바꾸기" onPress={() => setName(habit.name)} />
@@ -146,6 +174,7 @@ export default function HabitDetail() {
             label="삭제" kind="danger"
             onPress={() => {
               setConfirm(false);
+              deleteHabitMeta(habit.id);
               actions.remove(habit.id);
               router.back();
             }} />

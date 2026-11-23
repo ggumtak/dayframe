@@ -4,7 +4,8 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, type PressableProps, type StyleProp, StyleSheet, Text, type TextProps, type TextStyle,
   View, type ViewStyle,
 } from 'react-native';
-import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, { FadeIn, SlideInDown, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptic } from '@/lib/haptics';
@@ -223,20 +224,51 @@ export function ProgressBar({ value, color, height = 6 }: { value: number; color
   );
 }
 
-/** A bottom sheet for choices that need no keyboard. */
+/** A bottom sheet that slides up smoothly and dismisses by dragging its handle down or tapping the backdrop. */
 export function Sheet({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title?: string; children: ReactNode }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const translateY = useSharedValue(0);
+
+  const drag = Gesture.Pan()
+    .runOnJS(true)
+    .onUpdate((event) => {
+      translateY.set(Math.max(0, event.translationY));
+    })
+    .onEnd((event) => {
+      if (event.translationY > 72 || event.velocityY > 650) {
+        haptic.tap();
+        translateY.set(0);
+        onClose();
+      } else {
+        translateY.set(withSpring(0, { damping: 20, stiffness: 260 }));
+      }
+    });
+
+  const sheetMotion = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Pressable accessibilityLabel="닫기" style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]} onPress={onClose} />
-        <View style={[styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + space.lg }]}>
-          <View style={[styles.grabber, { backgroundColor: colors.border }]} />
-          {title ? <Txt variant="heading" style={{ marginBottom: space.md }}>{title}</Txt> : null}
-          {children}
-        </View>
-      </KeyboardAvoidingView>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <Animated.View entering={FadeIn.duration(160)} style={StyleSheet.absoluteFill}>
+            <Pressable accessibilityLabel="닫기" style={[StyleSheet.absoluteFill, { backgroundColor: colors.overlay }]} onPress={onClose} />
+          </Animated.View>
+          <Animated.View
+            entering={SlideInDown.duration(220)}
+            style={[styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + space.lg }, sheetMotion]}>
+            <GestureDetector gesture={drag}>
+              <View style={styles.handleArea}>
+                <View style={[styles.grabber, { backgroundColor: colors.border }]} />
+                {title ? <Txt variant="heading" style={{ marginBottom: space.md }}>{title}</Txt> : null}
+              </View>
+            </GestureDetector>
+            {children}
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -281,6 +313,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
   },
   sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: space.lg, paddingTop: space.sm },
+  handleArea: { paddingTop: 2 },
   grabber: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, marginBottom: space.md },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 52 },
 });

@@ -1,16 +1,17 @@
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView as PlainScroll, StyleSheet, Text, type TextStyle, TextInput, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView as PlainScroll, type ScrollViewInstance, StyleSheet, Text, type TextStyle, TextInput, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Chip, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { Button, Chip, EmptyState, Header, Icon, IconButton, type IconName, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import {
   byPosition, byPriority, bySchedule, byTitle, useCompletedTasks, useProjectActions, useProjects,
   useSectionActions, useSections, useSubtaskProgress, useTaskActions, useTaskIndex,
 } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
+import { deleteProjectMeta, PROJECT_COLORS, PROJECT_ICONS, setProjectMeta, useProjectMetaMap } from '@/features/tasks/projectMeta';
 import { TaskList } from '@/features/tasks/TaskList';
 import { TemplatesSheet } from '@/features/tasks/TemplatesSheet';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
@@ -18,6 +19,7 @@ import { haptic } from '@/lib/haptics';
 import { usePersistentState } from '@/lib/persist';
 import type { Section, Task } from '@/lib/shared';
 import { bySmartRank } from '@/lib/smart';
+import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
 import { radius, space, type, useTheme } from '@/theme';
 
@@ -38,6 +40,7 @@ export default function Inbox() {
   const { colors } = useTheme();
   const { roots, isLoading, refetch } = useTaskIndex();
   const { data: projects } = useProjects();
+  const projectMeta = useProjectMetaMap();
   const { data: sections } = useSections();
   const { data: completedAll } = useCompletedTasks();
   const { progress: subtaskProgress } = useSubtaskProgress();
@@ -54,6 +57,8 @@ export default function Inbox() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  useTabScrollTop('inbox', scrollRef);
 
   // Multi-select batch editing state
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
@@ -61,6 +66,8 @@ export default function Inbox() {
   // Project create/rename/delete modals
   const [editor, setEditor] = useState<{ mode: 'create' } | { mode: 'rename'; id: string } | null>(null);
   const [projectName, setProjectName] = useState('');
+  const [projectColor, setProjectColor] = useState<string>(PROJECT_COLORS[0]);
+  const [projectIcon, setProjectIcon] = useState<IconName>('hash');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Section create/rename/delete modals
@@ -95,12 +102,13 @@ export default function Inbox() {
   }, [roots, effectiveScope, selected?.id, sortTasks]);
 
   const completedInScope = useMemo(() => {
-    if (!selected) return [];
+    if (effectiveScope === 'all') return [];
+    const targetProjectId = selected?.id ?? null;
     return (completedAll ?? [])
-      .filter((task) => !task.parent_task_id && task.project_id === selected.id)
+      .filter((task) => !task.parent_task_id && task.project_id === targetProjectId)
       .sort((a, b) => Date.parse(b.completed_at ?? '') - Date.parse(a.completed_at ?? ''))
       .slice(0, 30);
-  }, [completedAll, selected]);
+  }, [completedAll, effectiveScope, selected]);
 
   const counts = useMemo(() => {
     const map = new Map<string | null, number>();
@@ -144,6 +152,8 @@ export default function Inbox() {
 
   const openCreate = () => {
     setProjectName('');
+    setProjectColor(PROJECT_COLORS[(projects?.length ?? 0) % PROJECT_COLORS.length]);
+    setProjectIcon('hash');
     setEditor({ mode: 'create' });
   };
 
@@ -151,6 +161,9 @@ export default function Inbox() {
     if (!selected) return;
     setProjectMenu(false);
     setProjectName(selected.name);
+    const meta = projectMeta[selected.id];
+    setProjectColor(meta?.color ?? PROJECT_COLORS[0]);
+    setProjectIcon(meta?.icon ?? 'hash');
     setEditor({ mode: 'rename', id: selected.id });
   };
 
@@ -164,12 +177,18 @@ export default function Inbox() {
       return;
     }
     haptic.success();
+    const chosenColor = projectColor;
+    const chosenIcon = projectIcon;
     if (editor.mode === 'create') {
-      projectActions.create(trimmed, (created) => setScope(created.id));
+      projectActions.create(trimmed, (created) => {
+        setProjectMeta(created.id, { color: chosenColor, icon: chosenIcon });
+        setScope(created.id);
+      });
       showToast(`#${trimmed} 프로젝트를 만들었습니다.`);
     } else {
       projectActions.rename(editor.id, trimmed);
-      showToast(`프로젝트 이름을 #${trimmed}(으)로 바꿨습니다.`);
+      setProjectMeta(editor.id, { color: chosenColor, icon: chosenIcon });
+      showToast(`#${trimmed} 프로젝트를 저장했습니다.`);
     }
     setEditor(null);
   };
@@ -177,9 +196,11 @@ export default function Inbox() {
   const deleteSelected = () => {
     if (!selected) return;
     const removedName = selected.name;
+    const removedId = selected.id;
     setConfirmDelete(false);
     setScope('inbox');
-    projectActions.remove(selected.id);
+    projectActions.remove(removedId);
+    deleteProjectMeta(removedId);
     showToast(`#${removedName} 프로젝트를 삭제했습니다.`);
   };
 
@@ -237,16 +258,18 @@ export default function Inbox() {
             <IconButton
               name="sliders" label="정렬" onPress={() => setPickingSort(true)}
               color={sort !== 'manual' ? colors.accent : colors.textMuted} />
+            <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
             {selected ? (
               <IconButton name="more-horizontal" label="프로젝트 관리" onPress={() => setProjectMenu(true)} color={colors.textMuted} />
-            ) : (
-              <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
-            )}
+            ) : null}
           </View>
         )} />
 
-      <View>
-        <PlainScroll horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm, paddingBottom: space.sm }}>
+      <View style={styles.chipStripRow}>
+        <PlainScroll
+          horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingLeft: space.lg, paddingRight: space.sm, gap: space.sm, paddingBottom: space.sm }}
+          style={{ flex: 1 }}>
           <Chip
             icon="layers" label={'전체' + (roots.length ? ' ' + roots.length : '')} selected={effectiveScope === 'all'}
             onPress={() => {
@@ -259,21 +282,33 @@ export default function Inbox() {
               setSelectedIds(null);
               setScope('inbox');
             }} />
-          {(projects ?? []).map((project) => (
-            <Chip
-              key={project.id} icon="hash" label={project.name + (counts.get(project.id) ? ' ' + counts.get(project.id) : '')}
-              selected={selected?.id === project.id}
-              onPress={() => {
-                setSelectedIds(null);
-                setScope(project.id);
-              }} />
-          ))}
-          <Chip icon="plus" label="새 프로젝트" onPress={openCreate} />
+          {(projects ?? []).map((project) => {
+            const meta = projectMeta[project.id];
+            return (
+              <Chip
+                key={project.id}
+                icon={meta?.icon ?? 'hash'}
+                color={meta?.color}
+                label={project.name + (counts.get(project.id) ? ' ' + counts.get(project.id) : '')}
+                selected={selected?.id === project.id}
+                onPress={() => {
+                  setSelectedIds(null);
+                  setScope(project.id);
+                }} />
+            );
+          })}
         </PlainScroll>
+        <View style={{ paddingRight: space.md, paddingBottom: space.sm }}>
+          <IconButton
+            name="plus" label="새 프로젝트 만들기" size={18} color={colors.accent}
+            onPress={openCreate}
+            style={{ width: 32, height: 32, backgroundColor: colors.accentSoft }} />
+        </View>
       </View>
 
       {isLoading ? <Loading /> : (
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{ paddingBottom: selectedIds ? 180 : 140, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {hasSections ? (
@@ -346,13 +381,13 @@ export default function Inbox() {
             </>
           ) : (
             <EmptyState
-              icon={selected ? 'hash' : effectiveScope === 'all' ? 'layers' : 'inbox'}
+              icon={selected ? (projectMeta[selected.id]?.icon ?? 'hash') : effectiveScope === 'all' ? 'layers' : 'inbox'}
               title={selected ? '이 프로젝트는 비어 있습니다' : effectiveScope === 'all' ? '열려 있는 할 일이 없습니다' : '미분류 할 일이 없습니다'}
               message={selected
                 ? '+ 버튼으로 할 일을 추가하거나 템플릿으로 체크리스트를 시작해 보세요.'
                 : effectiveScope === 'all'
                   ? '아래 + 버튼으로 새 할 일을 추가해 보세요.'
-                  : '#프로젝트 없이 적은 할 일이 여기에 모입니다. 위의 + 새 프로젝트나 템플릿을 활용해 보세요.'}
+                  : '#프로젝트 없이 적은 할 일이 여기에 모입니다. 위의 + 버튼으로 프로젝트나 템플릿을 활용해 보세요.'}
               action={(
                 <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
                   <Button label="템플릿에서 추가" kind="secondary" icon="bookmark" onPress={() => setShowTemplates(true)} />
@@ -361,7 +396,7 @@ export default function Inbox() {
               )} />
           )}
 
-          {selected && completedInScope.length > 0 ? (
+          {effectiveScope !== 'all' && completedInScope.length > 0 ? (
             <View style={{ marginTop: space.md }}>
               <Pressable
                 accessibilityRole="button" onPress={() => setShowCompleted((open) => !open)}
@@ -432,13 +467,7 @@ export default function Inbox() {
             setProjectMenu(false);
             setShowTemplates(true);
           }} />
-        <Row icon="edit-2" label="프로젝트 이름 바꾸기" onPress={openRename} />
-        <Row
-          icon="search" label="검색"
-          onPress={() => {
-            setProjectMenu(false);
-            router.push('/search');
-          }} />
+        <Row icon="edit-2" label="프로젝트 이름 · 색상 · 아이콘 수정" onPress={openRename} />
         <Row
           icon="trash-2" label="프로젝트 삭제" tone="danger"
           onPress={() => {
@@ -490,13 +519,60 @@ export default function Inbox() {
         </View>
       </Sheet>
 
-      <Sheet visible={!!editor} onClose={() => setEditor(null)} title={editor?.mode === 'rename' ? '프로젝트 이름 바꾸기' : '새 프로젝트'}>
+      <Sheet visible={!!editor} onClose={() => setEditor(null)} title={editor?.mode === 'rename' ? '프로젝트 설정' : '새 프로젝트'}>
         <View style={{ gap: space.md }}>
           <TextInput
             value={projectName} onChangeText={setProjectName} autoFocus maxLength={120}
             placeholder="예: 회사, 건강, 사이드 프로젝트" placeholderTextColor={colors.textFaint}
             returnKeyType="done" onSubmitEditing={saveProject} accessibilityLabel="프로젝트 이름"
             style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
+          <View style={{ gap: 6 }}>
+            <Txt variant="caption" tone="muted">색상</Txt>
+            <View style={styles.swatchRow}>
+              {PROJECT_COLORS.map((swatch) => {
+                const active = projectColor === swatch;
+                return (
+                  <Pressable
+                    key={swatch} accessibilityRole="button" accessibilityLabel={'색상 ' + swatch}
+                    onPress={() => {
+                      haptic.tap();
+                      setProjectColor(swatch);
+                    }}
+                    style={[
+                      styles.swatch,
+                      { backgroundColor: swatch, borderColor: active ? colors.text : 'transparent' },
+                    ]}>
+                    {active ? <Icon name="check" size={14} color="#FFFFFF" /> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          <View style={{ gap: 6 }}>
+            <Txt variant="caption" tone="muted">아이콘</Txt>
+            <View style={styles.iconGrid}>
+              {PROJECT_ICONS.map((ic) => {
+                const active = projectIcon === ic;
+                return (
+                  <Pressable
+                    key={ic} accessibilityRole="button" accessibilityLabel={'아이콘 ' + ic}
+                    onPress={() => {
+                      haptic.tap();
+                      setProjectIcon(ic);
+                    }}
+                    style={[
+                      styles.iconPick,
+                      {
+                        borderColor: active ? projectColor : colors.border,
+                        backgroundColor: active ? colors.surfaceMuted : 'transparent',
+                      },
+                    ]}>
+                    <Icon name={ic} size={17} color={active ? projectColor : colors.textMuted} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
           <View style={{ flexDirection: 'row', gap: space.sm }}>
             <Button label="취소" kind="secondary" onPress={() => setEditor(null)} style={{ flex: 1 }} />
             <Button
@@ -522,7 +598,16 @@ export default function Inbox() {
 }
 
 const styles = StyleSheet.create({
+  chipStripRow: { flexDirection: 'row', alignItems: 'center' },
   input: { minHeight: 48, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space.md },
+  swatchRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  swatch: {
+    width: 30, height: 30, borderRadius: 15, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+  },
+  iconGrid: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  iconPick: {
+    width: 38, height: 38, borderRadius: radius.md, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
+  },
   sectionHeader: {
     flexDirection: 'row', alignItems: 'center', paddingLeft: space.lg, paddingRight: space.sm,
     paddingTop: space.lg, paddingBottom: 6, borderBottomWidth: StyleSheet.hairlineWidth,

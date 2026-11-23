@@ -117,7 +117,8 @@ async function editResource(request: Request, db: Supabase, table: Resource, fil
     }
     case "habits": {
       const { archive, ...patch } = requireChanges(await readJson(request, schema.habitPatch));
-      if (!archive) return update<Habit>(db, table, filter, patch);
+      if (archive === undefined) return update<Habit>(db, table, filter, patch);
+      if (archive === false) return update<Habit>(db, table, filter, { ...patch, archived_at: null });
       const changed = await db.rest<Habit[]>(table, { ...filter, archived_at: "is.null" }, "PATCH",
         { ...patch, archived_at: new Date().toISOString() }, "return=representation");
       if (changed.length) return changed[0];

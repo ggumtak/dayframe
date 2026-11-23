@@ -51,7 +51,7 @@ export const habit = z.strictObject({
   id, name, cadence: z.enum(["daily", "weekly"]), target_count: z.int().min(1).max(100).optional(),
   timezone, start_date: localDate.optional(),
 });
-export const habitPatch = z.strictObject({ name: name.optional(), archive: z.literal(true).optional() });
+export const habitPatch = z.strictObject({ name: name.optional(), archive: z.boolean().optional() });
 export const log = z.strictObject({
   status: z.enum(["completed", "skipped", "frozen"]), count: z.int().min(0).max(100).optional(),
 }).refine(({ status, count }) => count === undefined || (status === "completed" ? count > 0 : count === 0),

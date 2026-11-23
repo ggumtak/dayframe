@@ -5,10 +5,15 @@ import { MonthCalendar } from '@/components/MonthCalendar';
 import { Button, Chip, IconButton, Sheet, Txt } from '@/components/ui';
 import { useTaskActions } from '@/data/tasks';
 import { parseErrorMessage } from '@/features/quick-add/messages';
-import { describeRecurrence, dueDate, dueMinutes, formatDue, formatDurationMinutes, formatTime, type PlainDate, today } from '@/lib/dates';
+import {
+  describeRecurrence, dueDate, dueMinutes, formatDue, formatDurationMinutes, formatTime, instantFor, type PlainDate, Temporal, today,
+} from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { analyzeTask, type Task, type TaskPatch } from '@/lib/shared';
+import { showToast } from '@/lib/toast';
 import { radius, space, type, useTheme } from '@/theme';
+
+import { localTimeString } from './useTaskFlow';
 
 const PLACEHOLDER = '⁣';
 
@@ -46,28 +51,52 @@ function ScheduleContent({ task, onClose, onPick }: {
   const parsedText = useMemo(() => {
     if (!when.trim()) return null;
     try {
-      const { task: parsed } = analyzeTask({ text: when + ' ' + PLACEHOLDER, timezone: task.timezone });
+      const { task: parsed, tokens } = analyzeTask({ text: when + ' ' + PLACEHOLDER, timezone: task.timezone });
       const leftover = parsed.title.replace(PLACEHOLDER, '').trim();
       if (leftover) return { error: `‘${leftover}’ 부분을 이해하지 못했습니다.` };
       if (!parsed.due_at && !parsed.duration_minutes) return { error: '날짜, 시간 또는 소요시간을 찾지 못했습니다.' };
+
+      const hasDateToken = tokens.some((token) => token.kind === 'date');
+      const hasTimeToken = tokens.some((token) => token.kind === 'time');
+      const hasRecurrenceToken = tokens.some((token) => token.kind === 'recurrence');
+
+      // If the user typed only a time (e.g. "오후 4시") on an existing dated task, keep its current date.
+      let dueAt = parsed.due_at;
+      let allDay = parsed.all_day;
+      let localTime = parsed.recurrence_local_time ?? null;
+      if (parsed.due_at && !hasDateToken && !hasRecurrenceToken && hasTimeToken && current) {
+        const parsedTime = Temporal.Instant.from(parsed.due_at).toZonedDateTimeISO(task.timezone);
+        const mins = parsedTime.hour * 60 + parsedTime.minute;
+        dueAt = instantFor(current, mins, task.timezone);
+        allDay = false;
+        localTime = localTimeString(mins);
+      }
+
+      // Preserve existing recurrence when the user didn't explicitly type a new recurrence rule.
+      const keepRecurrence = !hasRecurrenceToken && !!task.recurrence_rule;
+      const nextRule = hasRecurrenceToken ? parsed.recurrence_rule : (keepRecurrence ? task.recurrence_rule : null);
+      const nextMode = hasRecurrenceToken ? parsed.recurrence_mode : (keepRecurrence ? task.recurrence_mode : 'schedule');
+
       const patch: TaskPatch = {
-        ...(parsed.due_at ? {
-          due_at: parsed.due_at, all_day: parsed.all_day, recurrence_rule: parsed.recurrence_rule,
-          recurrence_mode: parsed.recurrence_mode,
-          recurrence_local_time: parsed.recurrence_local_time ?? null,
+        ...(dueAt ? {
+          due_at: dueAt,
+          all_day: allDay,
+          recurrence_rule: nextRule,
+          recurrence_mode: nextMode,
+          recurrence_local_time: nextRule ? (allDay ? null : localTime ?? task.recurrence_local_time) : null,
         } : {}),
         ...(parsed.duration_minutes ? { duration_minutes: parsed.duration_minutes } : {}),
       };
       const label = [
-        parsed.due_at ? formatDue({ due_at: parsed.due_at, all_day: parsed.all_day, timezone: task.timezone }) : null,
+        dueAt ? formatDue({ due_at: dueAt, all_day: allDay, timezone: task.timezone }) : null,
         parsed.duration_minutes ? formatDurationMinutes(parsed.duration_minutes) : null,
-        describeRecurrence(parsed.recurrence_rule, parsed.recurrence_mode),
+        describeRecurrence(nextRule, nextMode),
       ].filter(Boolean).join(' · ');
       return { patch, label };
     } catch (error) {
       return { error: parseErrorMessage(error) ?? '날짜나 시간을 입력해 주세요.' };
     }
-  }, [when, task.timezone]);
+  }, [when, task.timezone, task.recurrence_rule, task.recurrence_mode, task.recurrence_local_time, current]);
 
   const choose = (date: PlainDate | null) => {
     onPick(task, date, date ? minutes : undefined);
@@ -76,8 +105,20 @@ function ScheduleContent({ task, onClose, onPick }: {
 
   const applyTyped = () => {
     if (!parsedText?.patch) return;
+    const prevPatch: TaskPatch = {
+      due_at: task.due_at,
+      all_day: task.all_day,
+      recurrence_rule: task.recurrence_rule,
+      recurrence_mode: task.recurrence_mode,
+      recurrence_local_time: task.recurrence_local_time,
+      duration_minutes: task.duration_minutes,
+    };
     actions.update(task.id, parsedText.patch);
     haptic.success();
+    showToast(`일정을 ‘${parsedText.label}’(으)로 변경했습니다.`, {
+      actionLabel: '실행 취소',
+      onAction: () => actions.update(task.id, prevPatch),
+    });
     onClose();
   };
 
@@ -106,7 +147,7 @@ function ScheduleContent({ task, onClose, onPick }: {
         <View style={{ gap: space.sm, marginBottom: space.md }}>
           <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
             <TextInput
-              value={when} onChangeText={setWhen} autoFocus placeholder="예: 30분 후, 내일 오후 7시 30분, 매주 월수금"
+              value={when} onChangeText={setWhen} autoFocus placeholder="예: 오후 4시, 30분 후, 매주 월수금"
               placeholderTextColor={colors.textFaint} autoCapitalize="none" autoCorrect={false}
               returnKeyType="done" onSubmitEditing={applyTyped} accessibilityLabel="일정을 글로 입력"
               style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, flex: 1 }]} />
@@ -146,15 +187,14 @@ function ScheduleContent({ task, onClose, onPick }: {
                   selected={minutes === item.minutes} onPress={() => setMinutes(item.minutes)} />
               ))}
             </ScrollView>
+            {timeChanged ? (
+              <Button
+                label={(current ? '시간만 변경' : '오늘로 적용') + ' (' + (minutes === null ? '종일' : formatTime(minutes)) + ')'}
+                onPress={() => choose(current ?? now)} style={{ minHeight: 42, marginTop: 4 }} />
+            ) : null}
           </View>
 
           <MonthCalendar initial={current ?? now} selected={current} today={now} onSelect={choose} />
-
-          {timeChanged ? (
-            <Button
-              label={(current ? '시간만 변경' : '오늘로 적용') + ' (' + (minutes === null ? '종일' : formatTime(minutes)) + ')'}
-              onPress={() => choose(current ?? now)} style={{ marginTop: space.md }} />
-          ) : null}
         </>
       )}
     </Sheet>

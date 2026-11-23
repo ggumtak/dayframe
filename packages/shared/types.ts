@@ -95,7 +95,7 @@ export interface Habit extends OwnedRow {
 }
 export type HabitInput = Pick<Habit, "name" | "cadence" | "timezone"> &
   Partial<Pick<Habit, "id" | "target_count" | "start_date">>;
-export interface HabitPatch { name?: string; archive?: true }
+export interface HabitPatch { name?: string; archive?: boolean }
 export interface HabitLogInput { status: HabitLogStatus; count?: number }
 export interface HabitLog {
   user_id: UUID;
