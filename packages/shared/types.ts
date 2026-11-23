@@ -16,9 +16,12 @@ export interface User {
   id: UUID;
   display_name: string | null;
   timezone: string;
+  /** Where a task written without a date lands: today, or undated in the list. */
+  new_task_date: NewTaskDate;
   created_at: Instant;
 }
-export type UserPatch = Partial<Pick<User, "display_name" | "timezone">>;
+export type NewTaskDate = "today" | "none";
+export type UserPatch = Partial<Pick<User, "display_name" | "timezone" | "new_task_date">>;
 
 export interface Project extends OwnedRow { name: string; position: number }
 export interface Section extends Project { project_id: UUID }

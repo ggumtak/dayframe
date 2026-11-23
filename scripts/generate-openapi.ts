@@ -25,7 +25,7 @@ const task = {
   completed_at: nullable(stamp), updated_at: stamp,
 };
 const schemas: Record<string, object> = {
-  User: obj({ id: uuid, display_name: nullable(str), timezone: str, created_at: stamp }),
+  User: obj({ id: uuid, display_name: nullable(str), timezone: str, new_task_date: enumOf("today", "none"), created_at: stamp }),
   Project: obj(project),
   Section: obj({ ...project, project_id: uuid }),
   Tag: obj({ ...owned, name: str }),

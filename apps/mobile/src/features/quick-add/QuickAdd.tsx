@@ -1,4 +1,4 @@
-import { useSegments } from 'expo-router';
+import { router, useSegments } from 'expo-router';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler, Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, type TextInputInstance, View,
@@ -7,6 +7,7 @@ import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-rean
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Chip, Icon, type IconName, Txt } from '@/components/ui';
+import { useNewTaskDate } from '@/data/session';
 import { nextPosition, useProjects, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { describeRecurrence, deviceTimeZone, formatDue, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -55,12 +56,18 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   const [text, setText] = useState(defaults.initialText ?? '');
   const [added, setAdded] = useState(0);
   const [pickingPriority, setPickingPriority] = useState(false);
+  // Tapping the default 오늘 chip leaves the tasks added from this sheet undated.
+  const [undated, setUndated] = useState(false);
+  const [newTaskDate] = useNewTaskDate();
   const { tasks, byId } = useTaskIndex();
   const { data: projects } = useProjects();
   const { data: tags } = useTags();
   const actions = useTaskActions();
   const timezone = deviceTimeZone();
   const parent = defaults.parentTaskId ? byId.get(defaults.parentTaskId) : undefined;
+  // Undated tasks land on today when added from 오늘, or anywhere when the user chose that in settings (Todoist's
+  // Today view works the same). A subtask follows its parent instead.
+  const defaultsToToday = !parent && (!!defaults.dueToday || newTaskDate === 'today');
 
   const result = useMemo<{ analysis?: TaskAnalysis; error?: string | null }>(() => {
     if (!text.trim()) return {};
@@ -108,7 +115,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
       haptic.warning();
       return;
     }
-    const fallbackToday = !parsed.due_at && defaults.dueToday && !parent;
+    const fallbackToday = !parsed.due_at && defaultsToToday && !undated;
     const due_at = fallbackToday ? instantFor(today(timezone), null, timezone) : parsed.due_at;
     const projectId = parent || parsed.project ? null : defaults.projectId ?? null;
     const siblings = tasks.filter((task) => (parent
@@ -246,7 +253,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
             })}
           </View>
         ) : null}
-        {hasChips || defaultProject || (defaults.dueToday && !parent && !due) ? (
+        {hasChips || defaultProject || (defaultsToToday && !due) ? (
           <View style={styles.chips}>
             {due ? (
               <Animated.View entering={ZoomIn.duration(140)}>
@@ -254,7 +261,15 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
                   icon="calendar" label={due + ' ×'} color={colors.schedule}
                   onPress={() => stripToken((token) => token.kind === 'date' || token.kind === 'time')} />
               </Animated.View>
-            ) : defaults.dueToday && !parent ? <Chip icon="calendar" label="오늘" /> : null}
+            ) : defaultsToToday ? (
+              <Chip
+                icon={undated ? 'slash' : 'calendar'} label={undated ? '날짜 없음' : '오늘 ×'}
+                color={undated ? undefined : colors.schedule}
+                onPress={() => {
+                  setUndated((current) => !current);
+                  input.current?.focus();
+                }} />
+            ) : null}
             {repeat ? (
               <Animated.View entering={ZoomIn.duration(140)}>
                 <Chip icon="repeat" label={repeat + ' ×'} color={colors.schedule} onPress={() => stripToken((token) => token.kind === 'recurrence')} />
@@ -332,6 +347,8 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
 
   // Detail and settings screens add in their own way; every tab keeps the button.
   const showButton = segments[0] === '(tabs)';
+  // On the habits tab the button makes a habit, as in TickTick; everywhere else it adds a task.
+  const onHabits = showButton && segments[1] === 'habits';
 
   return (
     <QuickAddContext.Provider value={value}>
@@ -341,10 +358,11 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
           entering={ZoomIn.duration(160)} pointerEvents="box-none"
           style={[styles.fabWrap, { bottom: insets.bottom + TAB_BAR_HEIGHT + space.lg }]}>
           <Pressable
-            accessibilityRole="button" accessibilityLabel="할 일 빠른 추가"
+            accessibilityRole="button" accessibilityLabel={onHabits ? '습관 추가' : '할 일 빠른 추가'}
             onPress={() => {
               haptic.light();
-              value.open();
+              if (onHabits) router.push('/habit/new');
+              else value.open();
             }}
             style={({ pressed }) => [styles.fab, { backgroundColor: colors.accent, transform: [{ scale: pressed ? 0.94 : 1 }] }, elevation(colors, 2)]}>
             <Icon name="plus" size={26} color={colors.onAccent} />

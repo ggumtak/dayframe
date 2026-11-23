@@ -19,7 +19,10 @@ const position = z.int32();
 const id = uuid.optional();
 const link = uuid.nullable().optional();
 
-export const userPatch = z.strictObject({ display_name: z.string().trim().max(120).nullable(), timezone }).partial();
+export const userPatch = z.strictObject({
+  display_name: z.string().trim().max(120).nullable(), timezone,
+  new_task_date: z.enum(["today", "none"]).describe("Where a task written without a date lands: today, or undated in the list."),
+}).partial();
 export const project = z.strictObject({ name, position: position.optional() });
 export const section = project.extend({ project_id: uuid });
 export const tag = z.strictObject({ name });

@@ -2898,11 +2898,16 @@ components:
               type: string
             - type: "null"
         timezone: *a14
+        new_task_date:
+          enum:
+            - today
+            - none
         created_at: *a6
       required:
         - id
         - display_name
         - timezone
+        - new_task_date
         - created_at
       additionalProperties: false
     Project:
@@ -3348,6 +3353,12 @@ components:
           type: string
           maxLength: 100
           pattern: ^[A-Za-z][A-Za-z0-9_+/-]*$
+        new_task_date:
+          description: "Where a task written without a date lands: today, or undated in the list."
+          type: string
+          enum:
+            - today
+            - none
       additionalProperties: false
     ProjectInput:
       type: object

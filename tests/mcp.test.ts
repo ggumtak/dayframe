@@ -11,7 +11,7 @@ const taskId = "33333333-3333-4333-8333-333333333333";
 const projectId = "11111111-1111-4111-8111-111111111111";
 
 /** A stand-in for Supabase Auth and PostgREST that records every data request the tools make. */
-async function backend(options: { tasks?: object[]; owner?: string } = {}) {
+async function backend(options: { tasks?: object[]; owner?: string; newTaskDate?: "today" | "none" } = {}) {
   const owner = options.owner ?? defaultOwner;
   const hash = await hashToken(token);
   const calls: Array<{ method: string; path: string; query: URLSearchParams; body?: Record<string, unknown>; bearer: string }> = [];
@@ -39,7 +39,7 @@ async function backend(options: { tasks?: object[]; owner?: string } = {}) {
     if (path === "/auth/v1/user") return bearer === "owner-session" ? Response.json({ id: owner }) : Response.json({}, { status: 401 });
     assert.equal(bearer, "owner-session", "data requests must run as the connection's owner, never as the service role");
     calls.push({ method, path, query: url.searchParams, body, bearer });
-    if (path === "/rest/v1/users") return Response.json([{ id: owner, timezone: "Asia/Seoul" }]);
+    if (path === "/rest/v1/users") return Response.json([{ id: owner, timezone: "Asia/Seoul", new_task_date: options.newTaskDate ?? "today" }]);
     if (path === "/rest/v1/projects") return Response.json(method === "POST" ? [{ id: projectId, ...body }] : []);
     if (path === "/rest/v1/tasks" && method === "POST") {
       return Response.json([{ id: taskId, project_id: null, parent_task_id: null, notes: null, recurrence_rule: null, timezone: "Asia/Seoul", ...body }]);
@@ -117,6 +117,21 @@ test("add_task parses natural language, creates the project and stores the task 
   assert.deepEqual(calls.find((item) => item.path === "/rest/v1/projects" && item.method === "POST")!.body, { name: "건강" });
   const added = JSON.parse(result.text).added;
   assert.deepEqual([added.title, added.priority, added.project, added.status], ["운동", "p1", "건강", "upcoming"]);
+});
+
+test("add_task puts an undated task on today unless the user keeps undated tasks in the list", async () => {
+  const today = Temporal.Now.plainDateISO("Asia/Seoul");
+  const onToday = await backend();
+  await onToday.call("add_task", { text: "우유 사기" });
+  const created = onToday.calls.find((item) => item.path === "/rest/v1/tasks" && item.method === "POST")!.body!;
+  assert.equal(created.all_day, true);
+  assert.equal(Temporal.Instant.from(created.due_at as string).toZonedDateTimeISO("Asia/Seoul").toPlainDate().toString(), today.toString());
+  // A subtask follows its parent, and the "none" setting keeps the old behaviour.
+  await onToday.call("add_task", { text: "우유 2개", parent_task_id: taskId });
+  assert.equal(onToday.calls.filter((item) => item.path === "/rest/v1/tasks" && item.method === "POST")[1].body!.due_at, undefined);
+  const inList = await backend({ newTaskDate: "none" });
+  await inList.call("add_task", { text: "우유 사기" });
+  assert.equal(inList.calls.find((item) => item.path === "/rest/v1/tasks" && item.method === "POST")!.body!.due_at, undefined);
 });
 
 test("tool failures are returned to the assistant as readable errors", async () => {

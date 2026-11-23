@@ -2,7 +2,7 @@ import { Temporal } from "@js-temporal/polyfill";
 import type { Habit, HabitLog, HabitStats, Page, Project, Tag, Task, TaskCompletion, TaskTag, User } from "../../../packages/shared/types.ts";
 import type { SupabaseConfig } from "./http.ts";
 import { parseTask } from "./parser.ts";
-import { InvalidSchedule } from "./schedule.ts";
+import { instantOn, InvalidSchedule } from "./schedule.ts";
 
 /**
  * Model Context Protocol endpoint, so an AI assistant (Claude, ChatGPT, ...) can read and change one
@@ -109,10 +109,12 @@ interface Context {
   call<T>(method: string, path: string, body?: Json): Promise<T>;
   all<T>(path: string): Promise<T[]>;
   timezone(): Promise<string>;
+  /** The owner's profile, read once per connection. */
+  me(): Promise<User>;
 }
 
 function context(config: SupabaseConfig, userId: string, api: Api): Context {
-  let zone: string | undefined;
+  let profile: Promise<User> | undefined;
   const send = async (method: string, path: string, body: Json | undefined, fresh: boolean) => api(new Request(
     "https://dayframe.internal/api/v1/" + path, {
       method,
@@ -142,9 +144,12 @@ function context(config: SupabaseConfig, userId: string, api: Api): Context {
       }
       return items;
     },
+    me() {
+      profile ??= self.call<User>("GET", "me");
+      return profile;
+    },
     async timezone() {
-      zone ??= (await self.call<User>("GET", "me")).timezone;
-      return zone;
+      return (await self.me()).timezone;
     },
   };
   return self;
@@ -268,16 +273,21 @@ export const tools: Tool[] = [
     name: "add_task", title: "Add a task", annotations: write,
     description: "Adds a task from natural language in Korean or English. Dates (내일, 11월 25일, next Tue), times (저녁 7시, 7pm), "
       + "repeats (매일, 매주 월수금, 매달 말일, every weekday, yearly), #project, @tag and p1–p4 are understood; the rest becomes the title. "
-      + "Set parent_task_id to add a subtask.",
+      + "Set parent_task_id to add a subtask. Text without a date follows the user's setting: by default it is due today, so it shows in "
+      + "their Today view; include a date in the text to schedule it elsewhere.",
     inputSchema: object({
       text: { type: "string", description: "The task as the user said it" },
       notes: { type: "string", description: "Optional longer notes" },
       parent_task_id: { ...taskId, description: "Parent task ID, to create a subtask" },
     }, ["text"]),
     async run(api, args) {
-      const timezone = await api.timezone();
+      const { timezone, new_task_date } = await api.me();
       const parsed = parseTask({ text: text(args.text, "text"), timezone });
       const parent = args.parent_task_id === undefined ? null : identifier(args.parent_task_id, "parent_task_id");
+      // Like the app's quick entry: an undated top-level task lands on today unless the user chose otherwise.
+      if (!parsed.due_at && !parent && new_task_date !== "none") {
+        Object.assign(parsed, { due_at: instantOn(Temporal.Now.plainDateISO(timezone), null, timezone).toInstant().toString(), all_day: true });
+      }
       const project = parsed.project && !parent ? await ensureProject(api, parsed.project) : null;
       const siblings = (await api.all<Task>("tasks?state=open&parent_task_id=" + (parent ?? "root")))
         .filter((task) => parent || task.project_id === (project?.id ?? null));
