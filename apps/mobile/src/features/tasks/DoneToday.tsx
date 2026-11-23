@@ -1,7 +1,8 @@
-import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
+import { StyleSheet, Text, type TextStyle, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Icon, SectionTitle } from '@/components/ui';
+import { FoldHeader, Icon } from '@/components/ui';
 import type { DoneToday as Done } from '@/data/tasks';
 import { deviceTimeZone, formatTime, Temporal } from '@/lib/dates';
 import { usePersistentState } from '@/lib/persist';
@@ -26,17 +27,10 @@ export function DoneToday({ items }: { items: Done[] }) {
 
   return (
     <View>
-      <SectionTitle
-        title="완료됨" count={items.length}
-        action={(
-          <Pressable
-            accessibilityRole="button" accessibilityLabel={`오늘 완료한 일 ${open ? '접기' : '펼치기'}`} hitSlop={12}
-            onPress={() => setFold(open ? 'closed' : 'open')}
-            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-            <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textFaint} />
-          </Pressable>
-        )} />
-      {open ? items.map(({ completion, undoable }) => {
+      <FoldHeader title="완료됨" count={items.length} open={open} onToggle={() => setFold(open ? 'closed' : 'open')} label="오늘 완료한 일" />
+      {open ? (
+        <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(100)}>
+          {items.map(({ completion, undoable }) => {
         const { task } = completion;
         const at = Temporal.Instant.from(completion.completed_at).toZonedDateTimeISO(zone);
         return (
@@ -55,7 +49,9 @@ export function DoneToday({ items }: { items: Done[] }) {
             </View>
           </View>
         );
-      }) : null}
+          })}
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
