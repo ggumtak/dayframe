@@ -1,13 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { clearReminders } from '@/features/reminders/notify';
 import { saveWidget } from '@/features/widget/render';
-import { api } from '@/lib/api';
+import { api, errorMessage } from '@/lib/api';
 import { auth, AUTH_STORAGE_KEY } from '@/lib/auth';
 import { deviceTimeZone } from '@/lib/dates';
 import { isConfigured } from '@/lib/env';
+import type { NewTaskDate, User } from '@/lib/shared';
+import { showToast } from '@/lib/toast';
 
 import { clearLocalData, queryClient } from './client';
 import { keys } from './keys';
@@ -102,4 +104,24 @@ export function useProfile() {
     }
   }, [profile?.timezone]);
   return query;
+}
+
+/**
+ * Where a task written without a date lands: on today (the default) or undated in the list. Kept on the
+ * profile, so the app's quick entry and the AI connection follow the same choice.
+ */
+export function useNewTaskDate(): [NewTaskDate, (next: NewTaskDate) => void] {
+  const { data: profile } = useProfile();
+  const value: NewTaskDate = profile?.new_task_date === 'none' ? 'none' : 'today';
+  const set = useCallback((next: NewTaskDate) => {
+    const before = queryClient.getQueryData<User>(keys.me);
+    if (before) queryClient.setQueryData<User>(keys.me, { ...before, new_task_date: next });
+    api.updateMe({ new_task_date: next })
+      .then((updated) => queryClient.setQueryData(keys.me, updated))
+      .catch((error: unknown) => {
+        if (before) queryClient.setQueryData(keys.me, before);
+        showToast(errorMessage(error), { tone: 'error' });
+      });
+  }, []);
+  return [value, set];
 }

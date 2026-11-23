@@ -28,9 +28,16 @@ const pomoPresets = [
 ] as const;
 
 const timerPresets = [10, 15, 25, 45, 60, 90] as const;
+const weekdayLabels = ['월', '화', '수', '목', '금', '토', '일'];
 const roundChoices = [2, 3, 4, 6] as const;
 
 type Target = { kind: 'task' | 'habit'; id: string } | null;
+
+const MIN_RECORD_SECONDS = 60;
+const sessionSeconds = (session: FocusSession) =>
+  (session.ended_at ? (new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 1000 : 0);
+/** Stopped within a minute of starting: kept out of the lists so an accidental tap leaves no trace. */
+const isFalseStart = (session: FocusSession) => session.status === 'cancelled' && sessionSeconds(session) < MIN_RECORD_SECONDS;
 
 function elapsedSeconds(session: FocusSession, now: number): number {
   return Math.max(0, (now - new Date(session.started_at).getTime()) / 1000);
@@ -232,11 +239,13 @@ export default function Focus() {
     finished.current.add(running.id);
     void cancelAlert('focus');
     haptic.light();
-    actions.finish({ id: running.id, status, ended_at: new Date().toISOString() });
-    if (status === 'completed') {
+    // A run of under a minute is a false start, not focus: it earns no record, round or break (Forest does the same).
+    const counts = status === 'completed' && elapsed >= MIN_RECORD_SECONDS;
+    actions.finish({ id: running.id, status: counts ? 'completed' : 'cancelled', ended_at: new Date().toISOString() });
+    if (counts) {
       showToast(`집중 ${formatMinutes(elapsed)} 기록했습니다.`);
       beginRest(runningPrefs.current, todayStats.count, Date.now());
-    }
+    } else if (status === 'completed') showToast('1분이 안 된 집중은 기록하지 않습니다.');
   };
 
   const candidates = useMemo(() => tasks
@@ -258,7 +267,21 @@ export default function Focus() {
   const r = (SIZE - STROKE) / 2;
   const circumference = 2 * Math.PI * r;
   const ringColor = onBreak ? colors.success : colors.accent;
-  const recent = (sessions ?? []).filter((session) => session.status !== 'running').slice(0, 5);
+  const recent = (sessions ?? []).filter((session) => session.status !== 'running' && !isFalseStart(session)).slice(0, 5);
+
+  // This week's focus per day, Monday first, from finished sessions.
+  const monday = day.subtract({ days: day.dayOfWeek - 1 });
+  const week = Array.from({ length: 7 }, (_, index) => ({ date: monday.add({ days: index }), seconds: 0, count: 0 }));
+  for (const session of sessions ?? []) {
+    if (session.status !== 'completed' || !session.ended_at) continue;
+    const offset = monday.until(Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone).toPlainDate()).days;
+    if (offset < 0 || offset > 6) continue;
+    week[offset].seconds += sessionSeconds(session);
+    week[offset].count += 1;
+  }
+  const weekSeconds = week.reduce((sum, item) => sum + item.seconds, 0);
+  const weekCount = week.reduce((sum, item) => sum + item.count, 0);
+  const busiest = Math.max(...week.map((item) => item.seconds), 1);
 
   return (
     <Screen>
@@ -378,6 +401,34 @@ export default function Focus() {
             </View>
           </>
         )}
+
+        {weekCount ? (
+          <Card style={{ alignSelf: 'stretch', gap: space.md }}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <Txt variant="section" tone="muted">이번 주</Txt>
+              <Txt variant="smallStrong">{formatMinutes(weekSeconds)} · {weekCount}회</Txt>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm }} accessibilityLabel={`이번 주 집중 ${formatMinutes(weekSeconds)}`}>
+              {week.map((item) => {
+                const isToday = item.date.equals(day);
+                return (
+                  <View key={item.date.toString()} style={{ flex: 1, alignItems: 'center', gap: 4 }}>
+                    <Txt variant="caption" tone="faint" numberOfLines={1}>{item.seconds ? Math.max(1, Math.round(item.seconds / 60)) : ''}</Txt>
+                    <View style={{ height: 56, justifyContent: 'flex-end', alignSelf: 'stretch' }}>
+                      <View
+                        style={{
+                          height: item.seconds ? Math.max(4, (item.seconds / busiest) * 56) : 3, borderRadius: 4,
+                          backgroundColor: item.seconds ? (isToday ? colors.accent : colors.accentSoft) : colors.surfaceMuted,
+                        }} />
+                    </View>
+                    <Txt variant="caption" tone={isToday ? 'accent' : 'faint'}>{weekdayLabels[item.date.dayOfWeek - 1]}</Txt>
+                  </View>
+                );
+              })}
+            </View>
+            <Txt variant="caption" tone="faint">막대 위 숫자는 그날 집중한 분입니다.</Txt>
+          </Card>
+        ) : null}
 
         {recent.length ? (
           <Card style={{ alignSelf: 'stretch', gap: space.sm }}>

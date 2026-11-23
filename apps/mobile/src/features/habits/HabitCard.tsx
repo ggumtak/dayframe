@@ -6,7 +6,7 @@ import Svg, { Circle } from 'react-native-svg';
 
 import { Card, Icon, Row, Sheet, Txt } from '@/components/ui';
 import { periodProgress, useHabitActions } from '@/data/habits';
-import { Temporal, today, weekdayName } from '@/lib/dates';
+import { Temporal, today, weekdayName, weekStart } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Habit, HabitLog, HabitStats } from '@/lib/shared';
 import { radius, space, useTheme } from '@/theme';
@@ -63,7 +63,9 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
   const done = progress >= habit.target_count;
   const weekly = habit.cadence === 'weekly';
   const byDate = new Map(logs.map((log) => [log.log_date, log]));
-  const week = Array.from({ length: 7 }, (_, index) => day.subtract({ days: 6 - index }));
+  // This week, Monday first, the same week the weekly goal counts; days still to come are dimmed.
+  const monday = weekStart(day);
+  const week = Array.from({ length: 7 }, (_, index) => monday.add({ days: index }));
   const streak = stats?.current_streak ?? 0;
 
   const checkIn = () => {
@@ -94,19 +96,32 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
                 </View>
               ) : null}
             </View>
-            <View style={{ flexDirection: 'row', gap: 6 }}>
+            <View style={{ flexDirection: 'row', gap: 5 }}>
               {week.map((item) => {
                 const log = byDate.get(item.toString());
-                const beforeStart = Temporal.PlainDate.compare(item, Temporal.PlainDate.from(habit.start_date)) < 0;
-                const fill = log?.status === 'completed' ? colors.success : log ? colors.border : colors.surfaceMuted;
+                const outside = Temporal.PlainDate.compare(item, Temporal.PlainDate.from(habit.start_date)) < 0
+                  || Temporal.PlainDate.compare(item, day) > 0;
+                // A day short of a daily goal (2 of 4) is lighter than a day that met it.
+                const met = log?.status === 'completed' && (weekly || log.count >= habit.target_count);
+                const fill = met ? colors.success : log?.status === 'completed' ? colors.successSoft : log ? colors.border : colors.surfaceMuted;
+                // Tapping a day sets or clears its record, so a forgotten yesterday is fixed right here.
                 return (
-                  <View key={item.toString()} style={{ alignItems: 'center', gap: 3, opacity: beforeStart ? 0.35 : 1 }}>
+                  <Pressable
+                    key={item.toString()} disabled={outside} hitSlop={3}
+                    accessibilityRole="button" accessibilityLabel={`${item.month}월 ${item.day}일 ${met ? '기록 지우기' : '기록하기'}`}
+                    onPress={() => {
+                      haptic.light();
+                      actions.setLog({
+                        habitId: habit.id, date: item.toString(), status: met ? null : 'completed', count: met ? 0 : weekly ? 1 : habit.target_count,
+                      });
+                    }}
+                    style={({ pressed }) => ({ alignItems: 'center', gap: 3, opacity: outside ? 0.35 : pressed ? 0.6 : 1 })}>
                     <View style={[styles.dot, { backgroundColor: fill }]}>
-                      {log?.status === 'frozen' ? <Icon name="pause" size={9} color={colors.textMuted} /> : null}
-                      {log?.status === 'skipped' ? <Icon name="minus" size={9} color={colors.textMuted} /> : null}
+                      {log?.status === 'frozen' ? <Icon name="pause" size={10} color={colors.textMuted} /> : null}
+                      {log?.status === 'skipped' ? <Icon name="minus" size={10} color={colors.textMuted} /> : null}
                     </View>
                     <Txt variant="caption" tone={item.equals(day) ? 'accent' : 'faint'}>{weekdayName(item)}</Txt>
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>
@@ -132,5 +147,5 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
 const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
   streak: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: radius.pill, paddingHorizontal: 7, height: 20 },
-  dot: { width: 22, height: 22, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  dot: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 });

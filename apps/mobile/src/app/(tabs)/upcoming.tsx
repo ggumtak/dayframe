@@ -53,7 +53,15 @@ export default function Upcoming() {
   const first = today(deviceTimeZone()).add({ days: 1 });
   const week = Array.from({ length: 7 }, (_, offset) => first.add({ days: offset }));
   const selected = picked && week.some((date) => date.toString() === picked) ? picked : null;
-  const days = selected ? all.filter((day) => day.key === selected) : all;
+  // The coming week lists every day, free ones too, so a day can be planned from here (as Todoist's Upcoming does).
+  const weekKeys = new Set(week.map((date) => date.toString()));
+  const planner = [
+    ...week.map((date) => groups.get(date.toString())
+      ? { key: date.toString(), ...groups.get(date.toString())! }
+      : { key: date.toString(), title: dayTitle(date, first.subtract({ days: 1 })), tasks: [] as Task[] }),
+    ...all.filter((day) => !weekKeys.has(day.key)),
+  ];
+  const days = selected ? all.filter((day) => day.key === selected) : all.length ? planner : [];
 
   const refresh = async () => {
     setRefreshing(true);
@@ -100,9 +108,14 @@ export default function Upcoming() {
           <ScrollView
             contentContainerStyle={{ paddingBottom: 140, flexGrow: 1 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
-            {days.length ? days.map((day) => (
+            {days.length ? days.map((day) => (day.tasks.length ? (
               <Fragmented key={day.key} title={day.title} tasks={day.tasks} onAdd={() => addOn(Temporal.PlainDate.from(day.key))} />
-            )) : (
+            ) : (
+              <View key={day.key} style={[styles.freeDay, { borderBottomColor: colors.border }]}>
+                <Txt variant="small" tone="faint" style={{ flex: 1 }}>{day.title}</Txt>
+                <AddButton label={day.title} onPress={() => addOn(Temporal.PlainDate.from(day.key))} />
+              </View>
+            ))) : (
               <EmptyState
                 icon="calendar" title={selected ? '이 날은 예정된 일이 없습니다' : '예정된 일이 없습니다'}
                 message={selected ? '날짜를 다시 누르면 전체 일정이 보입니다.' : '‘내일 오후 3시 회의’처럼 날짜를 함께 적으면 여기에 모입니다.'}
@@ -153,6 +166,10 @@ const styles = StyleSheet.create({
   preview: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: space.lg },
   previewIcon: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginTop: 12, marginRight: space.md },
   previewBody: { flex: 1, gap: 3, paddingVertical: 11, paddingRight: space.lg, borderBottomWidth: StyleSheet.hairlineWidth },
+  freeDay: {
+    flexDirection: 'row', alignItems: 'center', minHeight: 44, marginLeft: space.lg, paddingRight: space.lg, marginTop: space.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   day: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 4 },
   dayNumber: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 4, height: 4, borderRadius: 2 },

@@ -122,6 +122,7 @@ export const api = {
 
   openTasks: () => all<Task>('/tasks', { state: 'open' }),
   completedTasks: () => all<Task>('/tasks', { state: 'completed' }),
+  completionsSince: (from: string) => all<TaskCompletion>('/task-completions', { from }),
   task: (id: string) => request<Task>('/tasks/' + id),
   createTask: (input: TaskInput) => json<Task>('/tasks', 'POST', input),
   updateTask: (id: string, patch: TaskPatch) => json<Task>('/tasks/' + id, 'PATCH', patch),

@@ -306,7 +306,7 @@ function Calendar({ signedIn, title, weeks, stamp, canBack, canAhead, palette }:
           <FlexWidget style={{ width: 'match_parent', flexDirection: 'row' }}>
             {['월', '화', '수', '목', '금', '토', '일'].map((name, index) => (
               <FlexWidget key={name} style={{ flex: 1, alignItems: 'center', paddingVertical: 2 }}>
-                <TextWidget text={name} style={{ fontSize: 11, color: index >= 5 ? palette.danger : palette.faint }} />
+                <TextWidget text={name} style={{ fontSize: 11, color: index === 6 ? palette.danger : index === 5 ? palette.accent : palette.faint }} />
               </FlexWidget>
             ))}
           </FlexWidget>
@@ -320,7 +320,7 @@ function Calendar({ signedIn, title, weeks, stamp, canBack, canAhead, palette }:
                   <FlexWidget style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: cell.today ? palette.accent : palette.background }}>
                     <TextWidget
                       text={String(cell.day)}
-                      style={{ fontSize: 13, fontWeight: cell.today || cell.count ? '700' : '400', color: cell.today ? palette.onAccent : cell.weekend ? palette.danger : palette.text }} />
+                      style={{ fontSize: 13, fontWeight: cell.today || cell.count ? '700' : '400', color: cell.today ? palette.onAccent : column === 6 ? palette.danger : column === 5 ? palette.accent : palette.text }} />
                   </FlexWidget>
                   <FlexWidget style={{ width: 4, height: 4, borderRadius: 2, marginTop: 1, backgroundColor: cell.count ? palette.accent : palette.background }} />
                 </FlexWidget>

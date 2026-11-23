@@ -3,11 +3,12 @@ import { useState } from 'react';
 import { Linking, ScrollView, View } from 'react-native';
 
 import { Button, Card, Header, Icon, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
-import { useProfile, useSession } from '@/data/session';
+import { useNewTaskDate, useProfile, useSession } from '@/data/session';
 import { RemindersCard } from '@/features/reminders/RemindersCard';
 import { UpdateCard } from '@/features/update/UpdateCard';
 import { deviceTimeZone } from '@/lib/dates';
 import { env } from '@/lib/env';
+import type { NewTaskDate } from '@/lib/shared';
 import { space, type ThemeMode, useTheme } from '@/theme';
 
 export default function Settings() {
@@ -15,6 +16,7 @@ export default function Settings() {
   const { account, signOut } = useSession();
   const { data: profile } = useProfile();
   const [confirm, setConfirm] = useState(false);
+  const [newTaskDate, setNewTaskDate] = useNewTaskDate();
 
   return (
     <Screen>
@@ -23,6 +25,18 @@ export default function Settings() {
         <View style={{ gap: space.sm }}>
           <Txt variant="section" tone="muted">앱 업데이트</Txt>
           <UpdateCard />
+        </View>
+
+        <View style={{ gap: space.sm }}>
+          <Txt variant="section" tone="muted">날짜 없이 적은 할 일</Txt>
+          <Segmented<NewTaskDate>
+            value={newTaskDate} onChange={setNewTaskDate}
+            options={[{ value: 'today', label: '오늘에 넣기', icon: 'sun' }, { value: 'none', label: '목록에만', icon: 'list' }]} />
+          <Txt variant="small" tone="muted">
+            {newTaskDate === 'today'
+              ? '날짜를 적지 않은 할 일도 오늘 탭에 바로 보입니다. AI로 추가한 할 일도 같습니다. 추가 창의 ‘오늘 ×’를 누르면 그 할 일만 날짜 없이 넣습니다.'
+              : '날짜를 적지 않은 할 일은 목록 탭에만 들어갑니다. 오늘 탭에서 추가할 때는 오늘 날짜가 붙습니다.'}
+          </Txt>
         </View>
 
         <View style={{ gap: space.sm }}>

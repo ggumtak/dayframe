@@ -34,7 +34,8 @@ before(async () => {
     grant usage on schema auth to anon, authenticated, service_role;
   `);
   for (const file of ["20261121000000_core.sql", "20261121000100_operations.sql", "20261122000000_mcp_connections.sql",
-    "20261122000100_calendar_recurrence.sql", "20261123000000_occurrence_slot.sql"]) {
+    "20261122000100_calendar_recurrence.sql", "20261123000000_occurrence_slot.sql",
+    "20261123000100_new_task_date.sql"]) {
     await db.exec(await readFile(new URL("../supabase/migrations/" + file, import.meta.url), "utf8"));
   }
   await db.query("insert into auth.users values ($1), ($2)", [alice, bob]);
@@ -90,6 +91,16 @@ test("task completion is atomic, skips repeats on retry and uses optimistic revi
   await assert.rejects(db.query("select complete_task($1,gen_random_uuid(),$2,'2100-01-01T10:00Z')", [recurring, revision]), { code: "PT409" });
   await assert.rejects(db.query("select complete_task($1,$2,$3)", [task, completeId, revision]), { code: "23505" });
   await assert.rejects(db.query("delete from task_completions"), { code: "42501" });
+});
+
+test("new tasks land on today by default, and the owner can keep them undated instead", async () => {
+  await as("authenticated", alice);
+  const setting = async () => (await db.query<{ value: string }>("select new_task_date as value from users")).rows;
+  assert.deepEqual(await setting(), [{ value: "today" }]);
+  await db.query("update users set new_task_date='none'");
+  assert.deepEqual(await setting(), [{ value: "none" }]);
+  await assert.rejects(db.query("update users set new_task_date='tomorrow'"), { code: "23514" });
+  await db.query("update users set new_task_date='today'");
 });
 
 test("a moved occurrence remembers its slot until it is completed or the series changes", async () => {

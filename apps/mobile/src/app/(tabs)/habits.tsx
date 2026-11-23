@@ -35,7 +35,6 @@ export default function Habits() {
         right={(
           <View style={{ flexDirection: 'row' }}>
             <IconButton name="star" label="추천 루틴" onPress={() => router.push('/routines')} color={colors.accent} />
-            <IconButton name="plus" label="습관 추가" onPress={() => router.push('/habit/new')} color={colors.accent} />
           </View>
         )} />
       {isLoading ? <Loading /> : (

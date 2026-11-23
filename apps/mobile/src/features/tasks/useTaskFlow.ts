@@ -26,24 +26,28 @@ export function schedulePatch(task: Task, date: PlainDate | null, minutes: numbe
 export function useTaskFlow() {
   const actions = useTaskActions();
 
-  const complete = useCallback((task: Task) => {
-    actions.complete(task);
+  /**
+   * Takes back a completion. A one-off task is reopened; a repeating task has no completed state, so it
+   * moves back to the occurrence that was checked off.
+   */
+  const uncomplete = useCallback((task: Task, occurrenceDueAt: string | null) => {
     if (!task.recurrence_rule) {
-      showToast('완료했습니다.', { actionLabel: '실행 취소', onAction: () => actions.reopen(task) });
+      actions.reopen(task);
       return;
     }
+    const current = queryClient.getQueryData<Task[]>(keys.tasks)?.find((item) => item.id === task.id);
+    if (!occurrenceDueAt || !current?.due_at || sameInstant(current.due_at, occurrenceDueAt)) return;
+    actions.update(task.id, { due_at: occurrenceDueAt, expected_due_at: current.due_at, preserve_recurrence: true });
+  }, [actions]);
+
+  const complete = useCallback((task: Task) => {
+    actions.complete(task);
     const next = nextDueAfterComplete(task);
     const when = next ? formatDue({ due_at: next, timezone: task.timezone, all_day: task.all_day }) : null;
-    showToast(when ? `다음 일정: ${when}` : '완료했습니다. 다음 일정으로 넘어갑니다.', {
-      actionLabel: '실행 취소',
-      // A repeating task has no completed state to reopen; undo moves it back to the occurrence it was on.
-      onAction: () => {
-        const current = queryClient.getQueryData<Task[]>(keys.tasks)?.find((item) => item.id === task.id);
-        if (!task.due_at || !current?.due_at || sameInstant(current.due_at, task.due_at)) return;
-        actions.update(task.id, { due_at: task.due_at, expected_due_at: current.due_at, preserve_recurrence: true });
-      },
+    showToast(!task.recurrence_rule ? '완료했습니다.' : when ? `다음 일정: ${when}` : '완료했습니다. 다음 일정으로 넘어갑니다.', {
+      actionLabel: '실행 취소', onAction: () => uncomplete(task, task.due_at),
     });
-  }, [actions]);
+  }, [actions, uncomplete]);
 
   const remove = useCallback((task: Task) => {
     // Hide now, delete when the toast leaves, so "undo" never has to recreate anything.
@@ -72,5 +76,5 @@ export function useTaskFlow() {
     showToast('내일로 옮겼습니다.');
   }, [reschedule]);
 
-  return { ...actions, complete, remove, reschedule, postpone };
+  return { ...actions, complete, uncomplete, remove, reschedule, postpone };
 }
