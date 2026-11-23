@@ -82,7 +82,7 @@ export function reminderContent(
   const time = task.all_day ? '오늘 · 종일' : formatTime(due.hour * 60 + due.minute);
   const when = !task.all_day && lead ? leadText(lead) + ' · ' + time : time;
   const base = { title: task.title, sound: true, priority: 'high', color: '#3574F0', data: { url: 'dayframe:///task/' + task.id } };
-  const facts = [when, describeRecurrence(task.recurrence_rule), context.projectName(task) ? '#' + context.projectName(task) : null];
+  const facts = [when, describeRecurrence(task.recurrence_rule, task.recurrence_mode), context.projectName(task) ? '#' + context.projectName(task) : null];
   const lines = [facts.filter(Boolean).join(' · ')];
   const notes = task.notes?.trim();
   if (notes) lines.push(notes.length > 140 ? notes.slice(0, 139) + '…' : notes);
@@ -115,7 +115,7 @@ export async function syncReminders(
     // From the current occurrence, step past the slot it was moved off too, so that slot does not ring again.
     const floor = after === full.due_at ? occurrenceFloor(full, Temporal.Instant.from(after)) : Temporal.Instant.from(after);
     return nextOccurrence(full.recurrence_rule!, full.timezone, full.recurrence_anchor_at ?? full.due_at!, floor,
-      full.all_day, full.recurrence_local_time);
+      full.all_day, full.recurrence_local_time, full.recurrence_mode);
   }, { leadFor: (task) => own[task.id] }) : [];
   const wanted = new Map<string, { item: { at: number }; content: Notifications.NotificationContentInput; signature: string; channel: string }>(
     planned.map((item) => {

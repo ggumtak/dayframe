@@ -1,5 +1,5 @@
 import Feather from '@expo/vector-icons/Feather';
-import { memo, useRef, useState } from 'react';
+import { type ComponentProps, memo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
@@ -14,6 +14,8 @@ import { Checkbox } from './Checkbox';
 export interface TaskRowProps {
   task: Task;
   projectName?: string;
+  projectColor?: string;
+  projectIcon?: ComponentProps<typeof Feather>['name'];
   tagNames?: string[];
   /** Open and completed direct subtasks, shown as a compact counter (`3` or `2/5`). */
   subtaskProgress?: SubtaskProgress;
@@ -48,7 +50,7 @@ function SwipeAction({ icon, label, color, onPress }: { icon: 'clock' | 'trash-2
 }
 
 export const TaskRow = memo(function TaskRow({
-  task, projectName, tagNames, subtaskProgress, subtasksExpanded, onToggleSubtasks, hideDate,
+  task, projectName, projectColor, projectIcon, tagNames, subtaskProgress, subtasksExpanded, onToggleSubtasks, hideDate,
   selectable, selected, onToggleSelect,
   onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true,
 }: TaskRowProps) {
@@ -183,8 +185,8 @@ export const TaskRow = memo(function TaskRow({
             </View>
             {projectName ? (
               <View style={styles.metaItem}>
-                <Text style={[styles.metaText, { color: colors.textMuted }]} numberOfLines={1}>{projectName}</Text>
-                <Feather name="hash" size={11} color={colors.textFaint} />
+                <Text style={[styles.metaText, { color: projectColor ?? colors.textMuted }]} numberOfLines={1}>{projectName}</Text>
+                <Feather name={projectIcon ?? 'hash'} size={11} color={projectColor ?? colors.textFaint} />
               </View>
             ) : null}
           </View>

@@ -217,6 +217,7 @@ function FocusButton({ label, palette, action, data, primary }: { label: string;
 
 function Focus({ signedIn, running, endsAt, plannedMinutes, count, minutes, notice, palette }: FocusWidgetProps & { palette: Palette }) {
   const today = count ? '오늘 ' + count + '회 · ' + minutes + '분' : '오늘 첫 집중을 시작해 보세요';
+  const isStopwatch = !!running && plannedMinutes === 480;
   return (
     <Frame palette={palette}>
       <Header title="집중" subtitle={notice ?? today} uri="dayframe:///focus" palette={palette} subtitleColor={notice ? palette.danger : undefined} />
@@ -225,8 +226,8 @@ function Focus({ signedIn, running, endsAt, plannedMinutes, count, minutes, noti
           <FlexWidget clickAction="OPEN_URI" clickActionData={{ uri: 'dayframe:///focus' }} style={{ width: 'match_parent', flex: 1, justifyContent: 'center' }}>
             {running ? (
               <FlexWidget>
-                <TextWidget text={endsAt + '까지'} style={{ fontSize: 24, fontWeight: '700', color: palette.text }} />
-                <TextWidget text={plannedMinutes + '분 집중 중'} style={{ fontSize: 13, color: palette.accent, marginTop: 2 }} />
+                <TextWidget text={isStopwatch ? '측정 중' : endsAt + '까지'} style={{ fontSize: 24, fontWeight: '700', color: palette.text }} />
+                <TextWidget text={isStopwatch ? '스톱워치 실행 중' : plannedMinutes + '분 집중 중'} style={{ fontSize: 13, color: palette.accent, marginTop: 2 }} />
               </FlexWidget>
             ) : (
               <TextWidget text="뽀모도로" style={{ fontSize: 20, fontWeight: '700', color: palette.text }} />

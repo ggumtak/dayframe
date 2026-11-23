@@ -8,6 +8,7 @@ import { RemindersCard } from '@/features/reminders/RemindersCard';
 import { UpdateCard } from '@/features/update/UpdateCard';
 import { deviceTimeZone } from '@/lib/dates';
 import { env } from '@/lib/env';
+import { haptic, setHapticsEnabled, useHapticsEnabled } from '@/lib/haptics';
 import type { NewTaskDate } from '@/lib/shared';
 import { space, type ThemeMode, useTheme } from '@/theme';
 
@@ -17,6 +18,7 @@ export default function Settings() {
   const { data: profile } = useProfile();
   const [confirm, setConfirm] = useState(false);
   const [newTaskDate, setNewTaskDate] = useNewTaskDate();
+  const hapticsOn = useHapticsEnabled();
 
   return (
     <Screen>
@@ -55,15 +57,29 @@ export default function Settings() {
         </View>
 
         <View style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted">화면</Txt>
+          <Txt variant="section" tone="muted">화면 · 피드백</Txt>
           <Segmented<ThemeMode>
             value={mode} onChange={setMode}
             options={[{ value: 'system', label: '시스템', icon: 'smartphone' }, { value: 'light', label: '라이트', icon: 'sun' }, { value: 'dark', label: '다크', icon: 'moon' }]} />
+          <Card style={{ paddingVertical: space.xs }}>
+            <Row
+              icon="smartphone" label="진동 피드백" detail={hapticsOn ? '켜짐' : '꺼짐'}
+              trailing={<Icon name={hapticsOn ? 'check-circle' : 'circle'} size={20} color={hapticsOn ? colors.accent : colors.textFaint} />}
+              onPress={() => {
+                const next = !hapticsOn;
+                setHapticsEnabled(next);
+                if (next) haptic.tap();
+              }} />
+          </Card>
         </View>
 
         <View style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted">루틴</Txt>
+          <Txt variant="section" tone="muted">기록 · 루틴</Txt>
           <Card style={{ paddingVertical: space.xs }}>
+            <Row
+              icon="check-circle" label="완료한 일" detail="전체 완료 기록"
+              trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
+              onPress={() => router.push('/completed')} />
             <Row
               icon="star" label="추천 루틴" detail="눌러서 습관에 추가"
               trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}

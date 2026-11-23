@@ -245,6 +245,18 @@ test("completing a completion-based recurring task computes next due from comple
   assert.ok(diffDays >= 2 && diffDays <= 4, `expected ~3 days from now, got ${sentNext}`);
 });
 
+test("habits can be archived and unarchived via PATCH archive boolean", async () => {
+  const bodies: unknown[] = [];
+  const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input, init) => {
+    if (new URL(String(input)).pathname === "/auth/v1/user") return Response.json({ id: userId });
+    bodies.push(JSON.parse(String(init?.body)));
+    return Response.json([{ id: habitId, archived_at: null }]);
+  } });
+  const result = await handler(request("habits/" + habitId, "PATCH", { archive: false }));
+  assert.equal(result.status, 200);
+  assert.deepEqual(bodies, [{ archived_at: null }]);
+});
+
 test("tag links are listed across tasks with an optional tag filter", async () => {
   const seen: URL[] = [];
   const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input) => {

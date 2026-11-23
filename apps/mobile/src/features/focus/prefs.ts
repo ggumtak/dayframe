@@ -38,3 +38,56 @@ export function useFocusPrefs(): FocusPrefs {
     return () => { listeners.delete(listener); };
   }, () => current, () => current);
 }
+
+/** Persisted pause & +5m extension state for the currently running focus session so restarts never lose it. */
+export interface FocusSessionMod {
+  id: string;
+  pausedAt: number | null;
+  pausedMs: number;
+  extraSeconds: number;
+}
+
+export const EMPTY_SESSION_MOD: FocusSessionMod = { id: '', pausedAt: null, pausedMs: 0, extraSeconds: 0 };
+const MOD_KEY = 'dayframe-focus-session-mod';
+let currentMod: FocusSessionMod = EMPTY_SESSION_MOD;
+let modLoaded = false;
+const modListeners = new Set<() => void>();
+
+function ensureModLoaded() {
+  if (modLoaded) return;
+  modLoaded = true;
+  AsyncStorage.getItem(MOD_KEY)
+    .then((raw) => {
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<FocusSessionMod>;
+      if (typeof parsed.id === 'string') {
+        currentMod = {
+          id: parsed.id,
+          pausedAt: typeof parsed.pausedAt === 'number' ? parsed.pausedAt : null,
+          pausedMs: typeof parsed.pausedMs === 'number' ? parsed.pausedMs : 0,
+          extraSeconds: typeof parsed.extraSeconds === 'number' ? parsed.extraSeconds : 0,
+        };
+        modListeners.forEach((listener) => listener());
+      }
+    })
+    .catch(() => {});
+}
+
+export function setFocusSessionMod(next: FocusSessionMod): void {
+  currentMod = next;
+  modListeners.forEach((listener) => listener());
+  if (!next.id) AsyncStorage.removeItem(MOD_KEY).catch(() => {});
+  else AsyncStorage.setItem(MOD_KEY, JSON.stringify(next)).catch(() => {});
+}
+
+export function useFocusSessionMod(): FocusSessionMod {
+  ensureModLoaded();
+  return useSyncExternalStore(
+    (listener) => {
+      modListeners.add(listener);
+      return () => { modListeners.delete(listener); };
+    },
+    () => currentMod,
+    () => EMPTY_SESSION_MOD,
+  );
+}

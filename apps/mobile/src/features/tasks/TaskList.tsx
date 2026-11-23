@@ -11,6 +11,7 @@ import { haptic } from '@/lib/haptics';
 import type { Task } from '@/lib/shared';
 import { space, type, useTheme } from '@/theme';
 
+import { useProjectMetaMap } from './projectMeta';
 import { ScheduleSheet } from './ScheduleSheet';
 import { TaskMenu } from './TaskMenu';
 import { useTaskFlow } from './useTaskFlow';
@@ -54,6 +55,7 @@ export function TaskList({
   const { children } = useTaskIndex();
   const { completedChildren, progress } = useSubtaskProgress();
   const { data: projects } = useProjects();
+  const projectMeta = useProjectMetaMap();
   const tagNames = useTagNames();
   const [scheduling, setScheduling] = useState<Task | null>(null);
   const [menu, setMenu] = useState<Task | null>(null);
@@ -78,10 +80,12 @@ export function TaskList({
     const subProgress = progress.get(task.id);
     const hasAnySubtasks = openSubtasks.length + doneSubtasks.length > 0;
     const isExpanded = !nested && !selecting && expanded.has(task.id) && hasAnySubtasks;
+    const projMeta = task.project_id ? projectMeta[task.project_id] : undefined;
     return (
       <View>
         <TaskRow
           task={task} hideDate={hideDate} projectName={task.project_id ? projectNames.get(task.project_id) : undefined}
+          projectColor={projMeta?.color} projectIcon={projMeta?.icon}
           tagNames={tagNames.get(task.id)} subtaskProgress={subProgress}
           subtasksExpanded={isExpanded} onToggleSubtasks={!nested && !selecting && hasAnySubtasks ? toggleSubtasks : undefined}
           selectable={selecting && !nested} selected={selecting ? selectedIds.has(task.id) : false}

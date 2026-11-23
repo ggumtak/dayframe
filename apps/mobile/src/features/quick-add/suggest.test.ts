@@ -30,10 +30,12 @@ test('applyPriority replaces existing priority or clears it for P4', () => {
   assert.equal(applyPriority('보고서', 1, []), '보고서 p1 ');
 });
 
-test('applyScheduleWord swaps an existing date or recurrence token cleanly', () => {
+test('applyScheduleWord swaps an existing date, duration, or recurrence token cleanly', () => {
   const tokens = [{ kind: 'date' as const, start: 0, end: 2, text: '오늘' }];
   assert.equal(applyScheduleWord('오늘 운동', '내일', 'date', tokens), '내일 운동');
   assert.equal(applyScheduleWord('운동', '내일', 'date', []), '운동 내일 ');
+  const durTokens = [{ kind: 'duration' as const, start: 3, end: 7, text: '30분간' }];
+  assert.equal(applyScheduleWord('독서 30분간', '1시간 동안', 'duration', durTokens), '독서 1시간 동안 ');
 });
 
 test('removeTokens strips matching parsed tokens cleanly', () => {

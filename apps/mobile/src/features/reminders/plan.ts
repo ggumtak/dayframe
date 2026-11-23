@@ -12,7 +12,8 @@ export interface ReminderSettings {
 
 export const defaultReminderSettings: ReminderSettings = { enabled: true, leadMinutes: 0, allDayHour: 9 };
 
-export type ReminderTask = Pick<Task, 'id' | 'title' | 'due_at' | 'all_day' | 'timezone' | 'completed_at' | 'recurrence_rule'>;
+export type ReminderTask = Pick<Task, 'id' | 'title' | 'due_at' | 'all_day' | 'timezone' | 'completed_at' | 'recurrence_rule'>
+  & Partial<Pick<Task, 'recurrence_mode'>>;
 
 export interface PlannedReminder {
   /** Also the notification's identifier, so the same occurrence is never scheduled twice. */
@@ -54,11 +55,13 @@ export function planReminders(
     if (own === 'off') continue;
     const lead = own ?? settings.leadMinutes;
     let occurrence: string | null = task.due_at;
-    for (let count = 0; occurrence && count < (task.recurrence_rule ? options.perTask ?? 4 : 1); count++) {
+    // Completion-based repeats don't have deterministic future dates until completed, so only schedule the current occurrence.
+    const repeatsAhead = !!task.recurrence_rule && task.recurrence_mode !== 'completion';
+    for (let count = 0; occurrence && count < (repeatsAhead ? options.perTask ?? 4 : 1); count++) {
       const at = alertTime(task, occurrence, settings, lead);
       if (at !== null && at > horizon) break;
       if (at !== null && at > now) planned.push({ id: reminderId(task.id, occurrence), taskId: task.id, occurrence, at });
-      occurrence = task.recurrence_rule ? safely(() => upcoming(task, occurrence!)) : null;
+      occurrence = repeatsAhead ? safely(() => upcoming(task, occurrence!)) : null;
     }
   }
   return planned.sort((a, b) => a.at - b.at).slice(0, options.limit ?? 60);

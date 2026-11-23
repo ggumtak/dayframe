@@ -42,6 +42,9 @@ test('repeating tasks hold their next few occurrences inside the horizon, earlie
   // A rule the device cannot expand still rings once.
   const broken = [task('h', { due_at: '2026-11-21T10:00:00Z', recurrence_rule: 'FREQ=BROKEN' })];
   assert.equal(planReminders(broken, defaultReminderSettings, now, () => { throw new Error('bad rule'); }).length, 1);
+  // Completion-based repeats only schedule the current occurrence, never speculative future ones.
+  const completion = [task('i', { due_at: '2026-11-21T22:00:00Z', recurrence_rule: 'FREQ=DAILY', recurrence_mode: 'completion' })];
+  assert.deepEqual(planReminders(completion, defaultReminderSettings, now, daily).map((item) => kst(item.at)), ['2026-11-22 07:00']);
 });
 
 test('identifiers round-trip and request ids are stable UUIDs', () => {

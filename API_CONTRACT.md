@@ -72,7 +72,7 @@ To postpone one task occurrence while keeping the original repeat schedule, PATC
 | Route | Methods | Behavior |
 | --- | --- | --- |
 | `/habits` | `GET`, `POST` | List or create schedules |
-| `/habits/{id}` | `GET`, `PATCH`, `DELETE` | Read, rename, archive with `{"archive":true}`, or delete |
+| `/habits/{id}` | `GET`, `PATCH`, `DELETE` | Read, rename, archive/restore with `{"archive":true|false}`, or delete |
 | `/habits/{id}/logs` | `GET` | List daily entries, newest first |
 | `/habits/{id}/logs/{date}` | `PUT`, `DELETE` | Replace or remove the entry for a habit-local `YYYY-MM-DD` |
 | `/habits/{id}/stats` | `GET` | Get streaks, period progress, and completion rate |

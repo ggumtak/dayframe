@@ -1,8 +1,9 @@
-import { StyleSheet, Text, type TextStyle, View } from 'react-native';
+import { router } from 'expo-router';
+import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { Checkbox } from '@/components/Checkbox';
-import { FoldHeader, Icon } from '@/components/ui';
+import { FoldHeader, Icon, Txt } from '@/components/ui';
 import type { DoneToday as Done } from '@/data/tasks';
 import { deviceTimeZone, formatTime, Temporal } from '@/lib/dates';
 import { usePersistentState } from '@/lib/persist';
@@ -50,6 +51,13 @@ export function DoneToday({ items }: { items: Done[] }) {
           </View>
         );
           })}
+          <Pressable
+            accessibilityRole="button" accessibilityLabel="완료한 일 전체 기록 보기"
+            onPress={() => router.push('/completed')}
+            style={({ pressed }) => [styles.allLink, { opacity: pressed ? 0.6 : 1 }]}>
+            <Txt variant="smallStrong" tone="accent">완료 기록 전체 보기</Txt>
+            <Icon name="chevron-right" size={14} color={colors.accent} />
+          </Pressable>
         </Animated.View>
       ) : null}
     </View>
@@ -64,4 +72,7 @@ const styles = StyleSheet.create({
   },
   title: { flex: 1, textDecorationLine: 'line-through' },
   time: { fontFamily, fontSize: 12, lineHeight: 16 },
+  allLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: space.lg, paddingVertical: space.md,
+  },
 });

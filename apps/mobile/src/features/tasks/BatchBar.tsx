@@ -3,6 +3,8 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MonthCalendar } from '@/components/MonthCalendar';
 import { Button, Chip, Icon, type IconName, Row, Sheet, Txt } from '@/components/ui';
+import { queryClient } from '@/data/client';
+import { keys } from '@/data/keys';
 import { useProjects, useSections, useTaskActions } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { deviceTimeZone, type PlainDate, today } from '@/lib/dates';
@@ -57,8 +59,22 @@ export function BatchBar({
   const batchComplete = () => {
     if (!count) return;
     haptic.success();
-    for (const task of selected) actions.complete(task);
-    showToast(`${count}개 할 일을 완료했습니다.`);
+    const snapshot = [...selected];
+    const completedCache = queryClient.getQueryData<Task[]>(keys.completedTasks) ?? [];
+    for (const task of snapshot) {
+      actions.complete(task);
+      if (task.recurrence_rule) {
+        for (const child of completedCache.filter((item) => item.parent_task_id === task.id)) {
+          actions.reopen(child);
+        }
+      }
+    }
+    showToast(`${count}개 할 일을 완료했습니다.`, {
+      actionLabel: '실행 취소',
+      onAction: () => {
+        for (const task of snapshot) flow.uncomplete(task, task.due_at);
+      },
+    });
     onCancel();
   };
 

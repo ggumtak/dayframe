@@ -1,9 +1,9 @@
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Pressable, RefreshControl, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
-import { Button, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
+import { Button, Card, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { byPriority, bySchedule, useDoneToday, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
@@ -12,6 +12,7 @@ import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
 import { DoneToday } from '@/features/tasks/DoneToday';
 import { EisenhowerView } from '@/features/tasks/EisenhowerView';
+import { dismissOnboarding, STARTER_CHECKLIST, useOnboardingDismissed } from '@/features/tasks/onboarding';
 import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
 import { TaskList } from '@/features/tasks/TaskList';
 import { Timeline } from '@/features/tasks/Timeline';
@@ -19,13 +20,14 @@ import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { UpdateBanner } from '@/features/update/UpdateBanner';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, dueBucket, today, weekdayName } from '@/lib/dates';
+import { deviceTimeZone, dueBucket, formatTime, instantFor, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { usePersistentState } from '@/lib/persist';
-import type { Task } from '@/lib/shared';
+import type { Task, TaskPatch } from '@/lib/shared';
 import { bySmartRank } from '@/lib/smart';
+import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
-import { space, useTheme } from '@/theme';
+import { radius, space, useTheme } from '@/theme';
 
 type TodayView = 'list' | 'timeline' | 'matrix';
 type TodaySort = 'schedule' | 'smart' | 'priority';
@@ -46,6 +48,7 @@ export default function Today() {
   const { data: sessions } = useFocusSessions();
   const done = useDoneToday();
   const hasHabits = (useHabits().data ?? []).some((habit) => !habit.archived_at);
+  const onboardingDismissed = useOnboardingDismissed();
   const flow = useTaskFlow();
   const quickAdd = useQuickAdd();
 
@@ -55,6 +58,8 @@ export default function Today() {
   const [planning, setPlanning] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  useTabScrollTop('index', scrollRef);
 
   useMinute();
   const timeZone = deviceTimeZone();
@@ -123,6 +128,52 @@ export default function Today() {
     quickAdd.open({ dueToday: true, initialText: '오늘 ' + clock + ' ' });
   };
 
+  const rescheduleOnTimeline = (task: Task, minutes: number) => {
+    const prevPatch: TaskPatch = {
+      due_at: task.due_at,
+      all_day: task.all_day,
+      recurrence_rule: task.recurrence_rule,
+      recurrence_mode: task.recurrence_mode,
+      recurrence_local_time: task.recurrence_local_time,
+    };
+    flow.reschedule(task, today(task.timezone), minutes);
+    showToast(`‘${task.title}’을 ${formatTime(minutes)}(으)로 옮겼습니다.`, {
+      actionLabel: '실행 취소',
+      onAction: () => flow.update(task.id, prevPatch),
+    });
+  };
+
+  const createStarterChecklist = () => {
+    haptic.success();
+    dismissOnboarding();
+    const parentId = flow.create({
+      input: {
+        title: STARTER_CHECKLIST.title,
+        notes: STARTER_CHECKLIST.notes,
+        priority: 2,
+        timezone: timeZone,
+        position: 1024,
+        due_at: instantFor(date, null, timeZone),
+        all_day: true,
+        duration_minutes: STARTER_CHECKLIST.durationMinutes,
+      },
+    });
+    STARTER_CHECKLIST.items.forEach((item, idx) => {
+      flow.create({
+        input: {
+          title: item,
+          priority: 4,
+          timezone: timeZone,
+          position: (idx + 1) * 1024,
+          parent_task_id: parentId,
+        },
+      });
+    });
+    showToast('체험 체크리스트를 추가했습니다! 눌러서 펼쳐 보세요.');
+  };
+
+  const showOnboarding = !isLoading && !isError && tasks.length === 0 && done.length === 0 && !onboardingDismissed;
+
   return (
     <Screen>
       <Header
@@ -136,6 +187,15 @@ export default function Today() {
                 setPlanning(true);
               }}
               color={overdue.length > 0 ? colors.danger : colors.accent} />
+            {view === 'list' && allVisibleToday.length > 1 ? (
+              <IconButton
+                name="check-square" label="여러 개 선택"
+                onPress={() => {
+                  haptic.tap();
+                  setSelectedIds((prev) => (prev ? null : new Set()));
+                }}
+                color={selectedIds ? colors.accent : colors.textMuted} />
+            ) : null}
             {view === 'list' ? (
               <IconButton
                 name="sliders" label="정렬" onPress={() => setPickingSort(true)}
@@ -146,7 +206,7 @@ export default function Today() {
           </View>
         )} />
       <UpdateBanner />
-      <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm, gap: space.sm }}>
+      <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm, gap: 6 }}>
         <Segmented<TodayView>
           value={view}
           onChange={(next) => {
@@ -159,41 +219,55 @@ export default function Today() {
             { value: 'matrix', label: '매트릭스', icon: 'grid' },
           ]} />
         {totalToday > 0 && view === 'list' ? (
-          <View style={{ gap: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Txt variant="caption" tone={progressRatio === 1 ? 'success' : 'muted'}>
-                {progressRatio === 1 ? `오늘 할 일 ${done.length}개 모두 완료!` : `오늘 진행률 ${done.length}/${totalToday} (${Math.round(progressRatio * 100)}%)`}
-              </Txt>
-              {allVisibleToday.length > 1 ? (
-                <Pressable
-                  hitSlop={8}
-                  onPress={() => {
-                    haptic.tap();
-                    setSelectedIds((prev) => (prev ? null : new Set()));
-                  }}>
-                  <Txt variant="caption" tone={selectedIds ? 'accent' : 'faint'} style={{ fontWeight: '600' }}>
-                    {selectedIds ? '선택 종료' : '일괄 편집'}
-                  </Txt>
-                </Pressable>
-              ) : null}
+          <View style={styles.progressLine}>
+            <View style={{ flex: 1 }}>
+              <ProgressBar value={progressRatio} color={progressRatio === 1 ? colors.success : colors.accent} height={5} />
             </View>
-            <ProgressBar value={progressRatio} color={progressRatio === 1 ? colors.success : colors.accent} height={5} />
+            <Txt variant="caption" tone={progressRatio === 1 ? 'success' : 'muted'} style={{ fontWeight: '700' }}>
+              {done.length}/{totalToday} ({Math.round(progressRatio * 100)}%)
+            </Txt>
           </View>
         ) : null}
       </View>
 
       {isLoading ? <Loading /> : view === 'timeline' ? (
-        <Timeline tasks={due} sessions={sessions ?? []} timeZone={timeZone} onComplete={flow.complete} onAddAt={addAt} />
+        <Timeline
+          tasks={due} sessions={sessions ?? []} timeZone={timeZone} overdueCount={overdue.length}
+          onComplete={flow.complete} onAddAt={addAt} onRescheduleTime={rescheduleOnTimeline}
+          onPlanOverdue={() => setPlanning(true)} />
       ) : view === 'matrix' ? (
         <EisenhowerView roots={roots} subtaskProgress={subtaskProgress} refreshing={refreshing} onRefresh={refresh} />
       ) : (
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{ paddingBottom: selectedIds ? 180 : 140, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {isError && tasks.length === 0 ? (
             <EmptyState
               icon="cloud-off" title="불러오지 못했습니다" message="네트워크 연결을 확인한 뒤 다시 시도해 주세요."
               action={<Button label="다시 시도" kind="secondary" onPress={refresh} />} />
+          ) : showOnboarding ? (
+            <View style={{ padding: space.lg, gap: space.md }}>
+              <Card style={{ gap: space.md }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                  <View style={[styles.guideBadge, { backgroundColor: colors.accentSoft }]}>
+                    <Icon name="compass" size={18} color={colors.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Txt variant="bodyStrong">Dayframe 시작 가이드</Txt>
+                    <Txt variant="caption" tone="muted">체크리스트 · 타임라인 · 습관 · 집중을 한곳에서</Txt>
+                  </View>
+                </View>
+                <Txt variant="small" tone="muted">
+                  직접 체험해 볼 수 있는 4단계 샘플 체크리스트를 오늘 목록에 넣어 드릴까요?
+                </Txt>
+                <View style={{ flexDirection: 'row', gap: space.sm }}>
+                  <Button label="체험 체크리스트 넣기" icon="check-square" onPress={createStarterChecklist} style={{ flex: 1, minHeight: 42 }} />
+                  <Button label="건너뛰기" kind="secondary" onPress={dismissOnboarding} style={{ minHeight: 42 }} />
+                </View>
+              </Card>
+              {hasHabits ? <TodayHabits /> : null}
+            </View>
           ) : remaining === 0 && done.length === 0 && !hasHabits ? (
             <EmptyState
               icon="sun" title="오늘 할 일이 없습니다"
@@ -240,13 +314,16 @@ export default function Today() {
               ) : overdue.length ? (
                 <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 일은 없습니다.</Txt>
               ) : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.xl }}>
-                  <Icon name="check-circle" size={18} color={colors.success} />
-                  <Txt variant="bodyStrong" style={{ flex: 1 }}>
-                    {done.length ? '오늘 할 일을 모두 마쳤습니다' : '오늘 남은 할 일이 없습니다'}
-                  </Txt>
+                <View style={[styles.allDoneCard, { backgroundColor: done.length ? colors.successSoft : colors.surfaceMuted }]}>
+                  <Icon name={done.length ? 'award' : 'check-circle'} size={20} color={colors.success} />
+                  <View style={{ flex: 1 }}>
+                    <Txt variant="bodyStrong" style={{ color: done.length ? colors.success : colors.text }}>
+                      {done.length ? `오늘 예정된 ${done.length}개를 모두 마쳤습니다!` : '오늘 남은 할 일이 없습니다'}
+                    </Txt>
+                    {done.length ? <Txt variant="caption" tone="muted">수고하셨습니다. 남은 일정도 살펴볼까요?</Txt> : null}
+                  </View>
                   <Pressable hitSlop={8} onPress={() => setPlanning(true)}>
-                    <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>추천 보기</Txt>
+                    <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>추천 보기</Txt>
                   </Pressable>
                 </View>
               )}
@@ -290,3 +367,12 @@ export default function Today() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  progressLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  guideBadge: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  allDoneCard: {
+    flexDirection: 'row', alignItems: 'center', gap: space.md,
+    marginHorizontal: space.lg, marginTop: space.md, padding: space.md, borderRadius: radius.lg,
+  },
+});

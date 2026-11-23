@@ -103,6 +103,24 @@ function TaskMenuContent({
         })}
       </View>
 
+      <View style={styles.durations}>
+        {([15, 30, 60, null] as (number | null)[]).map((mins) => {
+          const active = task.duration_minutes === mins;
+          return (
+            <Chip
+              key={mins === null ? 'none' : String(mins)}
+              icon={mins === null ? 'slash' : 'clock'}
+              label={mins === null ? '시간 없음' : formatDurationMinutes(mins)}
+              selected={active}
+              onPress={() => run(() => {
+                actions.update(task.id, { duration_minutes: mins });
+                showToast(mins ? `소요시간을 ${formatDurationMinutes(mins)}(으)로 설정했습니다.` : '소요시간을 지웠습니다.');
+              })}
+              style={{ flex: 1, justifyContent: 'center' }} />
+          );
+        })}
+      </View>
+
       <ScrollView style={{ maxHeight: 320, marginTop: space.sm }}>
         {!task.parent_task_id && projects?.length ? (
           <>
@@ -195,4 +213,5 @@ const styles = StyleSheet.create({
   action: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, height: 64, borderRadius: radius.md },
   priorities: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
   priority: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, height: 38, borderRadius: radius.md, borderWidth: 1 },
+  durations: { flexDirection: 'row', gap: 6, marginTop: space.sm },
 });

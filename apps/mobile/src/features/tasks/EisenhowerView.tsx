@@ -2,14 +2,19 @@ import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
-import { Icon, type IconName, Txt } from '@/components/ui';
+import { Icon, type IconName, Segmented, Txt } from '@/components/ui';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { TaskList } from '@/features/tasks/TaskList';
 import { useMinute } from '@/lib/clock';
+import { deviceTimeZone, dueBucket, dueDate, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { usePersistentState } from '@/lib/persist';
 import type { Task } from '@/lib/shared';
 import { bySmartRank, classifyEisenhower, type EisenhowerQuadrant, type SubtaskProgress } from '@/lib/smart';
 import { radius, space, useTheme } from '@/theme';
+
+type MatrixScope = 'near' | 'all';
+const isMatrixScope = (value: string): value is MatrixScope => value === 'near' || value === 'all';
 
 interface QuadrantMeta {
   key: EisenhowerQuadrant;
@@ -39,18 +44,34 @@ export function EisenhowerView({
   const { colors } = useTheme();
   const quickAdd = useQuickAdd();
   const nowMs = useMinute() * 60_000;
+  const [scope, setScope] = usePersistentState<MatrixScope>('dayframe-matrix-scope', 'near', isMatrixScope);
   const [collapsed, setCollapsed] = useState<Set<EisenhowerQuadrant>>(() => new Set(['q4']));
+
+  const scopedRoots = useMemo(() => {
+    if (scope === 'all') return roots;
+    const tz = deviceTimeZone();
+    const todayRef = Temporal.Instant.fromEpochMilliseconds(nowMs).toZonedDateTimeISO(tz).toPlainDate();
+    return roots.filter((task) => {
+      const bucket = dueBucket(task);
+      if (bucket === 'overdue' || bucket === 'today') return true;
+      if (task.priority <= 2 && !task.due_at) return true;
+      const d = dueDate(task);
+      if (!d) return false;
+      const delta = todayRef.until(d).days;
+      return delta >= 0 && delta <= 7;
+    });
+  }, [roots, scope, nowMs]);
 
   const grouped = useMemo(() => {
     const map: Record<EisenhowerQuadrant, Task[]> = { q1: [], q2: [], q3: [], q4: [] };
-    for (const task of roots) {
+    for (const task of scopedRoots) {
       map[classifyEisenhower(task, nowMs)].push(task);
     }
     for (const key of ['q1', 'q2', 'q3', 'q4'] as EisenhowerQuadrant[]) {
       map[key].sort((a, b) => bySmartRank(a, b, { nowMs, subtaskProgress }));
     }
     return map;
-  }, [roots, subtaskProgress, nowMs]);
+  }, [scopedRoots, subtaskProgress, nowMs]);
 
   const palette = (key: EisenhowerQuadrant) => {
     if (key === 'q1') return { fg: colors.danger, bg: colors.dangerSoft };
@@ -73,6 +94,12 @@ export function EisenhowerView({
     <ScrollView
       contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.md }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
+      <Segmented<MatrixScope>
+        value={scope} onChange={setScope}
+        options={[
+          { value: 'near', label: '오늘 · 이번 주', icon: 'sun' },
+          { value: 'all', label: `전체 (${roots.length})`, icon: 'layers' },
+        ]} />
       <Txt variant="small" tone="muted">
         우선순위(P1–P2)와 마감일(오늘·지연)을 기준으로 자동 분류됩니다. 길게 눌러 우선순위나 날짜를 바꾸면 바로 이동합니다.
       </Txt>

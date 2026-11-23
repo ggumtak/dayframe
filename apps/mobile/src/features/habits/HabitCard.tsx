@@ -9,6 +9,7 @@ import { periodProgress, useHabitActions } from '@/data/habits';
 import { Temporal, today, weekdayName, weekStart } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Habit, HabitLog, HabitStats } from '@/lib/shared';
+import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
 import { nextCheckIn } from './checkIn';
@@ -118,9 +119,18 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
                     accessibilityRole="button" accessibilityLabel={`${item.month}월 ${item.day}일 ${met ? '기록 지우기' : '기록하기'}`}
                     onPress={() => {
                       haptic.light();
+                      const prevStatus = log?.status ?? null;
+                      const prevCount = log?.count ?? 0;
+                      const targetDate = item.toString();
                       actions.setLog({
-                        habitId: habit.id, date: item.toString(), status: met ? null : 'completed', count: met ? 0 : weekly ? 1 : habit.target_count,
+                        habitId: habit.id, date: targetDate, status: met ? null : 'completed', count: met ? 0 : weekly ? 1 : habit.target_count,
                       });
+                      if (!item.equals(day)) {
+                        showToast(`${item.month}월 ${item.day}일 기록을 ${met ? '지웠습니다.' : '체크했습니다.'}`, {
+                          actionLabel: '실행 취소',
+                          onAction: () => actions.setLog({ habitId: habit.id, date: targetDate, status: prevStatus, count: prevCount }),
+                        });
+                      }
                     }}
                     style={({ pressed }) => ({ alignItems: 'center', gap: 3, opacity: outside ? 0.35 : pressed ? 0.6 : 1 })}>
                     <View style={[styles.dot, { backgroundColor: fill }]}>

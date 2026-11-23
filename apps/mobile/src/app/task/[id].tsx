@@ -1,21 +1,24 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, TextInput, type TextInputInstance, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
 import { Button, Chip, EmptyState, Icon, IconButton, Loading, ProgressBar, Row, Screen, Sheet, Txt } from '@/components/ui';
-import { attachTagByName, nextPosition, useProjects, useSections, useSubtaskProgress, useTags, useTaskIndex, useTaskTags } from '@/data/tasks';
+import {
+  attachTagByName, nextDueAfterComplete, nextPosition, useProjects, useSections, useSubtaskProgress, useTags, useTaskIndex, useTaskTags,
+} from '@/data/tasks';
 import { TaskReminderChips } from '@/features/reminders/ReminderChips';
 import { useReminderOverrides } from '@/features/reminders/overrides';
 import { useReminderSettings } from '@/features/reminders/settings';
+import { useProjectMetaMap } from '@/features/tasks/projectMeta';
 import { RepeatSheet } from '@/features/tasks/RepeatSheet';
 import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
 import { saveCustomTemplate } from '@/features/tasks/templates';
 import { localTimeString, toMarkdownChecklist, useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { errorMessage } from '@/lib/api';
-import { describeRecurrence, deviceTimeZone, dueBucket, dueMinutes, formatDue, formatDurationMinutes, instantFor, isPastDue, today } from '@/lib/dates';
+import { describeRecurrence, deviceTimeZone, dueBucket, dueMinutes, formatDue, formatDurationMinutes, instantFor, isPastDue, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { analyzeTask, type Priority, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -55,11 +58,17 @@ type ModalKind = null | 'schedule' | 'duration' | 'repeat' | 'reminder' | 'prior
 
 const durationPresets = [15, 30, 45, 60, 90, 120, 180] as const;
 
+function shortStamp(iso: string, zone: string): string {
+  const dt = Temporal.Instant.from(iso).toZonedDateTimeISO(zone);
+  return `${dt.year}.${String(dt.month).padStart(2, '0')}.${String(dt.day).padStart(2, '0')}`;
+}
+
 function TaskEditor({ task }: { task: Task }) {
   const { colors } = useTheme();
   const { byId, children } = useTaskIndex();
   const { completedChildren } = useSubtaskProgress();
   const { data: projects } = useProjects();
+  const projectMeta = useProjectMetaMap();
   const { data: sections } = useSections();
   const { data: tags } = useTags();
   const { data: links } = useTaskTags();
@@ -70,11 +79,14 @@ function TaskEditor({ task }: { task: Task }) {
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes ?? '');
   const [subtaskText, setSubtaskText] = useState('');
+  const [subtaskPlain, setSubtaskPlain] = useState(false);
   const [newTag, setNewTag] = useState('');
   const [sheet, setSheet] = useState<ModalKind>(null);
   const [showCompletedSubs, setShowCompletedSubs] = useState(true);
   const [done, setDone] = useState(false);
   const subtaskInput = useRef<TextInputInstance>(null);
+  // Prevents unmount auto-save from firing a stale PATCH after the user explicitly deleted or completed a one-off task.
+  const skipSave = useRef(false);
 
   const parent = task.parent_task_id ? byId.get(task.parent_task_id) : undefined;
   const subtasks = children.get(task.id) ?? [];
@@ -85,10 +97,34 @@ function TaskEditor({ task }: { task: Task }) {
   const attachedIds = new Set((links ?? []).filter((link) => link.task_id === task.id).map((link) => link.tag_id));
   const attachedTags = (tags ?? []).filter((tag) => attachedIds.has(tag.id));
   const projectName = task.project_id ? projects?.find((item) => item.id === task.project_id)?.name : undefined;
+  const projMeta = task.project_id ? projectMeta[task.project_id] : undefined;
   const sectionName = task.section_id ? sections?.find((item) => item.id === task.section_id)?.name : undefined;
   const due = formatDue(task);
   const repeat = describeRecurrence(task.recurrence_rule, task.recurrence_mode);
   const durationLabel = task.duration_minutes ? formatDurationMinutes(task.duration_minutes) : null;
+  const nextRepeatPreview = useMemo(() => {
+    if (!task.recurrence_rule) return null;
+    const next = nextDueAfterComplete(task);
+    return next ? formatDue({ due_at: next, timezone: task.timezone, all_day: task.all_day }) : null;
+  }, [task]);
+
+  const subtaskPreview = useMemo(() => {
+    const raw = subtaskText.trim();
+    if (!raw || subtaskPlain) return null;
+    try {
+      const tz = deviceTimeZone();
+      const { task: parsed, tokens } = analyzeTask({ text: raw, timezone: tz });
+      if (!parsed.title || tokens.length === 0) return null;
+      const summary = [
+        parsed.due_at ? formatDue({ due_at: parsed.due_at, timezone: tz, all_day: parsed.all_day }) : null,
+        parsed.duration_minutes ? formatDurationMinutes(parsed.duration_minutes) : null,
+        parsed.priority < 4 ? 'P' + parsed.priority : null,
+      ].filter(Boolean).join(' · ');
+      return summary ? { parsed, summary } : null;
+    } catch {
+      return null;
+    }
+  }, [subtaskText, subtaskPlain]);
 
   // Compact reminder summary for the metadata pill.
   const ownReminder = reminderOverrides.tasks[task.id];
@@ -102,11 +138,13 @@ function TaskEditor({ task }: { task: Task }) {
         })();
 
   const saveTitle = () => {
+    if (skipSave.current) return;
     const next = title.trim();
     if (next && next !== task.title) flow.update(task.id, { title: next });
     else setTitle(task.title);
   };
   const saveNotes = () => {
+    if (skipSave.current) return;
     if (notes !== (task.notes ?? '')) flow.update(task.id, { notes: notes.trim() ? notes : null });
   };
   // Leaving the screen does not blur a focused field on a phone, so unsaved text is also saved on the way out.
@@ -115,6 +153,7 @@ function TaskEditor({ task }: { task: Task }) {
     unsaved.current = { title, notes, task, update: flow.update };
   });
   useEffect(() => () => {
+    if (skipSave.current) return;
     const { title: lastTitle, notes: lastNotes, task: last, update } = unsaved.current;
     const patch: TaskPatch = {};
     if (lastTitle.trim() && lastTitle.trim() !== last.title) patch.title = lastTitle.trim();
@@ -130,25 +169,28 @@ function TaskEditor({ task }: { task: Task }) {
       title: raw, priority: 4, timezone, position: nextPosition(subtasks), parent_task_id: task.id,
     };
     let tagNames: string[] = [];
-    try {
-      const { task: parsed } = analyzeTask({ text: raw, timezone });
-      if (parsed.title) {
-        input = {
-          title: parsed.title, priority: parsed.priority, timezone, position: nextPosition(subtasks),
-          parent_task_id: task.id,
-          ...(parsed.due_at ? { due_at: parsed.due_at, all_day: parsed.all_day } : {}),
-          ...(parsed.recurrence_rule ? { recurrence_rule: parsed.recurrence_rule, recurrence_mode: parsed.recurrence_mode } : {}),
-          ...(parsed.recurrence_local_time ? { recurrence_local_time: parsed.recurrence_local_time } : {}),
-          ...(parsed.duration_minutes ? { duration_minutes: parsed.duration_minutes } : {}),
-        };
-        tagNames = parsed.tags;
+    if (!subtaskPlain) {
+      try {
+        const { task: parsed } = analyzeTask({ text: raw, timezone });
+        if (parsed.title) {
+          input = {
+            title: parsed.title, priority: parsed.priority, timezone, position: nextPosition(subtasks),
+            parent_task_id: task.id,
+            ...(parsed.due_at ? { due_at: parsed.due_at, all_day: parsed.all_day } : {}),
+            ...(parsed.recurrence_rule ? { recurrence_rule: parsed.recurrence_rule, recurrence_mode: parsed.recurrence_mode } : {}),
+            ...(parsed.recurrence_local_time ? { recurrence_local_time: parsed.recurrence_local_time } : {}),
+            ...(parsed.duration_minutes ? { duration_minutes: parsed.duration_minutes } : {}),
+          };
+          tagNames = parsed.tags;
+        }
+      } catch {
+        // Plain title fallback when the text is not a special schedule phrase.
       }
-    } catch {
-      // Plain title fallback when the text is not a special schedule phrase.
     }
     flow.create({ input, projectName: null, tagNames });
     haptic.success();
     setSubtaskText('');
+    setSubtaskPlain(false);
     subtaskInput.current?.focus();
   };
 
@@ -188,6 +230,7 @@ function TaskEditor({ task }: { task: Task }) {
 
   const complete = () => {
     if (done) return;
+    if (!task.recurrence_rule) skipSave.current = true;
     setDone(true);
     setTimeout(() => {
       flow.complete(task);
@@ -237,8 +280,8 @@ function TaskEditor({ task }: { task: Task }) {
             accessibilityRole="button" accessibilityLabel="프로젝트·섹션 변경"
             onPress={() => setSheet('project')}
             style={({ pressed }) => [styles.crumb, { opacity: pressed ? 0.6 : 1 }]}>
-            <Icon name={projectName ? 'hash' : 'inbox'} size={14} color={colors.textMuted} />
-            <Txt variant="smallStrong" tone="muted" numberOfLines={1}>
+            <Icon name={projectName ? (projMeta?.icon ?? 'hash') : 'inbox'} size={14} color={projMeta?.color ?? colors.textMuted} />
+            <Txt variant="smallStrong" style={{ color: projMeta?.color ?? colors.textMuted }} numberOfLines={1}>
               {projectName ? (sectionName ? `${projectName} · ${sectionName}` : projectName) : '미분류'}
             </Txt>
             <Icon name="chevron-down" size={13} color={colors.textFaint} />
@@ -306,6 +349,14 @@ function TaskEditor({ task }: { task: Task }) {
               <Chip key={tag.id} icon="tag" label={tag.name} selected onPress={() => setSheet('tags')} />
             ))}
             <Chip icon="tag" label={attachedTags.length ? '+' : '태그'} onPress={() => setSheet('tags')} />
+            {nextRepeatPreview ? (
+              <View style={styles.nextRepeatRow}>
+                <Icon name="corner-down-right" size={12} color={colors.textFaint} />
+                <Txt variant="caption" tone="faint">
+                  지금 완료 시 다음 일정: {nextRepeatPreview}
+                </Txt>
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.subtaskHeader}>
@@ -343,7 +394,11 @@ function TaskEditor({ task }: { task: Task }) {
           <View style={[styles.inlineAdd, { borderBottomColor: colors.border }]}>
             <Icon name="plus" size={18} color={colors.accent} />
             <TextInput
-              ref={subtaskInput} value={subtaskText} onChangeText={setSubtaskText}
+              ref={subtaskInput} value={subtaskText}
+              onChangeText={(next) => {
+                setSubtaskText(next);
+                if (!next) setSubtaskPlain(false);
+              }}
               placeholder="하위 작업 추가..." placeholderTextColor={colors.textFaint}
               returnKeyType="done" submitBehavior="submit" onSubmitEditing={addSubtask}
               maxLength={500} accessibilityLabel="하위 작업 추가"
@@ -356,6 +411,16 @@ function TaskEditor({ task }: { task: Task }) {
               </Pressable>
             ) : null}
           </View>
+          {subtaskPreview ? (
+            <View style={[styles.subPreview, { backgroundColor: colors.surfaceMuted }]}>
+              <Txt variant="caption" tone="accent" numberOfLines={1} style={{ flex: 1 }}>
+                자동 인식: {subtaskPreview.summary}
+              </Txt>
+              <Pressable hitSlop={8} onPress={() => setSubtaskPlain(true)}>
+                <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>제목 그대로</Txt>
+              </Pressable>
+            </View>
+          ) : null}
 
           {completedSubtasks.length > 0 ? (
             <View style={{ marginTop: space.md }}>
@@ -391,6 +456,12 @@ function TaskEditor({ task }: { task: Task }) {
               )) : null}
             </View>
           ) : null}
+
+          <View style={styles.footerMeta}>
+            <Txt variant="caption" tone="faint">
+              {shortStamp(task.created_at, task.timezone)} 생성 · {shortStamp(task.updated_at, task.timezone)} 수정
+            </Txt>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -424,14 +495,14 @@ function TaskEditor({ task }: { task: Task }) {
             <Txt variant="bodyStrong" style={{ flex: 1 }}>직접 조정</Txt>
             <IconButton
               name="minus" label="5분 줄이기" size={18}
-              onPress={() => applyDuration(Math.max(5, (task.duration_minutes ?? 30) - 5))}
+              onPress={() => applyDuration(task.duration_minutes === null ? 15 : Math.max(5, task.duration_minutes - 5))}
               style={{ backgroundColor: colors.surfaceMuted, width: 36, height: 36 }} />
-            <Txt variant="bodyStrong" style={{ minWidth: 82, textAlign: 'center' }}>
-              {task.duration_minutes ? formatDurationMinutes(task.duration_minutes) : '30분'}
+            <Txt variant="bodyStrong" tone={task.duration_minutes === null ? 'faint' : 'default'} style={{ minWidth: 82, textAlign: 'center' }}>
+              {task.duration_minutes !== null ? formatDurationMinutes(task.duration_minutes) : '미설정'}
             </Txt>
             <IconButton
               name="plus" label="5분 늘리기" size={18}
-              onPress={() => applyDuration(Math.min(1440, (task.duration_minutes ?? 25) + 5))}
+              onPress={() => applyDuration(task.duration_minutes === null ? 15 : Math.min(1440, task.duration_minutes + 5))}
               style={{ backgroundColor: colors.surfaceMuted, width: 36, height: 36 }} />
           </View>
           <Button label="완료" onPress={() => setSheet(null)} />
@@ -474,10 +545,11 @@ function TaskEditor({ task }: { task: Task }) {
             }} />
           {(projects ?? []).map((project) => {
             const projSections = (sections ?? []).filter((s) => s.project_id === project.id);
+            const meta = projectMeta[project.id];
             return (
               <View key={project.id}>
                 <Row
-                  icon="hash" label={project.name}
+                  icon={meta?.icon ?? 'hash'} label={project.name}
                   trailing={task.project_id === project.id && !task.section_id ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
                   onPress={() => {
                     flow.update(task.id, { project_id: project.id, section_id: null });
@@ -546,6 +618,7 @@ function TaskEditor({ task }: { task: Task }) {
         <Row
           icon="trash-2" label="할 일 삭제" tone="danger"
           onPress={() => {
+            skipSave.current = true;
             setSheet(null);
             flow.remove(task);
             router.back();
@@ -566,6 +639,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: space.lg, paddingTop: space.md, paddingBottom: space.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  nextRepeatRow: {
+    width: '100%', flexDirection: 'row', alignItems: 'center', gap: 5, paddingTop: 2,
+  },
   subtaskHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: 6,
   },
@@ -574,6 +650,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   inlineSend: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  subPreview: {
+    flexDirection: 'row', alignItems: 'center', gap: space.sm,
+    marginHorizontal: space.lg, marginTop: 6, paddingHorizontal: space.md, paddingVertical: 6, borderRadius: radius.sm,
+  },
   completedToggle: {
     flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingVertical: space.sm,
   },
@@ -583,6 +663,9 @@ const styles = StyleSheet.create({
   completedSubBody: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 10, paddingRight: space.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  footerMeta: {
+    paddingHorizontal: space.lg, paddingTop: space.xl, alignItems: 'center',
   },
   sheetRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 48 },
   tagInput: { minHeight: 46, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space.md },

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { type PlainDate, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -11,14 +12,16 @@ const names = ['월', '화', '수', '목', '금', '토', '일'];
 
 export type DayMark = 'done' | 'partial' | 'skipped';
 
-/** A Monday-first month grid for picking a date or reading per-day marks. */
-export function MonthCalendar({ initial, selected, today, marks, dots, min, max, onSelect, onLongPress, onMonthChange }: {
+/** A Monday-first month grid with horizontal swipe month navigation and optional workload density dots. */
+export function MonthCalendar({ initial, selected, today, marks, dots, dotCounts, min, max, onSelect, onLongPress, onMonthChange }: {
   initial: PlainDate;
   selected?: PlainDate | null;
   today: PlainDate;
   marks?: Map<string, DayMark>;
   /** Days with something on them, shown as a small dot under the date. */
   dots?: Set<string>;
+  /** Optional item counts per YYYY-MM-DD date, shown as 1–3 density dots under the date. */
+  dotCounts?: Map<string, number>;
   min?: PlainDate;
   max?: PlainDate;
   onSelect?: (date: PlainDate) => void;
@@ -41,6 +44,22 @@ export function MonthCalendar({ initial, selected, today, marks, dots, min, max,
     ...Array.from({ length: month.daysInMonth }, (_, index) => first.add({ days: index })),
   ];
   while (cells.length % 7) cells.push(null);
+
+  const swipeMonth = Gesture.Pan()
+    .activeOffsetX([-24, 24])
+    .failOffsetY([-18, 18])
+    .runOnJS(true)
+    .onEnd((event) => {
+      if (event.translationX < -44) {
+        haptic.tap();
+        setMonth(month.add({ months: 1 }));
+      } else if (event.translationX > 44) {
+        haptic.tap();
+        setMonth(month.subtract({ months: 1 }));
+      }
+    });
+
+  const showDots = !!(dots || dotCounts);
 
   return (
     <View>
@@ -92,46 +111,64 @@ export function MonthCalendar({ initial, selected, today, marks, dots, min, max,
         </View>
       ) : null}
       <View style={styles.week}>
-        {names.map((name) => <Txt key={name} variant="caption" tone="faint" style={styles.cell}>{name}</Txt>)}
+        {names.map((name, idx) => (
+          <Txt
+            key={name} variant="caption"
+            style={[styles.cell, { color: idx === 6 ? colors.danger : idx === 5 ? colors.accent : colors.textFaint }]}>
+            {name}
+          </Txt>
+        ))}
       </View>
-      {Array.from({ length: cells.length / 7 }, (_, row) => (
-        <View key={row} style={styles.week}>
-          {cells.slice(row * 7, row * 7 + 7).map((date, column) => {
-            if (!date) return <View key={column} style={styles.cell} />;
-            const key = date.toString();
-            const mark = marks?.get(key);
-            const isSelected = !!selected && Temporal.PlainDate.compare(selected, date) === 0;
-            const isToday = Temporal.PlainDate.compare(today, date) === 0;
-            const disabled = !onSelect || (!!min && Temporal.PlainDate.compare(date, min) < 0)
-              || (!!max && Temporal.PlainDate.compare(date, max) > 0);
-            const fill = isSelected ? colors.accent : mark === 'done' ? colors.success
-              : mark === 'partial' ? colors.successSoft : mark === 'skipped' ? colors.surfaceMuted : 'transparent';
-            const foreground = isSelected || mark === 'done' ? colors.onAccent
-              : disabled && onSelect ? colors.textFaint : isToday ? colors.accent : colors.text;
-            return (
-              <Pressable
-                key={column} disabled={disabled} accessibilityRole="button"
-                accessibilityLabel={`${date.month}월 ${date.day}일`} accessibilityState={{ selected: isSelected, disabled }}
-                onPress={() => {
-                  haptic.tap();
-                  onSelect?.(date);
-                }}
-                onLongPress={onLongPress ? () => {
-                  haptic.medium();
-                  onLongPress(date);
-                } : undefined}
-                style={styles.cell}>
-                <View style={[styles.day, { backgroundColor: fill }, isToday && !isSelected && { borderWidth: 1.5, borderColor: colors.accent }]}>
-                  <Text style={[type.small as TextStyle, { color: foreground, fontWeight: isToday ? '700' : '400' }]}>{date.day}</Text>
-                </View>
-                {dots ? (
-                  <View style={[styles.dot, { backgroundColor: dots.has(key) ? (isSelected ? colors.accent : colors.textFaint) : 'transparent' }]} />
-                ) : null}
-              </Pressable>
-            );
-          })}
+      <GestureDetector gesture={swipeMonth}>
+        <View>
+          {Array.from({ length: cells.length / 7 }, (_, row) => (
+            <View key={row} style={styles.week}>
+              {cells.slice(row * 7, row * 7 + 7).map((date, column) => {
+                if (!date) return <View key={column} style={styles.cell} />;
+                const key = date.toString();
+                const mark = marks?.get(key);
+                const isSelected = !!selected && Temporal.PlainDate.compare(selected, date) === 0;
+                const isToday = Temporal.PlainDate.compare(today, date) === 0;
+                const disabled = !onSelect || (!!min && Temporal.PlainDate.compare(date, min) < 0)
+                  || (!!max && Temporal.PlainDate.compare(date, max) > 0);
+                const fill = isSelected ? colors.accent : mark === 'done' ? colors.success
+                  : mark === 'partial' ? colors.successSoft : mark === 'skipped' ? colors.surfaceMuted : 'transparent';
+                const foreground = isSelected || mark === 'done' ? colors.onAccent
+                  : disabled && onSelect ? colors.textFaint : isToday ? colors.accent : colors.text;
+                const count = dotCounts ? (dotCounts.get(key) ?? 0) : (dots?.has(key) ? 1 : 0);
+                const dotNum = count >= 5 ? 3 : count >= 3 ? 2 : count >= 1 ? 1 : 0;
+                const dotColor = isSelected ? colors.accent : count >= 5 ? colors.danger : count >= 3 ? colors.warning : colors.textFaint;
+                return (
+                  <Pressable
+                    key={column} disabled={disabled} accessibilityRole="button"
+                    accessibilityLabel={`${date.month}월 ${date.day}일${count ? ', ' + count + '개' : ''}`}
+                    accessibilityState={{ selected: isSelected, disabled }}
+                    onPress={() => {
+                      haptic.tap();
+                      onSelect?.(date);
+                    }}
+                    onLongPress={onLongPress ? () => {
+                      haptic.medium();
+                      onLongPress(date);
+                    } : undefined}
+                    style={styles.cell}>
+                    <View style={[styles.day, { backgroundColor: fill }, isToday && !isSelected && { borderWidth: 1.5, borderColor: colors.accent }]}>
+                      <Text style={[type.small as TextStyle, { color: foreground, fontWeight: isToday ? '700' : '400' }]}>{date.day}</Text>
+                    </View>
+                    {showDots ? (
+                      <View style={styles.dotRow}>
+                        {dotNum > 0 ? Array.from({ length: dotNum }, (_, i) => (
+                          <View key={i} style={[styles.dot, { backgroundColor: dotColor }]} />
+                        )) : <View style={[styles.dot, { backgroundColor: 'transparent' }]} />}
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
         </View>
-      ))}
+      </GestureDetector>
     </View>
   );
 }
@@ -141,7 +178,8 @@ const styles = StyleSheet.create({
   week: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', justifyContent: 'center', textAlign: 'center', paddingVertical: 3 },
   day: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  dot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
+  dotRow: { flexDirection: 'row', gap: 2, marginTop: 2, height: 4, alignItems: 'center' },
+  dot: { width: 4, height: 4, borderRadius: 2 },
   title: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6 },
   picker: { borderWidth: 1, borderRadius: 12, padding: space.sm, marginBottom: space.sm },
   pickerYear: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

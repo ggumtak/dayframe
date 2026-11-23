@@ -3,8 +3,11 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { Task } from './shared';
 
 export type OccurrenceTask = Pick<Task, 'id' | 'due_at' | 'all_day' | 'timezone' | 'recurrence_rule' | 'recurrence_anchor_at' | 'recurrence_local_time'>
-  & Partial<Pick<Task, 'occurrence_at'>>;
-export type NextOccurrence = (rule: string, timezone: string, anchorAt: string, after: Temporal.Instant, allDay: boolean, localTime?: string | null) => string;
+  & Partial<Pick<Task, 'occurrence_at' | 'recurrence_mode'>>;
+export type NextOccurrence = (
+  rule: string, timezone: string, anchorAt: string, after: Temporal.Instant,
+  allDay: boolean, localTime?: string | null, mode?: 'schedule' | 'completion',
+) => string;
 
 /**
  * Every date in [from, to] a task falls on: its current due date, and for a repeating task the dates its
@@ -26,7 +29,8 @@ export function occurrenceDates(task: OccurrenceTask, from: Temporal.PlainDate, 
       if (count === 0 && task.occurrence_at && Temporal.Instant.compare(Temporal.Instant.from(task.occurrence_at), after) > 0) {
         after = Temporal.Instant.from(task.occurrence_at);
       }
-      at = next(task.recurrence_rule, task.timezone, task.recurrence_anchor_at ?? task.due_at, after, task.all_day, task.recurrence_local_time);
+      at = next(task.recurrence_rule, task.timezone, task.recurrence_anchor_at ?? task.due_at, after,
+        task.all_day, task.recurrence_local_time, task.recurrence_mode);
     } catch {
       at = null;
     }

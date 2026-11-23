@@ -29,7 +29,7 @@ queryClient.setMutationDefaults(writes.createHabit, {
   onSettled: () => settle(keys.habits),
 });
 
-export interface UpdateHabitVars { id: string; name?: string; archive?: true }
+export interface UpdateHabitVars { id: string; name?: string; archive?: boolean }
 
 queryClient.setMutationDefaults(writes.updateHabit, {
   scope,
@@ -37,7 +37,9 @@ queryClient.setMutationDefaults(writes.updateHabit, {
   onMutate: async (vars: UpdateHabitVars) => {
     await hold(keys.habits);
     queryClient.setQueryData<Habit[]>(keys.habits, (habits) => habits?.map((habit) => (habit.id !== vars.id ? habit : {
-      ...habit, name: vars.name ?? habit.name, archived_at: vars.archive ? new Date().toISOString() : habit.archived_at,
+      ...habit,
+      name: vars.name ?? habit.name,
+      archived_at: vars.archive === undefined ? habit.archived_at : vars.archive ? new Date().toISOString() : null,
     })));
   },
   onSettled: () => settle(keys.habits),
@@ -123,11 +125,16 @@ export function useHabitActions() {
   const setLog = useMutation<unknown, Error, SetHabitLogVars>({ mutationKey: writes.setHabitLog });
   return {
     // The start date is fixed now, so check-ins made offline still fall inside the habit once it syncs.
-    create: (input: HabitInput) => create.mutate({
-      ...input, id: uuid(), start_date: input.start_date ?? today(input.timezone).toString(),
-    }),
+    create: (input: HabitInput) => {
+      const id = uuid();
+      create.mutate({
+        ...input, id, start_date: input.start_date ?? today(input.timezone).toString(),
+      });
+      return id;
+    },
     rename: (id: string, name: string) => update.mutate({ id, name }),
     archive: (id: string) => update.mutate({ id, archive: true }),
+    unarchive: (id: string) => update.mutate({ id, archive: false }),
     remove: (id: string) => remove.mutate(id),
     setLog: (vars: SetHabitLogVars) => setLog.mutate(vars),
   };

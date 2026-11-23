@@ -7,22 +7,23 @@ import { Checkbox } from '@/components/Checkbox';
 import { Button, EmptyState, Header, Icon, IconButton, Loading, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
 import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
-import { useProjects, useTaskActions } from '@/data/tasks';
+import { useProjects, useTagNames, useTaskActions } from '@/data/tasks';
 import { api } from '@/lib/api';
 import { deviceTimeZone, formatDate, formatTime, Temporal, today } from '@/lib/dates';
+import { searchTasks } from '@/lib/search';
 import type { Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { fontFamily, radius, space, useTheme } from '@/theme';
 
 const PAGE = 60;
-const fold = (text: string) => text.toLowerCase().replace(/\s+/g, '');
 
-/** Finished tasks, newest first, searchable, each one a tap away from being reopened or deleted. */
+/** Finished tasks, newest first, searchable with Korean chosung and #project/@tag/p1 filters. */
 export default function Completed() {
   const { colors } = useTheme();
   const zone = deviceTimeZone();
   const query = useQuery({ queryKey: keys.completedTasks, queryFn: api.completedTasks, meta: { persist: false } });
   const { data: projects } = useProjects();
+  const tagNames = useTagNames();
   const actions = useTaskActions();
   const [shown, setShown] = useState(PAGE);
   const [search, setSearch] = useState('');
@@ -32,16 +33,10 @@ export default function Completed() {
   const names = useMemo(() => new Map((projects ?? []).map((project) => [project.id, project.name])), [projects]);
 
   const filtered = useMemo(() => {
-    const words = search.trim().split(/\s+/).filter(Boolean).map(fold);
-    return (query.data ?? [])
-      .filter((task) => {
-        if (!task.completed_at || removed.has(task.id)) return false;
-        if (!words.length) return true;
-        const haystack = fold([task.title, task.notes ?? '', task.project_id ? names.get(task.project_id) ?? '' : ''].join(' '));
-        return words.every((word) => haystack.includes(word.replace(/^#/, '')));
-      })
-      .sort((a, b) => Date.parse(b.completed_at!) - Date.parse(a.completed_at!));
-  }, [query.data, removed, search, names]);
+    const visible = (query.data ?? []).filter((task) => !!task.completed_at && !removed.has(task.id));
+    if (!search.trim()) return visible.sort((a, b) => Date.parse(b.completed_at!) - Date.parse(a.completed_at!));
+    return searchTasks(visible, search, { projectNames: names, tagNames });
+  }, [query.data, removed, search, names, tagNames]);
 
   const days = useMemo(() => {
     const groups = new Map<string, Task[]>();

@@ -1,19 +1,24 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 
 import { Button, Card, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, Txt } from '@/components/ui';
 import { periodProgress, useHabitDetails, useHabits } from '@/data/habits';
 import { HabitCard } from '@/features/habits/HabitCard';
+import { HABIT_TIME_GROUPS, type HabitTimeOfDay, useHabitMetaMap } from '@/features/habits/habitMeta';
 import { useMinute } from '@/lib/clock';
-import { today } from '@/lib/dates';
+import { deviceTimeZone, today, weekdayName, weekStart } from '@/lib/dates';
+import { useTabScrollTop } from '@/lib/tabScroll';
 import { space, useTheme } from '@/theme';
 
 export default function Habits() {
   const { colors } = useTheme();
   const { data, isLoading, refetch } = useHabits();
+  const habitMeta = useHabitMetaMap();
   const [refreshing, setRefreshing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  useTabScrollTop('habits', scrollRef);
   // Re-renders the cards when the date rolls over, so a check-in always lands on the current day.
   useMinute();
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
@@ -21,6 +26,41 @@ export default function Habits() {
   const details = useHabitDetails(habits);
   const done = habits.filter((habit) =>
     periodProgress(habit, details.get(habit.id)?.logs ?? [], today(habit.timezone).toString()) >= habit.target_count).length;
+
+  // Weekly completion summary across all active habits (Mon–Sun) so the Habits tab acts as a true routine dashboard.
+  const nowDay = today(deviceTimeZone());
+  const monday = weekStart(nowDay);
+  const weeklySummary = useMemo(() => {
+    if (!habits.length) return [];
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = monday.add({ days: index });
+      const key = date.toString();
+      const future = date.until(nowDay).days < 0;
+      let met = 0;
+      let eligible = 0;
+      for (const habit of habits) {
+        if (key < habit.start_date) continue;
+        eligible += 1;
+        const logs = details.get(habit.id)?.logs ?? [];
+        const log = logs.find((item) => item.log_date === key);
+        const reached = log?.status === 'completed'
+          && (habit.cadence === 'weekly' || log.count >= habit.target_count);
+        if (reached) met += 1;
+      }
+      return { date, key, future, met, eligible, ratio: eligible > 0 ? met / eligible : 0 };
+    });
+  }, [habits, details, monday, nowDay]);
+
+  const hasTimeGroups = habits.some((h) => (habitMeta[h.id]?.timeOfDay ?? 'anytime') !== 'anytime');
+  const groupedHabits = useMemo(() => {
+    if (!hasTimeGroups) return [{ key: 'anytime' as HabitTimeOfDay, label: '', icon: 'clock' as const, items: habits }];
+    return HABIT_TIME_GROUPS
+      .map((group) => ({
+        ...group,
+        items: habits.filter((h) => (habitMeta[h.id]?.timeOfDay ?? 'anytime') === group.key),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [habits, habitMeta, hasTimeGroups]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -39,16 +79,67 @@ export default function Habits() {
         )} />
       {isLoading ? <Loading /> : (
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.md, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {habits.length ? (
             <>
-              <View style={{ gap: 6, marginBottom: space.xs }}>
+              <View style={{ gap: 6 }}>
                 <ProgressBar value={done / habits.length} color={colors.success} />
-                <Txt variant="caption" tone="faint">{done === habits.length ? '모두 달성했습니다' : `${habits.length - done}개 남았습니다`}</Txt>
+                <Txt variant="caption" tone="faint">{done === habits.length ? '오늘 습관을 모두 달성했습니다!' : `${habits.length - done}개 남았습니다`}</Txt>
               </View>
-              {habits.map((habit) => (
-                <HabitCard key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? []} stats={details.get(habit.id)?.stats} />
+
+              <Card style={{ gap: space.sm, paddingVertical: space.md }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }}>이번 주 루틴 달성</Txt>
+                  <Txt variant="caption" tone="faint">요일 도트를 눌러 바로 기록 수정</Txt>
+                </View>
+                <View style={styles.weekBars}>
+                  {weeklySummary.map((bar) => {
+                    const isToday = bar.date.equals(nowDay);
+                    const full = bar.eligible > 0 && bar.met === bar.eligible;
+                    const height = bar.future ? 4 : bar.met > 0 ? Math.max(10, Math.round(bar.ratio * 38)) : 4;
+                    return (
+                      <View key={bar.key} style={styles.barCol}>
+                        <Txt variant="caption" tone={full ? 'success' : 'faint'} style={{ fontSize: 10 }}>
+                          {!bar.future && bar.met > 0 ? `${bar.met}/${bar.eligible}` : ''}
+                        </Txt>
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              {
+                                height,
+                                backgroundColor: bar.future
+                                  ? colors.surfaceMuted
+                                  : full ? colors.success : bar.met > 0 ? colors.successSoft : colors.surfaceMuted,
+                                borderColor: !bar.future && bar.met > 0 && !full ? colors.success : 'transparent',
+                                borderWidth: !bar.future && bar.met > 0 && !full ? 1 : 0,
+                              },
+                            ]} />
+                        </View>
+                        <Txt variant="caption" tone={isToday ? 'accent' : 'faint'} style={{ fontWeight: isToday ? '700' : '500' }}>
+                          {weekdayName(bar.date)}
+                        </Txt>
+                      </View>
+                    );
+                  })}
+                </View>
+              </Card>
+
+              {groupedHabits.map((group) => (
+                <View key={group.key} style={{ gap: space.md }}>
+                  {hasTimeGroups ? (
+                    <View style={styles.groupHead}>
+                      <Icon name={group.icon} size={14} color={colors.accent} />
+                      <Txt variant="section" tone="muted">{group.label}</Txt>
+                      <Txt variant="caption" tone="faint">{group.items.length}</Txt>
+                    </View>
+                  ) : null}
+                  {group.items.map((habit) => (
+                    <HabitCard key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? []} stats={details.get(habit.id)?.stats} />
+                  ))}
+                </View>
               ))}
             </>
           ) : (
@@ -89,3 +180,11 @@ export default function Habits() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  barCol: { flex: 1, alignItems: 'center', gap: 3 },
+  barTrack: { height: 38, justifyContent: 'flex-end', width: '100%', alignItems: 'center' },
+  barFill: { width: 18, borderRadius: 5 },
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: space.xs },
+});
