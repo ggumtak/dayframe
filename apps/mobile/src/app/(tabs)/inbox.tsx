@@ -15,6 +15,8 @@ import { deleteProjectMeta, PROJECT_COLORS, PROJECT_ICONS, setProjectMeta, usePr
 import { TaskList } from '@/features/tasks/TaskList';
 import { TemplatesSheet } from '@/features/tasks/TemplatesSheet';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
+import { useMinute } from '@/lib/clock';
+import { deviceTimeZone, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { usePersistentState } from '@/lib/persist';
 import type { Section, Task } from '@/lib/shared';
@@ -33,6 +35,16 @@ const sortLabels: Record<SortMode, string> = {
   priority: '우선순위순',
   title: '이름순',
 };
+/** How long a finished task stays under its list before it is left to the 완료한 일 screen. Nothing is deleted. */
+type DoneWindow = 'today' | '3' | '7' | '30' | 'all';
+const doneWindows: { value: DoneWindow; label: string; short: string }[] = [
+  { value: 'today', label: '오늘 완료한 것만', short: '오늘' },
+  { value: '3', label: '최근 3일', short: '최근 3일' },
+  { value: '7', label: '최근 7일', short: '최근 7일' },
+  { value: '30', label: '최근 30일', short: '최근 30일' },
+  { value: 'all', label: '계속 보이기', short: '전체' },
+];
+const isDoneWindow = (value: string): value is DoneWindow => doneWindows.some((item) => item.value === value);
 const isScope = (value: string): value is Scope => value.length > 0;
 const isSortMode = (value: string): value is SortMode => value in sortLabels;
 
@@ -56,6 +68,11 @@ export default function Inbox() {
   const [projectMenu, setProjectMenu] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [doneWindow, setDoneWindow] = usePersistentState<DoneWindow>('dayframe-list-done-window', '7', isDoneWindow);
+  const [pickingDoneWindow, setPickingDoneWindow] = useState(false);
+  // Re-reads the date once a minute, so finished tasks age out at midnight without reopening the app.
+  useMinute();
+  const todayKey = today(deviceTimeZone()).toString();
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
   const scrollRef = useRef<ScrollViewInstance>(null);
   useTabScrollTop('inbox', scrollRef);
@@ -104,11 +121,17 @@ export default function Inbox() {
   const completedInScope = useMemo(() => {
     if (effectiveScope === 'all') return [];
     const targetProjectId = selected?.id ?? null;
+    // "최근 7일" counts whole days: today and the six before it.
+    const zone = deviceTimeZone();
+    const days = doneWindow === 'all' ? null : doneWindow === 'today' ? 1 : Number(doneWindow);
+    const since = days === null ? 0
+      : Temporal.PlainDate.from(todayKey).subtract({ days: days - 1 }).toZonedDateTime(zone).epochMilliseconds;
     return (completedAll ?? [])
-      .filter((task) => !task.parent_task_id && task.project_id === targetProjectId)
+      .filter((task) => !task.parent_task_id && task.project_id === targetProjectId && Date.parse(task.completed_at ?? '') >= since)
       .sort((a, b) => Date.parse(b.completed_at ?? '') - Date.parse(a.completed_at ?? ''))
-      .slice(0, 30);
-  }, [completedAll, effectiveScope, selected]);
+      .slice(0, 50);
+  }, [completedAll, effectiveScope, selected, doneWindow, todayKey]);
+  const doneWindowLabel = doneWindows.find((item) => item.value === doneWindow)?.short ?? '';
 
   const counts = useMemo(() => {
     const map = new Map<string | null, number>();
@@ -398,12 +421,25 @@ export default function Inbox() {
 
           {effectiveScope !== 'all' && completedInScope.length > 0 ? (
             <View style={{ marginTop: space.md }}>
-              <Pressable
-                accessibilityRole="button" onPress={() => setShowCompleted((open) => !open)}
-                style={({ pressed }) => [styles.completedToggle, { opacity: pressed ? 0.6 : 1 }]}>
-                <Icon name={showCompleted ? 'chevron-down' : 'chevron-right'} size={15} color={colors.textFaint} />
-                <Txt variant="smallStrong" tone="muted">완료한 항목 {completedInScope.length}</Txt>
-              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Pressable
+                  accessibilityRole="button" accessibilityLabel={`완료한 항목 ${completedInScope.length}개 ${showCompleted ? '접기' : '펼치기'}`}
+                  onPress={() => setShowCompleted((open) => !open)}
+                  style={({ pressed }) => [styles.completedToggle, { flex: 1, opacity: pressed ? 0.6 : 1 }]}>
+                  <Icon name={showCompleted ? 'chevron-down' : 'chevron-right'} size={15} color={colors.textFaint} />
+                  <Txt variant="smallStrong" tone="muted">완료한 항목 {completedInScope.length}</Txt>
+                </Pressable>
+                {/* Where the list says how long it keeps finished tasks is also where that is changed. */}
+                <Pressable
+                  accessibilityRole="button" accessibilityLabel={`완료한 항목 표시 기간: ${doneWindowLabel}. 눌러서 변경`} hitSlop={10}
+                  onPress={() => {
+                    haptic.tap();
+                    setPickingDoneWindow(true);
+                  }}
+                  style={({ pressed }) => ({ paddingHorizontal: space.lg, paddingVertical: space.sm, opacity: pressed ? 0.5 : 1 })}>
+                  <Txt variant="caption" tone="faint">{doneWindowLabel}</Txt>
+                </Pressable>
+              </View>
               {showCompleted ? completedInScope.map((task) => (
                 <View key={task.id} style={styles.completedRow}>
                   <Checkbox
@@ -440,6 +476,29 @@ export default function Inbox() {
       <TemplatesSheet
         visible={showTemplates} onClose={() => setShowTemplates(false)}
         projectId={selected?.id ?? null} />
+
+      <Sheet visible={pickingDoneWindow} onClose={() => setPickingDoneWindow(false)} title="완료한 항목을 여기에 얼마나 둘까요?">
+        {doneWindows.map((item) => (
+          <Row
+            key={item.value} label={item.label}
+            trailing={doneWindow === item.value ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+            onPress={() => {
+              haptic.tap();
+              setDoneWindow(item.value);
+              setPickingDoneWindow(false);
+            }} />
+        ))}
+        <Txt variant="small" tone="muted" style={{ marginTop: space.sm }}>
+          기간이 지나도 지워지지 않습니다. 오래된 항목은 완료한 일 화면에 그대로 있습니다.
+        </Txt>
+        <Row
+          icon="check-circle" label="완료한 일 전체 보기"
+          trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
+          onPress={() => {
+            setPickingDoneWindow(false);
+            router.push('/completed');
+          }} />
+      </Sheet>
 
       <Sheet visible={pickingSort} onClose={() => setPickingSort(false)} title="정렬 기준">
         {(['manual', 'smart', 'schedule', 'priority', 'title'] as SortMode[]).map((option) => (

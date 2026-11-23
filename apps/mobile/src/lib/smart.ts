@@ -232,8 +232,9 @@ export interface TodaySuggestion {
 }
 
 /**
- * Recommends up to `limit` non-today, non-overdue root tasks to pull into Today
- * (inspired by Microsoft To Do "My Day" suggestions).
+ * Recommends up to `limit` root tasks to pull into Today: ones with no date, and ones due tomorrow
+ * (inspired by Microsoft To Do "My Day" suggestions). Tasks already on today, overdue, or deliberately
+ * scheduled further ahead are left alone.
  */
 export function suggestForToday(
   openRoots: Task[],
@@ -250,6 +251,9 @@ export function suggestForToday(
     const taskToday = localToday(task.timezone, nowMs);
     const date = dueDate(task);
     const tomorrow = date ? taskToday.until(date).days === 1 : false;
+    // A task set for a later day was put there on purpose (an appointment next month must not be offered
+    // for today just because part of its checklist is ticked). Only tomorrow's work is worth pulling forward.
+    if (date && !tomorrow) continue;
     const stale = !task.due_at && isStaleTask(task, nowMs, 10);
 
     let score = 0;
