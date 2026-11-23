@@ -116,8 +116,12 @@ async function checkBackground(): Promise<void> {
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: Date.parse(due), channelId: 'task-reminders' },
     });
     const scheduled = (await Notifications.getAllScheduledNotificationsAsync()).some((item) => item.identifier === id);
-    await new Promise((resolve) => setTimeout(resolve, 9000));
-    const shown = (await Notifications.getPresentedNotificationsAsync()).some((item) => item.request.identifier === id);
+    // A busy emulator can deliver the alarm seconds late, so look until it shows rather than once at a fixed moment.
+    let shown = false;
+    for (let waited = 0; !shown && waited < 20; waited++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      shown = (await Notifications.getPresentedNotificationsAsync()).some((item) => item.request.identifier === id);
+    }
     if (!scheduled || !shown) failed.push(`notification (scheduled=${scheduled} shown=${shown})`);
   } catch (error) {
     failed.push('notification (' + (error instanceof Error ? error.message : String(error)) + ')');
