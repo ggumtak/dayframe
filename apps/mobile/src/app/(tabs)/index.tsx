@@ -3,10 +3,13 @@ import { useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
-import { Button, EmptyState, Header, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
+import { Button, EmptyState, Header, Icon, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
-import { bySchedule, useTaskIndex } from '@/data/tasks';
+import { useHabits } from '@/data/habits';
+import { bySchedule, useDoneToday, useTaskIndex } from '@/data/tasks';
+import { TodayHabits } from '@/features/habits/TodayHabits';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
+import { DoneToday } from '@/features/tasks/DoneToday';
 import { TaskList } from '@/features/tasks/TaskList';
 import { Timeline } from '@/features/tasks/Timeline';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
@@ -26,6 +29,8 @@ export default function Today() {
   const { colors } = useTheme();
   const { tasks, isLoading, isError, refetch } = useTaskIndex();
   const { data: sessions } = useFocusSessions();
+  const done = useDoneToday();
+  const hasHabits = (useHabits().data ?? []).some((habit) => !habit.archived_at);
   const flow = useTaskFlow();
   const quickAdd = useQuickAdd();
   const [view, setView] = usePersistentState<TodayView>('dayframe-today-view', 'list', isTodayView);
@@ -88,8 +93,8 @@ export default function Today() {
             <EmptyState
               icon="cloud-off" title="불러오지 못했습니다" message="네트워크 연결을 확인한 뒤 다시 시도해 주세요."
               action={<Button label="다시 시도" kind="secondary" onPress={refresh} />} />
-          ) : overdue.length + due.length === 0 ? (
-            <EmptyState icon="sun" title="오늘 할 일을 모두 마쳤습니다" message="아래 + 버튼으로 새 할 일을 추가해 보세요." />
+          ) : remaining === 0 && done.length === 0 && !hasHabits ? (
+            <EmptyState icon="sun" title="오늘 할 일이 없습니다" message="아래 + 버튼으로 새 할 일을 추가해 보세요." />
           ) : (
             <>
               {overdue.length ? (
@@ -113,7 +118,14 @@ export default function Today() {
                 </>
               ) : overdue.length ? (
                 <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 일은 없습니다.</Txt>
-              ) : null}
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.xl }}>
+                  <Icon name="check-circle" size={18} color={colors.success} />
+                  <Txt variant="bodyStrong">{done.length ? '오늘 할 일을 모두 마쳤습니다' : '오늘 남은 할 일이 없습니다'}</Txt>
+                </View>
+              )}
+              <TodayHabits />
+              <DoneToday items={done} />
             </>
           )}
         </ScrollView>

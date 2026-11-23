@@ -163,6 +163,9 @@ operation("/tasks/{id}/tags/{tagId}", "delete", "detachTaskTag", "Detach a tag",
 operation("/task-tags", "get", "listAllTaskTags", "List tag links across every task", "Tasks",
   { result: paged("TaskTag"), parameters: [...page, query("tag_id", uuid, "Only links to this tag.")],
     description: "Lets a client label task lists or filter by tag without one request per task." });
+operation("/task-completions", "get", "listTaskCompletions", "List completions, newest first", "Tasks",
+  { result: paged("TaskCompletion"), parameters: [...page, query("from", stamp, "Only completions at or after this instant.")],
+    description: "Includes each completed occurrence of a repeating task, so a client can show what was finished today." });
 resource("/habits", "Habit", "habit", "Habits", { input: "HabitInput", patch: "HabitPatch", remove: true });
 operation("/habits/{id}/stats", "get", "getHabitStats", "Get habit streak and completion statistics", "Habits",
   { result: "HabitStats", parameters: [id, query("through", date, "Inclusive habit-local cutoff date. Defaults to today.")] });

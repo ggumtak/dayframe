@@ -4,6 +4,9 @@ export const keys = {
   tags: ['tags'] as const,
   tasks: ['tasks', 'open'] as const,
   completedTasks: ['tasks', 'completed'] as const,
+  /** Everything checked off on one calendar day, repeating occurrences included. */
+  doneOn: (date: string) => ['tasks', 'done', date] as const,
+  done: ['tasks', 'done'] as const,
   taskTags: ['task-tags'] as const,
   habits: ['habits'] as const,
   habitLogs: (id: string) => ['habit-logs', id] as const,

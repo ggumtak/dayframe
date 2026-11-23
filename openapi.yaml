@@ -1889,6 +1889,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /task-completions:
+    get:
+      operationId: listTaskCompletions
+      summary: List completions, newest first
+      tags:
+        - Tasks
+      description: Includes each completed occurrence of a repeating task, so a client can show what was finished today.
+      parameters:
+        - *a2
+        - *a3
+        - name: from
+          in: query
+          schema: *a6
+          description: Only completions at or after this instant.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskCompletionPage"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /habits:
     get:
       operationId: listHabits
@@ -3812,6 +3869,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskTag"
+        nextOffset:
+          anyOf:
+            - *a15
+            - type: "null"
+      required:
+        - items
+        - nextOffset
+      additionalProperties: false
+    TaskCompletionPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskCompletion"
         nextOffset:
           anyOf:
             - *a15

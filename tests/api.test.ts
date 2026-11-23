@@ -200,6 +200,25 @@ test("completing an occurrence moved before its slot continues after that slot",
   assert.equal(result.status, 200);
 });
 
+test("completions are listed newest first from a given instant, as stored results", async () => {
+  const seen: URL[] = [];
+  const stored = { task: { id: habitId, title: "운동" }, completed_at: "2026-11-23T01:00:00Z", occurrence_due_at: null };
+  const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/auth/v1/user") return Response.json({ id: userId });
+    seen.push(url);
+    return Response.json([{ result: stored }]);
+  } });
+  const result = await handler(request("task-completions?from=2026-11-22T15:00:00Z"));
+  assert.deepEqual(await result.json(), { items: [stored], nextOffset: null });
+  assert.equal(seen[0].pathname, "/rest/v1/task_completions");
+  assert.equal(seen[0].searchParams.get("completed_at"), "gte.2026-11-22T15:00:00Z");
+  assert.equal(seen[0].searchParams.get("order"), "completed_at.desc,request_id.asc");
+  assert.equal(seen[0].searchParams.get("select"), "result");
+  assert.equal((await handler(request("task-completions?from=yesterday"))).status, 400);
+  assert.equal((await handler(request("task-completions", "POST", {}))).status, 405);
+});
+
 test("tag links are listed across tasks with an optional tag filter", async () => {
   const seen: URL[] = [];
   const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input) => {

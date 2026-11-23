@@ -236,6 +236,17 @@ export async function authenticatedRoute(
     }) };
   }
 
+  if (resource === "task-completions" && parts.length === 1) {
+    if (method !== "GET") throw unsupported();
+    // What was checked off since `from`, newest first: repeating occurrences included, which never show as completed tasks.
+    const from = params.get("from");
+    const page = await list<{ result: TaskCompletion }>(db, "task_completions", params, {
+      select: "result", order: "completed_at.desc,request_id.asc",
+      ...(from === null ? {} : { completed_at: "gte." + Temporal.Instant.from(validate(schema.instant, from)).toString() }),
+    });
+    return { data: { items: page.items.map((row) => row.result), nextOffset: page.nextOffset } };
+  }
+
   if (!Object.hasOwn(resourceNames, resource) || parts.length > 4) throw notFound();
   const table = resourceNames[resource];
   if (parts.length === 1) {

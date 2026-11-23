@@ -4,7 +4,10 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { api, ApiFailure } from '@/lib/api';
 import { deviceTimeZone, dueBucket, dueMinutes, instantFor, sameInstant, Temporal, today } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
-import { movedOccurrenceSlot, nextOccurrence, occurrenceFloor, type Project, type Tag, type Task, type TaskInput, type TaskPatch, type TaskTag, type User } from '@/lib/shared';
+import {
+  movedOccurrenceSlot, nextOccurrence, occurrenceFloor, type Project, type Tag, type Task, type TaskCompletion, type TaskInput, type TaskPatch,
+  type TaskTag, type User,
+} from '@/lib/shared';
 
 import { hold, queryClient, settle } from './client';
 import { keys, writes } from './keys';
@@ -151,7 +154,16 @@ queryClient.setMutationDefaults(writes.completeTask, {
     }
   },
   onMutate: async (vars: CompleteTaskVars) => {
-    await hold(keys.tasks);
+    await hold(keys.tasks, keys.done);
+    // Shown under 오늘's 완료됨 at once; the server's list replaces it when the write lands.
+    const finished = queryClient.getQueryData<Task[]>(keys.tasks)?.find((task) => task.id === vars.id);
+    if (finished) {
+      const completed_at = new Date().toISOString();
+      queryClient.setQueryData<TaskCompletion[]>(doneTodayKey(), (list) => list && [
+        { task: { ...finished, completed_at: finished.recurrence_rule ? null : completed_at }, completed_at, occurrence_due_at: finished.due_at },
+        ...list,
+      ]);
+    }
     editTasks((tasks) => tasks.flatMap((task) => {
       if (task.id !== vars.id) return [task];
       if (!task.recurrence_rule || !task.recurrence_anchor_at) return [];
@@ -159,7 +171,7 @@ queryClient.setMutationDefaults(writes.completeTask, {
       return due_at ? [{ ...task, due_at, occurrence_at: null }] : [task];
     }));
   },
-  onSettled: () => settle(keys.tasks, keys.completedTasks),
+  onSettled: () => settle(keys.tasks, keys.completedTasks, keys.done),
 });
 
 queryClient.setMutationDefaults(writes.reopenTask, {
@@ -172,7 +184,7 @@ queryClient.setMutationDefaults(writes.reopenTask, {
     queryClient.setQueryData<Task[]>(keys.completedTasks, (tasks) => tasks?.filter((item) => item.id !== task.id));
   },
   onSuccess: (task: Task) => editTasks((tasks) => [...tasks.filter((item) => item.id !== task.id), task]),
-  onSettled: () => settle(keys.tasks, keys.completedTasks),
+  onSettled: () => settle(keys.tasks, keys.completedTasks, keys.done),
 });
 
 // Tasks the user has just deleted are hidden while the "undo" toast is up, and only then deleted.
@@ -273,6 +285,44 @@ export async function attachTagByName(taskId: string, name: string): Promise<voi
   const tag = await ensureTag(name);
   await api.attachTag(taskId, tag.id);
   await refresh(keys.tags, keys.taskTags);
+}
+
+const doneTodayKey = () => keys.doneOn(today(deviceTimeZone()).toString());
+
+export interface DoneToday {
+  completion: TaskCompletion;
+  /** False for an earlier occurrence of a repeating task that was completed again since; only the latest can be undone. */
+  undoable: boolean;
+}
+
+/**
+ * What was checked off today, newest first. A task reopened since, and a repeating occurrence whose
+ * completion was undone, are left out even though the server keeps their completion records.
+ */
+export function useDoneToday(): DoneToday[] {
+  const zone = deviceTimeZone();
+  const date = today(zone);
+  const { data: open } = useTasks();
+  const { data } = useQuery({
+    queryKey: keys.doneOn(date.toString()),
+    queryFn: () => api.completionsSince(date.toZonedDateTime(zone).toInstant().toString()),
+    meta: { persist: false },
+  });
+  return useMemo(() => {
+    const current = new Map((open ?? []).map((task) => [task.id, task]));
+    const seen = new Set<string>();
+    const list: DoneToday[] = [];
+    for (const completion of data ?? []) {
+      const now = current.get(completion.task.id);
+      const repeats = !!completion.task.recurrence_rule;
+      // An open one-off task was reopened; a repeating task back on this occurrence had its completion undone.
+      if (repeats ? !now || sameInstant(now.due_at, completion.occurrence_due_at) : !!now) continue;
+      if (!repeats && seen.has(completion.task.id)) continue;
+      list.push({ completion, undoable: !seen.has(completion.task.id) });
+      seen.add(completion.task.id);
+    }
+    return list;
+  }, [data, open]);
 }
 
 /** Open tasks, minus any that are hidden behind a pending "undo delete". */
