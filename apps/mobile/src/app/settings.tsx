@@ -4,6 +4,7 @@ import { Linking, ScrollView, View } from 'react-native';
 
 import { Button, Card, Header, Icon, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useNewTaskDate, useProfile, useSession } from '@/data/session';
+import { type FilingMode, useAiAvailable, useFilingMode } from '@/features/ai/ai';
 import { RemindersCard } from '@/features/reminders/RemindersCard';
 import { UpdateCard } from '@/features/update/UpdateCard';
 import { deviceTimeZone } from '@/lib/dates';
@@ -17,6 +18,8 @@ export default function Settings() {
   const { account, signOut } = useSession();
   const { data: profile } = useProfile();
   const [confirm, setConfirm] = useState(false);
+  const aiAvailable = useAiAvailable();
+  const [filingMode, setFilingMode] = useFilingMode();
   const [newTaskDate, setNewTaskDate] = useNewTaskDate();
   const hapticsOn = useHapticsEnabled();
 
@@ -54,6 +57,22 @@ export default function Settings() {
               trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
               onPress={() => router.push('/ai')} />
           </Card>
+          {aiAvailable ? (
+            <>
+              <Txt variant="small" tone="muted" style={{ marginTop: space.xs }}>새 할 일 자동 정리</Txt>
+              <Segmented<FilingMode>
+                value={filingMode} onChange={setFilingMode}
+                options={[{ value: 'off', label: '끄기' }, { value: 'suggest', label: '제안' }, { value: 'auto', label: '자동 적용' }]} />
+              <Txt variant="small" tone="muted">
+                {filingMode === 'off'
+                  ? '할 일을 추가해도 AI가 관여하지 않습니다.'
+                  : filingMode === 'suggest'
+                    ? '할 일을 추가하면 어울리는 프로젝트·태그·소요 시간을 제안하고, 누르면 적용합니다. 직접 적은 값은 건드리지 않습니다.'
+                    : '제안을 바로 적용하고 알려 줍니다. 한 번 눌러 되돌릴 수 있습니다. 직접 적은 값은 건드리지 않습니다.'}
+                {filingMode === 'off' ? '' : ' 할 일 제목과 메모가 AI 서버로 전송됩니다.'}
+              </Txt>
+            </>
+          ) : null}
         </View>
 
         <View style={{ gap: space.sm }}>

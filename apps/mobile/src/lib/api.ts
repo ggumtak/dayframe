@@ -1,7 +1,7 @@
 import { accessToken, refreshedToken } from './auth';
 import { apiBase, env } from './env';
 import type {
-  ApiError, AppVersion, CompleteTaskInput, FinishFocusInput, FocusInput, FocusSession, Habit, HabitInput, HabitLog,
+  AiClassification, AiPlan, AiStatus, ApiError, AppVersion, CompleteTaskInput, FinishFocusInput, FocusInput, FocusSession, Habit, HabitInput, HabitLog,
   HabitLogInput, HabitPatch, HabitStats, McpConnection, NewMcpConnection, Page, Project, ProjectInput, RescheduleResult,
   Section, SectionInput, SectionPatch, Tag, Task, TaskCompletion, TaskInput, TaskPatch, TaskTag, User, UserPatch,
 } from './shared';
@@ -32,6 +32,10 @@ export function isUnreachable(error: unknown): boolean {
 }
 
 const messages: Record<string, string> = {
+  AI_UNAVAILABLE: 'AI 기능이 아직 설정되지 않았습니다.',
+  AI_BUSY: 'AI가 잠시 바쁩니다. 조금 뒤에 다시 시도해 주세요.',
+  AI_DECLINED: 'AI가 이 요청은 처리하지 않았습니다.',
+  AI_FAILED: 'AI가 답하지 못했습니다. 잠시 후 다시 시도해 주세요.',
   INVALID_INPUT: '입력값을 확인해 주세요.',
   INVALID_SCHEDULE: '날짜나 시간을 이해하지 못했습니다.',
   INVALID_REFERENCE: '연결된 항목을 찾을 수 없습니다.',
@@ -155,6 +159,10 @@ export const api = {
   mcpConnections: () => request<Page<McpConnection>>('/mcp-connections').then((page) => page.items),
   createMcpConnection: (label: string) => json<NewMcpConnection>('/mcp-connections', 'POST', { label }),
   deleteMcpConnection: (id: string) => request<void>('/mcp-connections/' + id, { method: 'DELETE' }),
+
+  aiStatus: () => request<AiStatus>('/ai/status'),
+  aiClassify: (input: { title: string; notes?: string | null }) => json<AiClassification>('/ai/classify', 'POST', input),
+  aiPlanToday: (taskIds: string[]) => json<AiPlan>('/ai/plan-today', 'POST', { task_ids: taskIds }),
 
   appVersion: () => request<AppVersion>('/app/version', { anonymous: true }),
 };

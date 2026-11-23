@@ -45,6 +45,12 @@ export const taskPatch = z.union([taskFields.partial(), z.strictObject({
   due_at: instant.describe("New due time for the occurrence."),
 })]);
 export const complete = z.strictObject({ request_id: uuid, expected_updated_at: instant });
+export const aiClassify = z.strictObject({
+  title: z.string().trim().min(1).max(500), notes: z.string().max(10_000).nullable().optional(),
+});
+export const aiPlan = z.strictObject({
+  task_ids: z.array(uuid).min(1).max(60).describe("Today's open tasks, as the app shows them."),
+});
 export const parse = z.strictObject({ text: z.string().trim().min(1).max(1000), timezone, now: instant.optional() });
 
 export const habit = z.strictObject({

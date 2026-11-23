@@ -8,6 +8,7 @@ import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { byPriority, bySchedule, useDoneToday, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
 import { TodayHabits } from '@/features/habits/TodayHabits';
+import { byPlan, requestTodayPlan, useAiAvailable, useTodayPlan } from '@/features/ai/ai';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
 import { DoneToday } from '@/features/tasks/DoneToday';
@@ -30,12 +31,13 @@ import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
 type TodayView = 'list' | 'timeline' | 'matrix';
-type TodaySort = 'schedule' | 'smart' | 'priority';
+type TodaySort = 'schedule' | 'smart' | 'priority' | 'ai';
 
 const sortLabels: Record<TodaySort, string> = {
   schedule: '일정순',
   smart: '스마트 추천순',
   priority: '우선순위순',
+  ai: 'AI 추천순',
 };
 
 const isTodayView = (value: string): value is TodayView => value === 'list' || value === 'timeline' || value === 'matrix';
@@ -55,6 +57,12 @@ export default function Today() {
   const [view, setView] = usePersistentState<TodayView>('dayframe-today-view', 'list', isTodayView);
   const [sort, setSort] = usePersistentState<TodaySort>('dayframe-today-sort', 'schedule', isTodaySort);
   const [pickingSort, setPickingSort] = useState(false);
+  const aiAvailable = useAiAvailable();
+  const plan = useTodayPlan();
+  const [planBusy, setPlanBusy] = useState(false);
+  const [showingReasons, setShowingReasons] = useState(false);
+  // The AI order only applies while there is a plan for today; otherwise the list reads by schedule.
+  const aiOrder = sort === 'ai' && aiAvailable ? plan : null;
   const [planning, setPlanning] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,10 +76,11 @@ export default function Today() {
 
   const sortList = useCallback((list: Task[]) => {
     const copy = [...list];
+    if (aiOrder) return copy.sort(bySchedule).sort(byPlan(aiOrder));
     if (sort === 'smart') return copy.sort((a, b) => bySmartRank(a, b, { subtaskProgress }));
     if (sort === 'priority') return copy.sort(byPriority);
     return copy.sort(bySchedule);
-  }, [sort, subtaskProgress]);
+  }, [sort, subtaskProgress, aiOrder]);
 
   // Deduplicate subtasks whose parent is already shown in the Today/Overdue list.
   const visibleDueIds = new Set(
@@ -110,6 +119,26 @@ export default function Today() {
   const startSelect = useCallback((task: Task) => {
     setSelectedIds(new Set([task.id]));
   }, []);
+
+  /** Asks the AI to order what is on today's list. The answer is advice: it changes no task. */
+  const makePlan = async () => {
+    const ids = allVisibleToday.map((task) => task.id);
+    if (ids.length < 2) {
+      showToast('순서를 짜려면 오늘 할 일이 2개 이상 있어야 합니다.');
+      return;
+    }
+    setPlanBusy(true);
+    try {
+      await requestTodayPlan(ids);
+      haptic.success();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'AI가 답하지 못했습니다.', { tone: 'error' });
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+  const planned = new Set(aiOrder?.order.map((item) => item.task_id));
+  const unplanned = aiOrder ? allVisibleToday.filter((task) => !planned.has(task.id)).length : 0;
 
   const refresh = async () => {
     setRefreshing(true);
@@ -275,6 +304,29 @@ export default function Today() {
               action={<Button label="오늘 할 일 추천 보기" kind="secondary" icon="compass" onPress={() => setPlanning(true)} />} />
           ) : (
             <>
+              {sort === 'ai' && aiAvailable && remaining > 0 ? (
+                <View style={[styles.planBanner, { backgroundColor: colors.accentSoft }]}>
+                  <Icon name="zap" size={15} color={colors.accent} />
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Txt variant="small">
+                      {planBusy ? '오늘 순서를 짜는 중입니다…' : aiOrder ? aiOrder.note || 'AI가 짠 순서입니다.' : '아직 오늘 순서를 짜지 않았습니다.'}
+                    </Txt>
+                    {!planBusy && unplanned ? <Txt variant="caption" tone="muted">그 뒤에 추가된 {unplanned}개는 맨 아래에 있습니다.</Txt> : null}
+                  </View>
+                  {planBusy ? null : (
+                    <View style={{ flexDirection: 'row', gap: space.md }}>
+                      {aiOrder ? (
+                        <Pressable accessibilityRole="button" accessibilityLabel="순서 이유 보기" hitSlop={8} onPress={() => setShowingReasons(true)}>
+                          <Txt variant="smallStrong" tone="accent">이유</Txt>
+                        </Pressable>
+                      ) : null}
+                      <Pressable accessibilityRole="button" accessibilityLabel={aiOrder ? '순서 다시 짜기' : '순서 짜기'} hitSlop={8} onPress={() => void makePlan()}>
+                        <Txt variant="smallStrong" tone="accent">{aiOrder ? '다시' : '짜기'}</Txt>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              ) : null}
               {overdue.length ? (
                 <>
                   <SectionTitle
@@ -350,25 +402,51 @@ export default function Today() {
         overdue={overdue} allOpen={tasks} openRoots={roots} subtaskProgress={subtaskProgress} />
 
       <Sheet visible={pickingSort} onClose={() => setPickingSort(false)} title="오늘 정렬 기준">
-        {(['schedule', 'smart', 'priority'] as TodaySort[]).map((option) => (
+        {(['schedule', 'smart', 'priority', ...(aiAvailable ? ['ai'] : [])] as TodaySort[]).map((option) => (
           <Row
             key={option}
-            icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : 'flag'}
+            icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : option === 'ai' ? 'cpu' : 'flag'}
             label={sortLabels[option]}
-            detail={option === 'smart' ? '긴급도 · 우선순위 · 진행률 반영' : undefined}
+            detail={option === 'smart' ? '긴급도 · 우선순위 · 진행률 반영' : option === 'ai' ? (plan ? '오늘 짠 순서 보기' : 'AI가 오늘 순서를 짭니다') : undefined}
             trailing={sort === option ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
             onPress={() => {
               haptic.tap();
               setSort(option);
               setPickingSort(false);
+              if (option === 'ai' && !plan) void makePlan();
             }} />
         ))}
+      </Sheet>
+
+      <Sheet visible={showingReasons && !!aiOrder} onClose={() => setShowingReasons(false)} title="오늘 순서와 이유">
+        <ScrollView style={{ maxHeight: 460 }}>
+          {(aiOrder?.order ?? []).flatMap((item, index) => {
+            const task = allVisibleToday.find((candidate) => candidate.id === item.task_id);
+            return task ? [(
+              <View key={item.task_id} style={[styles.reasonRow, { borderBottomColor: colors.border }]}>
+                <Txt variant="smallStrong" tone="accent" style={{ width: 22 }}>{index + 1}</Txt>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Txt numberOfLines={1}>{task.title}</Txt>
+                  {item.reason ? <Txt variant="small" tone="muted">{item.reason}</Txt> : null}
+                </View>
+              </View>
+            )] : [];
+          })}
+        </ScrollView>
+        <Txt variant="caption" tone="faint" style={{ marginTop: space.sm }}>
+          순서는 제안일 뿐이며 할 일의 날짜나 시간은 바뀌지 않습니다. 할 일 제목이 AI 서버로 전송됩니다.
+        </Txt>
       </Sheet>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  planBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, marginTop: space.sm,
+    paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.md,
+  },
+  reasonRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   progressLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   guideBadge: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   allDoneCard: {

@@ -76,6 +76,8 @@ export interface SupabaseConfig {
   key: string;
   /** Service-role key. Only the AI-connection endpoint uses it, to resolve a connection token to its owner. */
   serviceKey?: string;
+  /** Anthropic API key for the AI features. Without it they answer 503 and the app hides them. */
+  anthropicKey?: string;
   fetch?: typeof fetch;
 }
 

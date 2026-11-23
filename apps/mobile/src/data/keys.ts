@@ -15,6 +15,7 @@ export const keys = {
   focus: ['focus-sessions'] as const,
   update: ['app-update'] as const,
   connections: ['mcp-connections'] as const,
+  aiStatus: ['ai-status'] as const,
 };
 
 /** Mutation keys double as the lookup for defaults, so queued writes survive an app restart. */

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Chip, Icon, IconButton, type IconName, Txt } from '@/components/ui';
 import { useNewTaskDate } from '@/data/session';
+import { fileNewTask, type FilingNotice, onFilingNotice, useAiAvailable, useFilingMode } from '@/features/ai/ai';
 import { nextPosition, useProjects, useSections, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { describeRecurrence, deviceTimeZone, formatDue, formatDurationMinutes, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -69,6 +70,16 @@ const priorities: Priority[] = [1, 2, 3, 4];
 
 function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onClose: () => void }) {
   const { colors } = useTheme();
+  const aiAvailable = useAiAvailable();
+  const [filingMode] = useFilingMode();
+  // While this sheet is open, the AI's filing notes show here above the keyboard, not as a toast behind it.
+  const [filing, setFiling] = useState<FilingNotice | null>(null);
+  useEffect(() => onFilingNotice(setFiling), []);
+  useEffect(() => {
+    if (!filing) return;
+    const timer = setTimeout(() => setFiling(null), 9000);
+    return () => clearTimeout(timer);
+  }, [filing]);
   const insets = useSafeAreaInsets();
   const input = useRef<TextInputInstance>(null);
   const [text, setText] = useState(defaults.initialText ?? '');
@@ -232,7 +243,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     const siblings = tasks.filter((task) => (parent
       ? task.parent_task_id === parent.id
       : !task.parent_task_id && task.project_id === projectId));
-    actions.create({
+    const id = actions.create({
       input: {
         title,
         notes: notes.trim() ? notes : null,
@@ -251,6 +262,14 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
       projectName: parent ? null : (parsed?.project ?? null),
       tagNames: parsed?.tags ?? [],
     });
+    // The task is saved as written; where it belongs is then offered (or applied) for whatever was left open.
+    if (aiAvailable && !parent) {
+      void fileNewTask(filingMode, {
+        id, title, notes: notes.trim() ? notes : null,
+        hasProject: !!projectId || !!parsed?.project, hasTags: (parsed?.tags.length ?? 0) > 0,
+        hasPriority: (parsed?.priority ?? 4) < 4, hasDuration: !!parsed?.duration_minutes,
+      });
+    }
     afterSubmit(1, keepOpen === 'on' ? undefined : `‘${title}’을 추가했습니다.`);
   };
 
@@ -396,6 +415,21 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
               ) : null}
             </View>
           </View>
+        ) : null}
+        {filing ? (
+          <Animated.View key={filing.id} entering={FadeIn.duration(160)} style={[styles.filing, { backgroundColor: colors.accentSoft }]}>
+            <Icon name="zap" size={13} color={colors.accent} />
+            <Txt variant="small" numberOfLines={1} style={{ flex: 1 }}>{filing.text}</Txt>
+            <Pressable
+              accessibilityRole="button" accessibilityLabel={filing.actionLabel} hitSlop={10}
+              onPress={() => {
+                haptic.tap();
+                filing.onAction();
+                setFiling(null);
+              }}>
+              <Txt variant="smallStrong" tone="accent">{filing.actionLabel}</Txt>
+            </Pressable>
+          </Animated.View>
         ) : null}
         {result.error ? (
           <Txt variant="small" tone="danger" style={{ marginTop: 6 }} accessibilityLiveRegion="polite">{result.error}</Txt>
@@ -588,6 +622,10 @@ const styles = StyleSheet.create({
     marginTop: space.sm, borderRadius: radius.md, padding: space.md, gap: space.sm,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: space.md },
+  filing: {
+    flexDirection: 'row', alignItems: 'center', gap: space.sm, borderRadius: radius.sm, paddingHorizontal: space.md,
+    minHeight: 36, marginTop: space.sm,
+  },
   tools: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.md },
   insert: {
     flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 10, height: 30,

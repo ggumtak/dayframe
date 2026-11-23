@@ -33,7 +33,7 @@ export function createHandler(config: SupabaseConfig) {
       if (!token) throw new ApiProblem(401, "UNAUTHORIZED", "Supply a Supabase access token");
       const db = new Supabase(config, token);
       const user = await db.user();
-      const result = await authenticatedRoute(request, db, user.id, parts, url.searchParams, config.url);
+      const result = await authenticatedRoute(request, db, user.id, parts, url.searchParams, config.url, config);
       return result.status === 204 ? empty(204) : json(result.data, result.status ?? 200);
     } catch (error) {
       const problem = error instanceof ApiProblem ? error : error instanceof InvalidSchedule
