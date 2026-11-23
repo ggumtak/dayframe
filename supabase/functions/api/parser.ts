@@ -1,8 +1,8 @@
 import { Temporal } from "@js-temporal/polyfill";
-import type { ParsedTask, ParseTaskInput, Priority } from "../../../packages/shared/types.ts";
+import type { ParsedTask, ParseTaskInput, Priority, RecurrenceMode } from "../../../packages/shared/types.ts";
 import { instantOn, InvalidSchedule, type Frequency, type Weekday } from "./schedule.ts";
 
-export type TaskTokenKind = "project" | "tag" | "priority" | "recurrence" | "date" | "time";
+export type TaskTokenKind = "project" | "tag" | "priority" | "recurrence" | "date" | "time" | "duration";
 /** A recognized quick-entry token. Offsets are UTF-16 indexes into `TaskAnalysis.text`. */
 export interface TaskToken { kind: TaskTokenKind; start: number; end: number; text: string }
 export interface TaskAnalysis { task: ParsedTask; text: string; tokens: TaskToken[] }
@@ -80,53 +80,71 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
   }, true);
 
   let rule: string | null = null;
+  let recurrenceMode: RecurrenceMode = "schedule";
   let days: Weekday[] = [];
   const calendar: { monthDay?: number | "last" } = {};
-  function setRecurrence(frequency: Frequency, count: number, selected: Weekday[] = []) {
+  function setRecurrence(frequency: Frequency, count: number, selected: Weekday[] = [], mode: RecurrenceMode = "schedule") {
     if (rule) throw new InvalidSchedule("Use one recurrence per task");
     if (count < 1 || count > 52) throw new InvalidSchedule("Recurrence interval must be 1–52");
     days = week.filter((day) => selected.includes(day));
+    recurrenceMode = mode;
     rule = "FREQ=" + frequency + (count === 1 ? "" : ";INTERVAL=" + count)
       + (days.length ? ";BYDAY=" + days.join(",") : "")
       + (calendar.monthDay === "last" ? ";BYMONTHDAY=-1" : "");
   }
-  function setMonthly(count: number, day: string | undefined, last: string | undefined) {
+  function setMonthly(count: number, day: string | undefined, last: string | undefined, mode: RecurrenceMode = "schedule") {
     if (day !== undefined) {
       const number = Number(day);
       if (number < 1 || number > 31) throw new InvalidSchedule("Use a valid day of the month");
       calendar.monthDay = number;
     } else if (last) calendar.monthDay = "last";
-    setRecurrence("MONTHLY", count);
+    setRecurrence("MONTHLY", count, [], mode);
   }
   const koDays = (list: string) => (list.match(new RegExp(koDay, "g")) ?? []).map(weekday);
+  const koComp = "(?:(완료\\s*후)\\s*)?";
+  const enComp = "every(!)?";
+  const compMode = (prefix?: string, bang?: string): RecurrenceMode => (prefix || bang ? "completion" : "schedule");
 
-  consume(new RegExp(left + "(?:매달|매월)\\s*(?:(\\d{1,2})\\s*일(?!간)|(말일?|마지막\\s*날))(?:에|까지)?" + koRight, "gu"),
-    "recurrence", (day, last) => setMonthly(1, day, last));
-  consume(new RegExp(left + "(?:monthly|every\\s+(?:(\\d+)\\s+)?months?)\\s+on\\s+(?:the\\s+)?"
+  consume(new RegExp(left + koComp + "(?:매달|매월)\\s*(?:(\\d{1,2})\\s*일(?!간)|(말일?|마지막\\s*날))(?:에|까지)?(!)?" + koRight, "gu"),
+    "recurrence", (comp, day, last, bang) => setMonthly(1, day, last, compMode(comp, bang)));
+  consume(new RegExp(left + "(?:monthly|" + enComp + "\\s+(?:(\\d+)\\s+)?months?)\\s+on\\s+(?:the\\s+)?"
     + "(?:(\\d{1,2})(?:st|nd|rd|th)?|(last\\s+day))" + right, "giu"),
-    "recurrence", (count, day, last) => setMonthly(Number(count ?? 1), day, last));
-  consume(new RegExp(left + "every\\s+(weekday|weekend)s?" + right, "giu"), "recurrence",
-    (kind) => setRecurrence("WEEKLY", 1, kind!.toLowerCase() === "weekday" ? workdays : weekend));
-  consume(new RegExp(left + "every\\s+other\\s+(day|week|month|year)" + right, "giu"), "recurrence",
-    (unit) => setRecurrence(frequencies[unit!.toLowerCase()[0]], 2));
-  consume(new RegExp(left + "every\\s+(" + enList + ")" + right, "giu"), "recurrence",
-    (list) => setRecurrence("WEEKLY", 1, (list!.match(new RegExp(enDay, "gi")) ?? []).map(weekday)));
-  consume(new RegExp(left + "(?:매주\\s*(평일|주말)(?:\\s*마다)?|(평일|주말)\\s*마다)" + koRight, "gu"), "recurrence",
-    (weekly, each) => setRecurrence("WEEKLY", 1, (weekly ?? each) === "평일" ? workdays : weekend));
-  consume(new RegExp(left + "격주(?:\\s*(" + koList + "))?(?:\\s*마다)?" + koRight, "gu"), "recurrence",
-    (list) => setRecurrence("WEEKLY", 2, list ? koDays(list) : []));
-  consume(new RegExp(left + "매주\\s*(" + koList + ")(?:\\s*마다)?" + koRight, "gu"), "recurrence",
-    (list) => setRecurrence("WEEKLY", 1, koDays(list!)));
-  consume(new RegExp(left + "(" + koList + ")\\s*마다" + koRight, "gu"), "recurrence",
-    (list) => setRecurrence("WEEKLY", 1, koDays(list!)));
-  consume(new RegExp(left + "(\\d{1,2})\\s*(일|주|개월|달|년)\\s*마다" + koRight, "gu"), "recurrence",
-    (count, unit) => setRecurrence(frequencies[unit![0]], Number(count)));
-  consume(new RegExp(left + "every\\s+(?:(\\d+)\\s+)?(days?|weeks?|months?|years?)" + right + "|"
-      + left + "(daily|weekly|monthly|yearly|annually)" + right, "giu"), "recurrence",
-    (count, unit, shorthand) =>
-      setRecurrence(shorthand?.toLowerCase() === "annually" ? "YEARLY" : frequencies[(unit ?? shorthand)!.toLowerCase()[0]], Number(count ?? 1)));
-  consume(new RegExp(left + "(매일|매주|매달|매월|매년|매해)" + koRight, "gu"), "recurrence",
-    (word) => setRecurrence(frequencies[word![1]], 1));
+    "recurrence", (bang, count, day, last) => setMonthly(Number(count ?? 1), day, last, compMode(undefined, bang)));
+  consume(new RegExp(left + enComp + "\\s+(weekday|weekend)s?" + right, "giu"), "recurrence",
+    (bang, kind) => setRecurrence("WEEKLY", 1, kind!.toLowerCase() === "weekday" ? workdays : weekend, compMode(undefined, bang)));
+  consume(new RegExp(left + enComp + "\\s+other\\s+(day|week|month|year)" + right, "giu"), "recurrence",
+    (bang, unit) => setRecurrence(frequencies[unit!.toLowerCase()[0]], 2, [], compMode(undefined, bang)));
+  consume(new RegExp(left + enComp + "\\s+(" + enList + ")" + right, "giu"), "recurrence",
+    (bang, list) => setRecurrence("WEEKLY", 1, (list!.match(new RegExp(enDay, "gi")) ?? []).map(weekday), compMode(undefined, bang)));
+  consume(new RegExp(left + koComp + "(?:매주\\s*(평일|주말)(?:\\s*마다)?|(평일|주말)\\s*마다)(!)?" + koRight, "gu"), "recurrence",
+    (comp, weekly, each, bang) => setRecurrence("WEEKLY", 1, (weekly ?? each) === "평일" ? workdays : weekend, compMode(comp, bang)));
+  consume(new RegExp(left + koComp + "격주(?:\\s*(" + koList + "))?(?:\\s*마다)?(!)?" + koRight, "gu"), "recurrence",
+    (comp, list, bang) => setRecurrence("WEEKLY", 2, list ? koDays(list) : [], compMode(comp, bang)));
+  consume(new RegExp(left + koComp + "매주\\s*(" + koList + ")(?:\\s*마다)?(!)?" + koRight, "gu"), "recurrence",
+    (comp, list, bang) => setRecurrence("WEEKLY", 1, koDays(list!), compMode(comp, bang)));
+  consume(new RegExp(left + koComp + "(" + koList + ")\\s*마다(!)?" + koRight, "gu"), "recurrence",
+    (comp, list, bang) => setRecurrence("WEEKLY", 1, koDays(list!), compMode(comp, bang)));
+  consume(new RegExp(left + koComp + "(\\d{1,2})\\s*(일|주|개월|달|년)\\s*마다(!)?" + koRight, "gu"), "recurrence",
+    (comp, count, unit, bang) => setRecurrence(frequencies[unit![0]], Number(count), [], compMode(comp, bang)));
+  consume(new RegExp(left + enComp + "\\s+(?:(\\d+)\\s+)?(days?|weeks?|months?|years?)" + right + "|"
+      + left + "(daily|weekly|monthly|yearly|annually)(!)?" + right, "giu"), "recurrence",
+    (bang, count, unit, shorthand, shortBang) =>
+      setRecurrence(shorthand?.toLowerCase() === "annually" ? "YEARLY" : frequencies[(unit ?? shorthand)!.toLowerCase()[0]],
+        Number(count ?? 1), [], compMode(undefined, bang ?? shortBang)));
+  consume(new RegExp(left + koComp + "(매일|매주|매달|매월|매년|매해)(!)?" + koRight, "gu"), "recurrence",
+    (comp, word, bang) => setRecurrence(frequencies[word![1]], 1, [], compMode(comp, bang)));
+
+  let durationMinutes: number | null = null;
+  function setDuration(hours: number, mins: number) {
+    if (durationMinutes !== null) throw new InvalidSchedule("Use one duration per task");
+    const total = hours * 60 + mins;
+    if (total < 1 || total > 1440) throw new InvalidSchedule("Duration must be 1–1440 minutes");
+    durationMinutes = total;
+  }
+  consume(new RegExp(left + "(?:(\\d{1,2})\\s*시간\\s*(?:(\\d{1,2})\\s*분|(반))?|(\\d{1,4})\\s*분)\\s*(?:동안|간)" + koRight, "gu"),
+    "duration", (h, hm, half, m) => setDuration(Number(h ?? 0), half ? 30 : Number(hm ?? m ?? 0)));
+  consume(new RegExp(left + "for\\s+(?:(\\d{1,2})\\s*(?:hours?|hrs?|h)(?:\\s*(\\d{1,2})\\s*(?:minutes?|mins?|m))?|(\\d{1,4})\\s*(?:minutes?|mins?|m))" + right, "giu"),
+    "duration", (h, hm, m) => setDuration(Number(h ?? 0), Number(hm ?? m ?? 0)));
 
   let explicitDate: Temporal.PlainDate | undefined;
   function setDate(date: Temporal.PlainDate) {
@@ -134,24 +152,41 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
     explicitDate = date;
   }
   const baseMonday = today.subtract({ days: today.dayOfWeek - 1 });
+  consume(new RegExp(left + "(?:이번\\s*주말(?:까지)?" + koRight + "|this\\s+weekend" + right + ")", "giu"), "date",
+    () => {
+      // Saturday of the current week, or today if already Sunday? Use upcoming Saturday (or today if Sat/Sun).
+      const daysToSat = today.dayOfWeek <= 6 ? 6 - today.dayOfWeek : 0;
+      setDate(today.add({ days: daysToSat }));
+    });
+  consume(new RegExp(left + "(?:다음\\s*주말(?:까지)?" + koRight + "|next\\s+weekend" + right + ")", "giu"), "date",
+    () => setDate(baseMonday.add({ days: 12 })));
+  consume(new RegExp(left + "(?:이번\\s*달\\s*말일?|월말)(?:까지)?" + koRight + "|"
+    + left + "end\\s+of\\s+(?:this\\s+)?month" + right, "giu"), "date",
+    () => setDate(today.with({ day: today.daysInMonth })));
   consume(new RegExp(left + "(?:다음\\s*주\\s*(" + koDay + ")(?:까지)?" + koRight
     + "|next\\s+week\\s+(" + enDay + ")" + right + "|next\\s+(" + enDay + ")" + right + ")", "giu"), "date",
     (kr, enWeek, en) => setDate(baseMonday.add({ days: 7 + week.indexOf(weekday(kr ?? enWeek ?? en!)) })));
   consume(new RegExp(left + "(?:이번\\s*주\\s*(" + koDay + ")(?:까지)?" + koRight
     + "|this\\s+(?:week\\s+)?(" + enDay + ")" + right + ")", "giu"), "date",
     (kr, en) => setDate(baseMonday.add({ days: week.indexOf(weekday(kr ?? en!)) })));
-  consume(new RegExp(left + "(오늘|내일|모레)(?:까지)?" + koRight + "|"
+  consume(new RegExp(left + "(오늘|내일|모레|글피)(?:까지)?" + koRight + "|"
     + left + "(day\\s+after\\s+tomorrow|tomorrow|today)" + right, "giu"), "date",
     (kr, en) => {
       const word = (kr ?? en ?? "").toLowerCase();
-      const offset = word === "오늘" || word === "today" ? 0 : word === "내일" || word === "tomorrow" ? 1 : 2;
+      const offset = word === "오늘" || word === "today" ? 0
+        : word === "내일" || word === "tomorrow" ? 1
+          : word === "글피" ? 3 : 2;
       setDate(today.add({ days: offset }));
     });
-  consume(new RegExp(left + "(\\d{1,3})\\s*(일|주)\\s*(?:후|뒤)" + koRight + "|"
-    + left + "in\\s+(\\d{1,3})\\s+(days?|weeks?)" + right, "giu"), "date",
+  consume(new RegExp(left + "(\\d{1,3})\\s*(일|주|개월|달)\\s*(?:후|뒤)(?:에|까지)?" + koRight + "|"
+    + left + "in\\s+(\\d{1,3})\\s+(days?|weeks?|months?)" + right, "giu"), "date",
     (krCount, krUnit, enCount, enUnit) => {
       const count = Number(krCount ?? enCount);
-      setDate(today.add(krUnit === "주" || enUnit?.toLowerCase().startsWith("w") ? { weeks: count } : { days: count }));
+      if (krUnit === "개월" || krUnit === "달" || enUnit?.toLowerCase().startsWith("m")) {
+        setDate(today.add({ months: count }));
+      } else {
+        setDate(today.add(krUnit === "주" || enUnit?.toLowerCase().startsWith("w") ? { weeks: count } : { days: count }));
+      }
     });
   consume(new RegExp(left + "(\\d{1,2})\\s*월\\s*(\\d{1,2})\\s*일(?!간)(?:에|까지)?" + koRight, "gu"), "date",
     (month, day) => {
@@ -165,12 +200,24 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
         }
       }
     });
-  consume(new RegExp(left + "(\\d{4}-\\d{2}-\\d{2})" + right, "gu"), "date",
-    (value) => setDate(Temporal.PlainDate.from(value!)));
+  consume(new RegExp(left + "(\\d{4})[-./](\\d{2})[-./](\\d{2})" + right, "gu"), "date",
+    (y, m, d) => setDate(Temporal.PlainDate.from(`${y}-${m}-${d}`)));
 
   // `open` marks an hour written without 오전/오후 or am/pm; it is stored as the morning reading until
   // the rest of the entry is known.
   const clock: { time?: Temporal.PlainTime; nextDay?: boolean; smallHours?: boolean; open?: boolean } = {};
+  function setRelativeTime(hours: number, minutes: number) {
+    if (clock.time) throw new InvalidSchedule("Use one due time per task");
+    if (hours === 0 && minutes === 0) throw new InvalidSchedule("Use a positive time offset");
+    if (hours > 48 || minutes > 1440) throw new InvalidSchedule("Time offset is too large");
+    const target = localNow.add({ hours, minutes });
+    setDate(target.toPlainDate());
+    clock.time = target.toPlainTime().with({ second: 0, millisecond: 0, microsecond: 0, nanosecond: 0 });
+  }
+  consume(new RegExp(left + "(?:(\\d{1,2})\\s*시간\\s*(?:(\\d{1,2})\\s*분\\s*)?|(\\d{1,3})\\s*분\\s*)(?:후|뒤)(?:에|까지)?" + koRight, "gu"),
+    "time", (h, hm, m) => setRelativeTime(Number(h ?? 0), Number(hm ?? m ?? 0)));
+  consume(new RegExp(left + "in\\s+(?:(\\d{1,2})\\s*(?:hours?|hrs?|h)(?:\\s+(\\d{1,2})\\s*(?:minutes?|mins?|m))?|(\\d{1,3})\\s*(?:minutes?|mins?))" + right, "giu"),
+    "time", (h, hm, m) => setRelativeTime(Number(h ?? 0), Number(hm ?? m ?? 0)));
   function setTime(hourValue: string, minuteValue: string | undefined, period?: string) {
     if (clock.time) throw new InvalidSchedule("Use one due time per task");
     let hour = Number(hourValue);
@@ -252,7 +299,9 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
   tokens.sort((a, b) => a.start - b.start);
   return {
     task: { title, due_at, all_day: due_at !== null && time === undefined, timezone: input.timezone,
-      recurrence_rule: rule, recurrence_local_time: rule && time ? time.toString() : null,
+      recurrence_rule: rule, recurrence_mode: rule ? recurrenceMode : "schedule",
+      recurrence_local_time: rule && time ? time.toString() : null,
+      duration_minutes: durationMinutes,
       project, tags, priority },
     text, tokens,
   };

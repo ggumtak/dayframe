@@ -3054,19 +3054,27 @@ components:
           anyOf:
             - *a14
             - type: "null"
-        recurrence_anchor_at: &a21
+        recurrence_mode: &a21
+          enum:
+            - schedule
+            - completion
+        recurrence_anchor_at: &a22
           anyOf:
             - *a6
             - type: "null"
-        recurrence_local_time: &a22
+        recurrence_local_time: &a23
           anyOf:
             - *a14
             - type: "null"
-        occurrence_at: &a23
+        occurrence_at: &a24
           anyOf:
             - *a6
             - type: "null"
-        completed_at: &a24
+        duration_minutes: &a25
+          anyOf:
+            - *a15
+            - type: "null"
+        completed_at: &a26
           anyOf:
             - *a6
             - type: "null"
@@ -3086,9 +3094,11 @@ components:
         - all_day
         - timezone
         - recurrence_rule
+        - recurrence_mode
         - recurrence_anchor_at
         - recurrence_local_time
         - occurrence_at
+        - duration_minutes
         - completed_at
         - updated_at
       additionalProperties: false
@@ -3111,10 +3121,12 @@ components:
         all_day: *a19
         timezone: *a14
         recurrence_rule: *a20
-        recurrence_anchor_at: *a21
-        recurrence_local_time: *a22
-        occurrence_at: *a23
-        completed_at: *a24
+        recurrence_mode: *a21
+        recurrence_anchor_at: *a22
+        recurrence_local_time: *a23
+        occurrence_at: *a24
+        duration_minutes: *a25
+        completed_at: *a26
         updated_at: *a6
       required:
         - id
@@ -3131,9 +3143,11 @@ components:
         - all_day
         - timezone
         - recurrence_rule
+        - recurrence_mode
         - recurrence_anchor_at
         - recurrence_local_time
         - occurrence_at
+        - duration_minutes
         - completed_at
         - updated_at
       additionalProperties: false
@@ -3177,9 +3191,17 @@ components:
           anyOf:
             - *a14
             - type: "null"
+        recurrence_mode:
+          enum:
+            - schedule
+            - completion
         recurrence_local_time:
           anyOf:
             - *a14
+            - type: "null"
+        duration_minutes:
+          anyOf:
+            - *a15
             - type: "null"
         project:
           anyOf:
@@ -3200,7 +3222,9 @@ components:
         - all_day
         - timezone
         - recurrence_rule
+        - recurrence_mode
         - recurrence_local_time
+        - duration_minutes
         - project
         - tags
         - priority
@@ -3331,12 +3355,12 @@ components:
         versionCode: *a15
         minSupportedVersion: *a14
         releaseNotes: *a14
-        apkDownloadUrl: &a25
+        apkDownloadUrl: &a27
           type: string
           format: uri
         iosStoreOrTestFlightUrl:
           anyOf:
-            - *a25
+            - *a27
             - type: "null"
       required:
         - latestVersion
@@ -3372,7 +3396,7 @@ components:
           anyOf:
             - *a6
             - type: "null"
-        url: *a25
+        url: *a27
       required:
         - id
         - label
@@ -3540,6 +3564,17 @@ components:
               format: time
               pattern: ^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$
             - type: "null"
+        recurrence_mode:
+          type: string
+          enum:
+            - schedule
+            - completion
+        duration_minutes:
+          anyOf:
+            - type: integer
+              minimum: 1
+              maximum: 1440
+            - type: "null"
         recurrence_rule:
           anyOf:
             - type: string
@@ -3614,6 +3649,17 @@ components:
                 - type: string
                   format: time
                   pattern: ^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$
+                - type: "null"
+            recurrence_mode:
+              type: string
+              enum:
+                - schedule
+                - completion
+            duration_minutes:
+              anyOf:
+                - type: integer
+                  minimum: 1
+                  maximum: 1440
                 - type: "null"
             recurrence_rule:
               anyOf:

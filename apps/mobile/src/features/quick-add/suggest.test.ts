@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames, removeTokens } from './suggest.ts';
+import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames, parseChecklistLines, removeTokens } from './suggest.ts';
 
 test('activeMention detects bare or partial #project and @tag at the end of input', () => {
   assert.deepEqual(activeMention('#'), { kind: 'project', query: '', start: 0, end: 1 });
@@ -48,4 +48,17 @@ test('removeTokens strips matching parsed tokens cleanly', () => {
   assert.equal(removeTokens(text, tokens, (t) => t.kind === 'date' || t.kind === 'time'), '운동 #건강 @외출 p1 ');
   assert.equal(removeTokens(text, tokens, (t) => t.kind === 'project'), '내일 오후 7시 운동 @외출 p1 ');
   assert.equal(removeTokens(text, tokens, (t) => t.kind === 'priority'), '내일 오후 7시 운동 #건강 @외출 ');
+});
+
+test('parseChecklistLines strips bullets, checkboxes, numbers, and blank lines', () => {
+  const pasted = `
+    - [ ] 우유 사기
+    - [x] 계란 사기
+    • 빵
+    1. 세제
+    2) 휴지
+
+    과일
+  `;
+  assert.deepEqual(parseChecklistLines(pasted), ['우유 사기', '계란 사기', '빵', '세제', '휴지', '과일']);
 });

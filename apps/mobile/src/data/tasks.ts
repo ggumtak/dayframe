@@ -5,9 +5,10 @@ import { api, ApiFailure } from '@/lib/api';
 import { deviceTimeZone, dueBucket, dueMinutes, instantFor, sameInstant, Temporal, today } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
 import {
-  movedOccurrenceSlot, nextOccurrence, occurrenceFloor, type Project, type Tag, type Task, type TaskCompletion, type TaskInput, type TaskPatch,
-  type TaskTag, type User,
+  movedOccurrenceSlot, nextOccurrence, occurrenceFloor, type Project, type Section, type SectionInput, type SectionPatch,
+  type Tag, type Task, type TaskCompletion, type TaskInput, type TaskPatch, type TaskTag, type User,
 } from '@/lib/shared';
+import type { SubtaskProgress } from '@/lib/smart';
 
 import { hold, queryClient, settle } from './client';
 import { keys, writes } from './keys';
@@ -89,8 +90,11 @@ queryClient.setMutationDefaults(writes.createTask, {
       all_day: input.all_day ?? false,
       timezone: input.timezone ?? queryClient.getQueryData<User>(keys.me)?.timezone ?? deviceTimeZone(),
       recurrence_rule: input.recurrence_rule ?? null,
+      recurrence_mode: input.recurrence_rule ? (input.recurrence_mode ?? 'schedule') : 'schedule',
       recurrence_anchor_at: input.recurrence_rule ? input.due_at ?? null : null,
-      recurrence_local_time: input.recurrence_local_time ?? null, occurrence_at: null,
+      recurrence_local_time: input.recurrence_local_time ?? null,
+      occurrence_at: null,
+      duration_minutes: input.duration_minutes ?? null,
     };
     editTasks((tasks) => [...tasks.filter((task) => task.id !== vars.id), draft]);
   },
@@ -130,8 +134,13 @@ export interface CompleteTaskVars {
 export function nextDueAfterComplete(task: Task): string | null {
   if (!task.recurrence_rule || !task.recurrence_anchor_at) return null;
   try {
-    return nextOccurrence(task.recurrence_rule, task.timezone, task.recurrence_anchor_at,
-      occurrenceFloor(task, Temporal.Now.instant()), task.all_day, task.recurrence_local_time);
+    const mode = task.recurrence_mode ?? 'schedule';
+    const now = Temporal.Now.instant();
+    const floor = mode === 'completion' ? now : occurrenceFloor(task, now);
+    return nextOccurrence(
+      task.recurrence_rule, task.timezone, task.recurrence_anchor_at,
+      floor, task.all_day, task.recurrence_local_time, mode,
+    );
   } catch {
     return null;
   }
@@ -154,22 +163,31 @@ queryClient.setMutationDefaults(writes.completeTask, {
     }
   },
   onMutate: async (vars: CompleteTaskVars) => {
-    await hold(keys.tasks, keys.done);
+    await hold(keys.tasks, keys.completedTasks, keys.done);
+    const completedAt = new Date().toISOString();
+    const existing = queryClient.getQueryData<Task[]>(keys.tasks)?.find((item) => item.id === vars.id);
     // Shown under 오늘's 완료됨 at once; the server's list replaces it when the write lands.
-    const finished = queryClient.getQueryData<Task[]>(keys.tasks)?.find((task) => task.id === vars.id);
-    if (finished) {
-      const completed_at = new Date().toISOString();
+    if (existing) {
       queryClient.setQueryData<TaskCompletion[]>(doneTodayKey(), (list) => list && [
-        { task: { ...finished, completed_at: finished.recurrence_rule ? null : completed_at }, completed_at, occurrence_due_at: finished.due_at },
+        { task: { ...existing, completed_at: existing.recurrence_rule ? null : completedAt }, completed_at: completedAt, occurrence_due_at: existing.due_at },
         ...list,
       ]);
     }
+    const completedOneOff: Task | null = existing && (!existing.recurrence_rule || !existing.recurrence_anchor_at)
+      ? { ...existing, completed_at: completedAt } : null;
     editTasks((tasks) => tasks.flatMap((task) => {
       if (task.id !== vars.id) return [task];
       if (!task.recurrence_rule || !task.recurrence_anchor_at) return [];
       const due_at = nextDueAfterComplete(task);
-      return due_at ? [{ ...task, due_at, occurrence_at: null }] : [task];
+      if (!due_at) return [task];
+      const mode = task.recurrence_mode ?? 'schedule';
+      return [{ ...task, due_at, occurrence_at: null, ...(mode === 'completion' ? { recurrence_anchor_at: due_at } : {}) }];
     }));
+    if (completedOneOff) {
+      queryClient.setQueryData<Task[]>(keys.completedTasks, (list) => (list
+        ? [completedOneOff, ...list.filter((item) => item.id !== completedOneOff.id)]
+        : list));
+    }
   },
   onSettled: () => settle(keys.tasks, keys.completedTasks, keys.done),
 });
@@ -335,19 +353,20 @@ export function useTasks() {
   return { ...query, data };
 }
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: api.projects });
+export const useSections = () => useQuery({ queryKey: keys.sections, queryFn: api.sections });
 export const useTags = () => useQuery({ queryKey: keys.tags, queryFn: api.tags });
 export const useTaskTags = () => useQuery({ queryKey: keys.taskTags, queryFn: api.taskTags });
+export const useCompletedTasks = () => useQuery({
+  queryKey: keys.completedTasks, queryFn: api.completedTasks, staleTime: 60_000, meta: { persist: false },
+});
 
 export const byPosition = (a: Task, b: Task) => a.position - b.position || (a.id < b.id ? -1 : 1);
 
-/** Sorts scheduled work the way a day is read: timed items in order, then by priority. */
+/** Sorts scheduled work the way a day is read: timed/earliest items in order, then by priority. */
 export function bySchedule(a: Task, b: Task): number {
-  const [left, right] = [a.due_at ?? '', b.due_at ?? ''];
-  if (left !== right) {
-    if (!left) return 1;
-    if (!right) return -1;
-    return left < right ? -1 : 1;
-  }
+  const aMs = a.due_at ? Date.parse(a.due_at) : Number.POSITIVE_INFINITY;
+  const bMs = b.due_at ? Date.parse(b.due_at) : Number.POSITIVE_INFINITY;
+  if (aMs !== bMs) return aMs - bMs;
   return a.priority - b.priority || byPosition(a, b);
 }
 
@@ -355,6 +374,46 @@ export function bySchedule(a: Task, b: Task): number {
 export function byPriority(a: Task, b: Task): number {
   if (a.priority !== b.priority) return a.priority - b.priority;
   return bySchedule(a, b);
+}
+
+/** Sorts alphabetically using Korean-aware collation. */
+export function byTitle(a: Task, b: Task): number {
+  return a.title.localeCompare(b.title, 'ko') || byPosition(a, b);
+}
+
+/** Create, rename, or delete a section inside a project; deleting clears task section links on the server. */
+export function useSectionActions() {
+  const create = useMutation({
+    mutationFn: (input: SectionInput) => api.createSection(input),
+    onSuccess: (section) => {
+      queryClient.setQueryData<Section[]>(keys.sections, (list) => [...(list ?? []).filter((item) => item.id !== section.id), section]);
+    },
+    onSettled: () => settle(keys.sections),
+  });
+  const rename = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: SectionPatch }) => api.updateSection(id, patch),
+    onMutate: async ({ id, patch }) => {
+      await hold(keys.sections);
+      queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.map((section) => (section.id === id ? { ...section, ...patch } : section)));
+    },
+    onSettled: () => settle(keys.sections),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteSection(id),
+    onMutate: async (id) => {
+      await hold(keys.sections, keys.tasks);
+      queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.filter((section) => section.id !== id));
+      editTasks((tasks) => tasks.map((task) => (task.section_id === id ? { ...task, section_id: null } : task)));
+    },
+    onSettled: () => settle(keys.sections, keys.tasks),
+  });
+  return {
+    create: (projectId: string, name: string, position?: number, onSuccess?: (section: Section) => void) =>
+      create.mutate({ project_id: projectId, name, ...(position !== undefined ? { position } : {}) }, { onSuccess }),
+    rename: (id: string, name: string) => rename.mutate({ id, patch: { name } }),
+    remove: (id: string) => remove.mutate(id),
+    creating: create.isPending,
+  };
 }
 
 /** Create, rename, or delete a project; deleting cascades to its tasks on the server. */
@@ -377,8 +436,9 @@ export function useProjectActions() {
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteProject(id),
     onMutate: async (id) => {
-      await hold(keys.projects, keys.tasks);
+      await hold(keys.projects, keys.sections, keys.tasks);
       queryClient.setQueryData<Project[]>(keys.projects, (list) => list?.filter((project) => project.id !== id));
+      queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.filter((section) => section.project_id !== id));
       editTasks((tasks) => {
         const dropped = new Set<string>();
         for (const task of tasks) {
@@ -389,7 +449,7 @@ export function useProjectActions() {
         return tasks.filter((task) => !dropped.has(task.id));
       });
     },
-    onSettled: () => settle(keys.projects, keys.tasks, keys.taskTags, keys.completedTasks),
+    onSettled: () => settle(keys.projects, keys.sections, keys.tasks, keys.taskTags, keys.completedTasks),
   });
   return {
     create: (name: string, onSuccess?: (project: Project) => void) => create.mutate(name, { onSuccess }),
@@ -440,13 +500,38 @@ export function useTaskIndex(): TaskIndex & { isLoading: boolean; isError: boole
     const children = new Map<string, Task[]>();
     const roots: Task[] = [];
     for (const task of tasks) {
-      if (!task.parent_task_id) roots.push(task);
+      // Promote subtasks whose parent is no longer open (e.g. parent completed) so they never vanish silently.
+      if (!task.parent_task_id || !byId.has(task.parent_task_id)) roots.push(task);
       else children.set(task.parent_task_id, [...(children.get(task.parent_task_id) ?? []), task]);
     }
     children.forEach((list) => list.sort(byPosition));
     return { tasks, byId, children, roots };
   }, [data]);
   return { ...index, isLoading, isError, refetch };
+}
+
+/** Direct completed subtasks grouped by parent task ID, plus per-parent open/completed progress counters. */
+export function useSubtaskProgress() {
+  const { children } = useTaskIndex();
+  const { data: completed } = useCompletedTasks();
+  return useMemo(() => {
+    const completedChildren = new Map<string, Task[]>();
+    for (const task of completed ?? []) {
+      if (!task.parent_task_id) continue;
+      completedChildren.set(task.parent_task_id, [...(completedChildren.get(task.parent_task_id) ?? []), task]);
+    }
+    completedChildren.forEach((list) => list.sort(byPosition));
+
+    const progress = new Map<string, SubtaskProgress>();
+    const parentIds = new Set<string>([...children.keys(), ...completedChildren.keys()]);
+    for (const parentId of parentIds) {
+      const openCount = children.get(parentId)?.length ?? 0;
+      const doneCount = completedChildren.get(parentId)?.length ?? 0;
+      const total = openCount + doneCount;
+      if (total > 0) progress.set(parentId, { open: openCount, completed: doneCount, total });
+    }
+    return { completedChildren, progress };
+  }, [children, completed]);
 }
 
 /** Tag names per task, for list rows. */

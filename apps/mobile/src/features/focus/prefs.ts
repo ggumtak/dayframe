@@ -3,7 +3,10 @@ import { useSyncExternalStore } from 'react';
 
 import { defaultFocusPrefs, type FocusPrefs, normalizeFocusPrefs } from './model';
 
-export { clampInt, defaultFocusPrefs, FOCUS_LIMITS, type FocusMode, type FocusPrefs, nextBreak, normalizeFocusPrefs } from './model';
+export {
+  clampInt, defaultFocusPrefs, FOCUS_LIMITS, type FocusDayBar, type FocusMode, type FocusPrefs, nextBreak, normalizeFocusPrefs,
+  STOPWATCH_MAX_SECONDS, weeklyFocusStats,
+} from './model';
 
 const KEY = 'dayframe-focus-prefs';
 let current: FocusPrefs = defaultFocusPrefs;

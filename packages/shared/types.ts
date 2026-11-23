@@ -3,6 +3,7 @@ export type UUID = string;
 export type Instant = string;
 export type LocalDate = string;
 export type Priority = 1 | 2 | 3 | 4;
+export type RecurrenceMode = "schedule" | "completion";
 export type HabitCadence = "daily" | "weekly";
 export type HabitLogStatus = "completed" | "skipped" | "frozen";
 export type FocusStatus = "running" | "completed" | "cancelled";
@@ -44,16 +45,19 @@ export interface Task extends OwnedRow {
   all_day: boolean;
   timezone: string;
   recurrence_rule: string | null;
+  recurrence_mode: RecurrenceMode;
   recurrence_anchor_at: Instant | null;
   recurrence_local_time: string | null;
   /** For a repeating task whose current occurrence was moved off its slot: that slot. Otherwise null. */
   occurrence_at: Instant | null;
+  duration_minutes: number | null;
   completed_at: Instant | null;
   updated_at: Instant;
 }
 export type Subtask = Task & { parent_task_id: UUID; project_id: null; section_id: null };
 type TaskFields = Partial<Pick<Task, "project_id" | "section_id" | "title" | "notes" |
-  "priority" | "position" | "due_at" | "all_day" | "timezone" | "recurrence_rule" | "recurrence_local_time">>;
+  "priority" | "position" | "due_at" | "all_day" | "timezone" | "recurrence_rule" | "recurrence_mode" |
+  "recurrence_local_time" | "duration_minutes">>;
 export type TaskPatch = (TaskFields & { preserve_recurrence?: never; expected_due_at?: never })
   | { due_at: Instant; expected_due_at: Instant; preserve_recurrence: true };
 export type TaskInput = TaskFields & Pick<Task, "title"> & Partial<Pick<Task, "id" | "parent_task_id">>;
@@ -73,7 +77,9 @@ export interface ParsedTask {
   all_day: boolean;
   timezone: string;
   recurrence_rule: string | null;
+  recurrence_mode: RecurrenceMode;
   recurrence_local_time: string | null;
+  duration_minutes: number | null;
   project: string | null;
   tags: string[];
   priority: Priority;

@@ -196,7 +196,10 @@ async function names(api: Context) {
 function describe(task: Task, project: string | null, tags: string[]) {
   return {
     id: task.id, title: task.title, due: localDue(task), status: dueStatus(task), repeats: task.recurrence_rule, priority: "p" + task.priority,
-    project, tags, ...(task.notes ? { notes: task.notes } : {}), ...(task.parent_task_id ? { parent_task_id: task.parent_task_id } : {}),
+    project, tags,
+    ...(task.recurrence_mode === "completion" ? { recurrence_mode: "completion" } : {}),
+    ...(task.duration_minutes ? { duration_minutes: task.duration_minutes } : {}),
+    ...(task.notes ? { notes: task.notes } : {}), ...(task.parent_task_id ? { parent_task_id: task.parent_task_id } : {}),
   };
 }
 
@@ -214,10 +217,14 @@ function schedule(words: string, timezone: string) {
   if (parsed.project || parsed.tags.length || parsed.priority !== 4) {
     throw new ToolFailure("schedule takes only dates, times and repeats; use the priority and project fields for the rest");
   }
-  if (!parsed.due_at) throw new ToolFailure("No date or time found in the schedule");
+  if (!parsed.due_at && !parsed.duration_minutes) throw new ToolFailure("No date, time or duration found in the schedule");
   return {
-    due_at: parsed.due_at, all_day: parsed.all_day, recurrence_rule: parsed.recurrence_rule,
-    ...(parsed.recurrence_local_time ? { recurrence_local_time: parsed.recurrence_local_time } : {}),
+    ...(parsed.due_at ? {
+      due_at: parsed.due_at, all_day: parsed.all_day, recurrence_rule: parsed.recurrence_rule,
+      recurrence_mode: parsed.recurrence_mode,
+      ...(parsed.recurrence_local_time ? { recurrence_local_time: parsed.recurrence_local_time } : {}),
+    } : {}),
+    ...(parsed.duration_minutes ? { duration_minutes: parsed.duration_minutes } : {}),
   };
 }
 
@@ -295,8 +302,9 @@ export const tools: Tool[] = [
         title: parsed.title, priority: parsed.priority, timezone,
         position: siblings.reduce((max, task) => Math.max(max, task.position), 0) + 1024,
         ...(parsed.due_at ? { due_at: parsed.due_at, all_day: parsed.all_day } : {}),
-        ...(parsed.recurrence_rule ? { recurrence_rule: parsed.recurrence_rule } : {}),
+        ...(parsed.recurrence_rule ? { recurrence_rule: parsed.recurrence_rule, recurrence_mode: parsed.recurrence_mode } : {}),
         ...(parsed.recurrence_local_time ? { recurrence_local_time: parsed.recurrence_local_time } : {}),
+        ...(parsed.duration_minutes ? { duration_minutes: parsed.duration_minutes } : {}),
         ...(typeof args.notes === "string" && args.notes.trim() ? { notes: args.notes.slice(0, 10000) } : {}),
         ...(parent ? { parent_task_id: parent } : project ? { project_id: project.id } : {}),
       });

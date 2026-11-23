@@ -29,7 +29,8 @@ test("private routes check the user token, even for stateless parsing", async ()
   assert.equal(result.status, 200);
   assert.equal(result.headers.get("cache-control"), "no-store");
   assert.deepEqual(await result.json(), { title: "운동", due_at: "2026-11-22T15:00:00Z",
-    all_day: true, timezone: "Asia/Seoul", recurrence_rule: null, recurrence_local_time: null, project: "건강", tags: ["외출"], priority: 2 });
+    all_day: true, timezone: "Asia/Seoul", recurrence_rule: null, recurrence_mode: "schedule",
+    recurrence_local_time: null, duration_minutes: null, project: "건강", tags: ["외출"], priority: 2 });
 });
 
 test("version endpoint is anonymous and maps published GitHub release metadata", async () => {
@@ -217,6 +218,31 @@ test("completions are listed newest first from a given instant, as stored result
   assert.equal(seen[0].searchParams.get("select"), "result");
   assert.equal((await handler(request("task-completions?from=yesterday"))).status, 400);
   assert.equal((await handler(request("task-completions", "POST", {}))).status, 405);
+});
+
+test("completing a completion-based recurring task computes next due from completion time, not due_at", async () => {
+  const due_at = "2099-01-31T10:00:00Z";
+  const revision = "2026-11-22T09:00:00.123456Z";
+  let sentNext = "";
+  const handler = createHandler({ url: upstream, key: "anon-key", fetch: async (input, init) => {
+    switch (new URL(String(input)).pathname) {
+      case "/auth/v1/user": return Response.json({ id: userId });
+      case "/rest/v1/task_completions": return Response.json([]);
+      case "/rest/v1/tasks": return Response.json([{ due_at, recurrence_anchor_at: due_at, all_day: true,
+        recurrence_rule: "FREQ=DAILY;INTERVAL=3", recurrence_mode: "completion", timezone: "Asia/Seoul",
+        recurrence_local_time: null, updated_at: revision }]);
+      case "/rest/v1/rpc/complete_task": {
+        const payload = JSON.parse(String(init?.body)) as { p_next_due: string };
+        sentNext = payload.p_next_due;
+        return Response.json({ occurrence_due_at: due_at });
+      }
+      default: throw new Error("Unexpected request");
+    }
+  } });
+  const result = await handler(request("tasks/" + habitId + "/complete", "POST", { request_id: userId, expected_updated_at: revision }));
+  assert.equal(result.status, 200);
+  const diffDays = Math.abs(Date.parse(sentNext) - Date.now()) / 86_400_000;
+  assert.ok(diffDays >= 2 && diffDays <= 4, `expected ~3 days from now, got ${sentNext}`);
 });
 
 test("tag links are listed across tasks with an optional tag filter", async () => {

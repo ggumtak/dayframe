@@ -8,7 +8,9 @@ import { Button, Card, Chip, Header, Icon, IconButton, Row, Screen, Segmented, S
 import { useDeleteFocus, useFocusActions, useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
-import { clampInt, FOCUS_LIMITS, type FocusMode, type FocusPrefs, nextBreak, setFocusPrefs, useFocusPrefs } from '@/features/focus/prefs';
+import {
+  clampInt, FOCUS_LIMITS, type FocusMode, type FocusPrefs, nextBreak, setFocusPrefs, STOPWATCH_MAX_SECONDS, useFocusPrefs, weeklyFocusStats,
+} from '@/features/focus/prefs';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { cancelAlert, prepareAlerts, scheduleAlert } from '@/lib/alerts';
 import { useMinute } from '@/lib/clock';
@@ -28,7 +30,6 @@ const pomoPresets = [
 ] as const;
 
 const timerPresets = [10, 15, 25, 45, 60, 90] as const;
-const weekdayLabels = ['월', '화', '수', '목', '금', '토', '일'];
 const roundChoices = [2, 3, 4, 6] as const;
 
 type Target = { kind: 'task' | 'habit'; id: string } | null;
@@ -38,11 +39,6 @@ const sessionSeconds = (session: FocusSession) =>
   (session.ended_at ? (new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 1000 : 0);
 /** Stopped within a minute of starting: kept out of the lists so an accidental tap leaves no trace. */
 const isFalseStart = (session: FocusSession) => session.status === 'cancelled' && sessionSeconds(session) < MIN_RECORD_SECONDS;
-
-function elapsedSeconds(session: FocusSession, now: number): number {
-  return Math.max(0, (now - new Date(session.started_at).getTime()) / 1000);
-}
-
 /** Stepper + direct number input for choosing minutes freely inside `min..max`. */
 function MinuteControl({
   label, value, min, max, step, unit = '분', onChange,
@@ -107,7 +103,7 @@ function MinuteControl({
 
 export default function Focus() {
   const { colors } = useTheme();
-  const params = useLocalSearchParams<{ taskId?: string; habitId?: string; at?: string }>();
+  const params = useLocalSearchParams<{ taskId?: string; habitId?: string; duration?: string; at?: string }>();
   const { data: sessions } = useFocusSessions();
   const { data: habits } = useHabits();
   const { tasks, byId } = useTaskIndex();
@@ -121,6 +117,10 @@ export default function Focus() {
   const [configuring, setConfiguring] = useState(false);
   const [pickedRecord, setPickedRecord] = useState<FocusSession | null>(null);
   const [rest, setRest] = useState<{ endsAt: number; seconds: number; long: boolean } | null>(null);
+  // Local pause & extension state keyed by running session ID.
+  const [sessionMod, setSessionMod] = useState<{ id: string; pausedAt: number | null; pausedMs: number; extraSeconds: number }>({
+    id: '', pausedAt: null, pausedMs: 0, extraSeconds: 0,
+  });
   const breakEndsAt = rest?.endsAt ?? null;
   const [now, setNow] = useState(() => Date.now());
   const finished = useRef(new Set<string>());
@@ -129,11 +129,16 @@ export default function Focus() {
   useMinute();
 
   const running = sessions?.find((session) => session.status === 'running') ?? null;
-  const minutes = prefs.mode === 'pomodoro' ? prefs.focusMinutes : prefs.timerMinutes;
-  const ticking = !!running || breakEndsAt !== null;
+  const activeMod = running && sessionMod.id === running.id
+    ? sessionMod
+    : { id: running?.id ?? '', pausedAt: null, pausedMs: 0, extraSeconds: 0 };
+  const isPaused = !!running && activeMod.pausedAt !== null;
+  const isRunningStopwatch = !!running && running.planned_seconds === STOPWATCH_MAX_SECONDS;
 
-  // Arriving from a task or habit attaches it to the next session.
-  // `at` differs on every arrival, so coming back from the same task attaches it again.
+  const minutes = prefs.mode === 'pomodoro' ? prefs.focusMinutes : prefs.timerMinutes;
+  const ticking = (!!running && !isPaused) || breakEndsAt !== null;
+
+  // Arriving from a task or habit attaches it to the next session (and syncs estimated task duration if given).
   const link = (params.taskId ? 'task:' + params.taskId : params.habitId ? 'habit:' + params.habitId : '') + '@' + (params.at ?? '');
   const [appliedLink, setAppliedLink] = useState('@');
   if (link !== appliedLink) {
@@ -141,6 +146,15 @@ export default function Focus() {
     if (params.taskId) setTarget({ kind: 'task', id: params.taskId });
     else if (params.habitId) setTarget({ kind: 'habit', id: params.habitId });
   }
+  const appliedDurationLink = useRef('@');
+  useEffect(() => {
+    if (!params.duration || running || appliedDurationLink.current === link) return;
+    appliedDurationLink.current = link;
+    const mins = Number(params.duration);
+    if (Number.isFinite(mins) && mins >= FOCUS_LIMITS.focus.min && mins <= FOCUS_LIMITS.focus.max) {
+      setFocusPrefs({ timerMinutes: Math.round(mins), focusMinutes: Math.round(mins) });
+    }
+  }, [link, params.duration, running]);
 
   // Totalled on every render: the timer and `useMinute` keep this screen current across midnight.
   const day = Temporal.Now.plainDateISO(timeZone);
@@ -152,7 +166,9 @@ export default function Focus() {
       sum + (new Date(session.ended_at!).getTime() - new Date(session.started_at).getTime()) / 1000, 0),
   };
 
-  /** Starts the break a finished Pomodoro round has earned, or does nothing in single-timer mode. */
+  const weekly = useMemo(() => weeklyFocusStats(sessions ?? [], day, timeZone), [sessions, day, timeZone]);
+
+  /** Starts the break a finished Pomodoro round has earned, or does nothing in timer/stopwatch mode. */
   const beginRest = (activePrefs: FocusPrefs, roundsBefore: number, from: number) => {
     const earned = nextBreak(activePrefs, roundsBefore);
     if (!earned) return;
@@ -171,10 +187,13 @@ export default function Focus() {
   const nameOf = (session: Pick<FocusSession, 'task_id' | 'habit_id'>) => (session.task_id
     ? byId.get(session.task_id)?.title : session.habit_id ? habits?.find((habit) => habit.id === session.habit_id)?.name : undefined);
 
-  // The interval reads the newest state through this ref, so it never has to be torn down mid-session.
-  const latest = useRef({ running, breakEndsAt, rest, byId, actions, flow, beginRest, rounds: todayStats.count });
+  const latest = useRef({
+    running, activeMod, isRunningStopwatch, breakEndsAt, rest, byId, actions, flow, beginRest, rounds: todayStats.count,
+  });
   useEffect(() => {
-    latest.current = { running, breakEndsAt, rest, byId, actions, flow, beginRest, rounds: todayStats.count };
+    latest.current = {
+      running, activeMod, isRunningStopwatch, breakEndsAt, rest, byId, actions, flow, beginRest, rounds: todayStats.count,
+    };
   });
 
   useEffect(() => {
@@ -184,21 +203,24 @@ export default function Focus() {
       setNow(time);
       const state = latest.current;
       const session = state.running;
-      // The timer is anchored to the recorded start time, so it also ends correctly after the app was closed.
-      const endsAt = session ? new Date(session.started_at).getTime() + session.planned_seconds * 1000 : 0;
-      if (session && time >= endsAt && !finished.current.has(session.id)) {
-        finished.current.add(session.id);
-        state.actions.finish({ id: session.id, status: 'completed', ended_at: new Date(endsAt).toISOString() });
-        haptic.success();
-        const task = session.task_id ? state.byId.get(session.task_id) : undefined;
-        const activePrefs = runningPrefs.current;
-        showToast(
-          activePrefs.mode === 'pomodoro'
-            ? `집중 ${formatMinutes(session.planned_seconds)} 완료!`
-            : `타이머 ${formatMinutes(session.planned_seconds)} 완료!`,
-          task ? { actionLabel: '할 일도 완료', onAction: () => state.flow.complete(task) } : {},
-        );
-        state.beginRest(activePrefs, state.rounds, time);
+      if (session && !state.isRunningStopwatch && state.activeMod.pausedAt === null) {
+        const planned = session.planned_seconds + state.activeMod.extraSeconds;
+        const endsAt = new Date(session.started_at).getTime() + state.activeMod.pausedMs + planned * 1000;
+        if (time >= endsAt && !finished.current.has(session.id)) {
+          finished.current.add(session.id);
+          const netEnd = Math.max(new Date(session.started_at).getTime() + 1000, endsAt - state.activeMod.pausedMs);
+          state.actions.finish({ id: session.id, status: 'completed', ended_at: new Date(netEnd).toISOString() });
+          haptic.success();
+          const task = session.task_id ? state.byId.get(session.task_id) : undefined;
+          const activePrefs = runningPrefs.current;
+          showToast(
+            activePrefs.mode === 'pomodoro'
+              ? `집중 ${formatMinutes(planned)} 완료!`
+              : `타이머 ${formatMinutes(planned)} 완료!`,
+            task ? { actionLabel: '할 일도 완료', onAction: () => state.flow.complete(task) } : {},
+          );
+          state.beginRest(activePrefs, state.rounds, time);
+        }
       } else if (!session && state.breakEndsAt !== null && time >= state.breakEndsAt) {
         const wasLong = state.rest?.long ?? false;
         setRest(null);
@@ -214,24 +236,59 @@ export default function Focus() {
     };
   }, [ticking]);
 
-  const elapsed = running ? elapsedSeconds(running, now) : 0;
-  const remaining = running ? running.planned_seconds - elapsed : minutes * 60;
+  const effectiveNow = activeMod.pausedAt ?? now;
+  const elapsed = running
+    ? Math.max(0, (effectiveNow - new Date(running.started_at).getTime() - activeMod.pausedMs) / 1000)
+    : 0;
+  const plannedSeconds = running ? running.planned_seconds + activeMod.extraSeconds : minutes * 60;
+  const remaining = running ? Math.max(0, plannedSeconds - elapsed) : minutes * 60;
   const breakRemaining = breakEndsAt === null ? 0 : (breakEndsAt - now) / 1000;
+
+  const scheduleRunningAlert = (remainingSec: number, activePrefs: FocusPrefs) => {
+    if (activePrefs.mode === 'stopwatch' || remainingSec <= 1) return;
+    const earned = nextBreak(activePrefs, todayStats.count);
+    const alertBody = earned
+      ? (earned.long ? `긴 휴식 ${earned.minutes}분 쉬어 가세요.` : `${earned.minutes}분 쉬어 가세요.`)
+      : '설정한 타이머가 끝났습니다.';
+    void prepareAlerts().then(() =>
+      scheduleAlert('focus', Date.now() + remainingSec * 1000, `집중 ${Math.round(remainingSec / 60)}분 완료`, alertBody));
+  };
 
   const start = () => {
     haptic.medium();
     endRest();
     runningPrefs.current = prefs;
-    const earned = nextBreak(prefs, todayStats.count);
-    const alertBody = earned
-      ? (earned.long ? `긴 휴식 ${earned.minutes}분 쉬어 가세요.` : `${earned.minutes}분 쉬어 가세요.`)
-      : '설정한 타이머가 끝났습니다.';
-    // Scheduled with the system, so the round's end is announced even when the phone is locked.
-    void prepareAlerts().then(() => scheduleAlert('focus', Date.now() + minutes * 60_000, `집중 ${minutes}분 완료`, alertBody));
+    const isStopwatch = prefs.mode === 'stopwatch';
+    const seconds = isStopwatch ? STOPWATCH_MAX_SECONDS : minutes * 60;
+    if (!isStopwatch) scheduleRunningAlert(seconds, prefs);
     actions.start({
-      planned_seconds: minutes * 60,
+      planned_seconds: seconds,
       ...(target?.kind === 'task' ? { task_id: target.id } : target?.kind === 'habit' ? { habit_id: target.id } : {}),
     });
+  };
+
+  const togglePause = () => {
+    if (!running) return;
+    haptic.tap();
+    const t = Date.now();
+    if (isPaused) {
+      const nextPausedMs = activeMod.pausedMs + (t - activeMod.pausedAt!);
+      setSessionMod({ id: running.id, pausedAt: null, pausedMs: nextPausedMs, extraSeconds: activeMod.extraSeconds });
+      setNow(t);
+      if (!isRunningStopwatch) scheduleRunningAlert(remaining, runningPrefs.current);
+    } else {
+      void cancelAlert('focus');
+      setSessionMod({ id: running.id, pausedAt: t, pausedMs: activeMod.pausedMs, extraSeconds: activeMod.extraSeconds });
+    }
+  };
+
+  const extendFiveMin = () => {
+    if (!running || isRunningStopwatch) return;
+    haptic.tap();
+    const nextExtra = activeMod.extraSeconds + 300;
+    setSessionMod({ id: running.id, pausedAt: activeMod.pausedAt, pausedMs: activeMod.pausedMs, extraSeconds: nextExtra });
+    if (!isPaused) scheduleRunningAlert(remaining + 300, runningPrefs.current);
+    showToast('집중 시간을 5분 연장했습니다.');
   };
 
   const stop = (status: 'completed' | 'cancelled') => {
@@ -239,13 +296,24 @@ export default function Focus() {
     finished.current.add(running.id);
     void cancelAlert('focus');
     haptic.light();
+    const startedMs = new Date(running.started_at).getTime();
+    const netElapsedMs = Math.max(1000, (activeMod.pausedAt ?? Date.now()) - startedMs - activeMod.pausedMs);
+    const netSeconds = netElapsedMs / 1000;
     // A run of under a minute is a false start, not focus: it earns no record, round or break (Forest does the same).
-    const counts = status === 'completed' && elapsed >= MIN_RECORD_SECONDS;
-    actions.finish({ id: running.id, status: counts ? 'completed' : 'cancelled', ended_at: new Date().toISOString() });
+    const counts = status === 'completed' && netSeconds >= MIN_RECORD_SECONDS;
+    const endedAt = new Date(startedMs + netElapsedMs).toISOString();
+    actions.finish({ id: running.id, status: counts ? 'completed' : 'cancelled', ended_at: endedAt });
+    setSessionMod({ id: '', pausedAt: null, pausedMs: 0, extraSeconds: 0 });
     if (counts) {
-      showToast(`집중 ${formatMinutes(elapsed)} 기록했습니다.`);
-      beginRest(runningPrefs.current, todayStats.count, Date.now());
-    } else if (status === 'completed') showToast('1분이 안 된 집중은 기록하지 않습니다.');
+      const task = running.task_id ? byId.get(running.task_id) : undefined;
+      showToast(
+        `집중 ${formatMinutes(netSeconds)} 기록했습니다.`,
+        task ? { actionLabel: '할 일도 완료', onAction: () => flow.complete(task) } : {},
+      );
+      if (!isRunningStopwatch) beginRest(runningPrefs.current, todayStats.count, Date.now());
+    } else if (status === 'completed') {
+      showToast('1분이 안 된 집중은 기록하지 않습니다.');
+    }
   };
 
   const candidates = useMemo(() => tasks
@@ -259,35 +327,25 @@ export default function Focus() {
     : target ? nameOf({ task_id: target.kind === 'task' ? target.id : null, habit_id: target.kind === 'habit' ? target.id : null }) : undefined;
 
   const onBreak = !running && breakEndsAt !== null;
-  const total = running ? running.planned_seconds : onBreak ? rest!.seconds : minutes * 60;
   const rounds = prefs.roundsBeforeLongBreak;
   const round = todayStats.count % rounds;
-  const shown = Math.max(0, running ? remaining : onBreak ? breakRemaining : minutes * 60);
-  const ratio = total > 0 ? Math.min(1, Math.max(0, 1 - shown / total)) : 0;
+  const shown = running
+    ? (isRunningStopwatch ? elapsed : remaining)
+    : onBreak ? Math.max(0, breakRemaining) : prefs.mode === 'stopwatch' ? 0 : minutes * 60;
+  const ratio = running
+    ? (isRunningStopwatch ? (elapsed % 60) / 60 : Math.min(1, Math.max(0, 1 - remaining / Math.max(1, plannedSeconds))))
+    : onBreak ? Math.min(1, Math.max(0, 1 - breakRemaining / Math.max(1, rest!.seconds))) : 0;
   const r = (SIZE - STROKE) / 2;
   const circumference = 2 * Math.PI * r;
-  const ringColor = onBreak ? colors.success : colors.accent;
+  const ringColor = isPaused ? colors.warning : onBreak ? colors.success : colors.accent;
   const recent = (sessions ?? []).filter((session) => session.status !== 'running' && !isFalseStart(session)).slice(0, 5);
-
-  // This week's focus per day, Monday first, from finished sessions.
-  const monday = day.subtract({ days: day.dayOfWeek - 1 });
-  const week = Array.from({ length: 7 }, (_, index) => ({ date: monday.add({ days: index }), seconds: 0, count: 0 }));
-  for (const session of sessions ?? []) {
-    if (session.status !== 'completed' || !session.ended_at) continue;
-    const offset = monday.until(Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone).toPlainDate()).days;
-    if (offset < 0 || offset > 6) continue;
-    week[offset].seconds += sessionSeconds(session);
-    week[offset].count += 1;
-  }
-  const weekSeconds = week.reduce((sum, item) => sum + item.seconds, 0);
-  const weekCount = week.reduce((sum, item) => sum + item.count, 0);
-  const busiest = Math.max(...week.map((item) => item.seconds), 1);
+  const canConfigure = !running && !onBreak && prefs.mode !== 'stopwatch';
 
   return (
     <Screen>
       <Header
         title="집중" subtitle={todayStats.count ? `오늘 ${todayStats.count}회 · ${formatMinutes(todayStats.seconds)}` : '오늘 첫 집중을 시작해 보세요'}
-        right={!ticking ? (
+        right={canConfigure ? (
           <IconButton name="sliders" label="시간 설정" onPress={() => setConfiguring(true)} color={colors.textMuted} />
         ) : undefined} />
       <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.lg, alignItems: 'center' }}>
@@ -296,29 +354,31 @@ export default function Focus() {
             <Segmented<FocusMode>
               value={prefs.mode}
               onChange={(mode) => {
-                if (mode === 'timer' && onBreak) endRest();
+                if (mode !== 'pomodoro' && onBreak) endRest();
                 setFocusPrefs({ mode });
               }}
               options={[
                 { value: 'pomodoro', label: '뽀모도로', icon: 'repeat' },
-                { value: 'timer', label: '일반 타이머', icon: 'clock' },
+                { value: 'timer', label: '타이머', icon: 'clock' },
+                { value: 'stopwatch', label: '스톱워치', icon: 'play-circle' },
               ]} />
           </View>
         ) : null}
 
         <Pressable
-          disabled={ticking}
-          accessibilityRole={ticking ? 'timer' : 'button'}
-          accessibilityLabel={ticking
-            ? `${onBreak ? '휴식' : '집중'} 남은 시간 ${formatDuration(shown)}`
-            : `타이머 ${formatDuration(shown)}, 눌러서 시간 자유 설정`}
+          disabled={!canConfigure}
+          accessibilityRole={running || onBreak ? 'timer' : 'button'}
+          accessibilityLabel={running || onBreak
+            ? `${onBreak ? '휴식' : isRunningStopwatch ? '스톱워치' : '집중'} ${formatDuration(shown)}`
+            : `타이머 ${formatDuration(shown)}`}
           onPress={() => {
+            if (!canConfigure) return;
             haptic.tap();
             setConfiguring(true);
           }}
           style={({ pressed }) => ({
             width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center', marginTop: space.xs,
-            opacity: !ticking && pressed ? 0.75 : 1,
+            opacity: canConfigure && pressed ? 0.75 : 1,
           })}>
           <Svg width={SIZE} height={SIZE} style={StyleSheet.absoluteFill}>
             <Circle cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={colors.surfaceMuted} strokeWidth={STROKE} fill="none" />
@@ -328,8 +388,11 @@ export default function Focus() {
                 strokeDasharray={`${circumference * ratio} ${circumference}`} transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`} />
             ) : null}
           </Svg>
-          <Txt variant="caption" tone="muted" style={{ marginBottom: 4 }}>
-            {running ? '집중 중' : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중') : prefs.mode === 'pomodoro' ? '뽀모도로' : '일반 타이머'}
+          <Txt variant="caption" tone={isPaused ? 'default' : 'muted'} style={[{ marginBottom: 4 }, isPaused && { color: colors.warning, fontWeight: '700' }]}>
+            {isPaused ? '일시정지됨'
+              : running ? (isRunningStopwatch ? '스톱워치 측정 중' : '집중 중')
+                : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중')
+                  : prefs.mode === 'pomodoro' ? '뽀모도로' : prefs.mode === 'timer' ? '일반 타이머' : '스톱워치'}
           </Txt>
           <Txt
             numberOfLines={1} adjustsFontSizeToFit
@@ -338,7 +401,7 @@ export default function Focus() {
           </Txt>
           {targetName ? (
             <Txt variant="small" tone="muted" numberOfLines={1} style={{ maxWidth: SIZE - 64, marginTop: 4 }}>{targetName}</Txt>
-          ) : !ticking ? (
+          ) : canConfigure ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
               <Icon name="edit-2" size={11} color={colors.accent} />
               <Txt variant="caption" tone="accent">눌러서 시간 설정</Txt>
@@ -347,9 +410,19 @@ export default function Focus() {
         </Pressable>
 
         {running ? (
-          <View style={{ flexDirection: 'row', gap: space.sm, alignSelf: 'stretch' }}>
-            <Button label="그만두기" kind="secondary" icon="x" onPress={() => stop('cancelled')} style={{ flex: 1 }} />
-            <Button label="지금 완료" icon="check" onPress={() => stop('completed')} style={{ flex: 1 }} />
+          <View style={{ alignSelf: 'stretch', gap: space.sm }}>
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <Button
+                label={isPaused ? '재개' : '일시정지'} kind="secondary" icon={isPaused ? 'play' : 'pause'}
+                onPress={togglePause} style={{ flex: 1 }} />
+              {!isRunningStopwatch ? (
+                <Button label="+5분 연장" kind="secondary" icon="plus" onPress={extendFiveMin} style={{ flex: 1 }} />
+              ) : null}
+            </View>
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <Button label="그만두기" kind="ghost" icon="x" onPress={() => stop('cancelled')} style={{ flex: 1 }} />
+              <Button label={isRunningStopwatch ? '기록 완료' : '지금 완료'} icon="check" onPress={() => stop('completed')} style={{ flex: 1 }} />
+            </View>
           </View>
         ) : (
           <>
@@ -377,7 +450,7 @@ export default function Focus() {
                   </Txt>
                 </View>
               </View>
-            ) : (
+            ) : prefs.mode === 'timer' ? (
               <View style={{ alignSelf: 'stretch', gap: space.sm, alignItems: 'center' }}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
                   {timerPresets.map((preset) => (
@@ -389,6 +462,10 @@ export default function Focus() {
                 </ScrollView>
                 <Txt variant="small" tone="muted">휴식 없이 설정한 시간이 끝나면 바로 종료됩니다</Txt>
               </View>
+            ) : (
+              <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>
+                정해진 마감 없이 자유롭게 측정하고, 끝날 때 ‘기록 완료’를 누르세요.
+              </Txt>
             )}
 
             <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
@@ -396,32 +473,47 @@ export default function Focus() {
               {target ? <Chip icon="x" label="해제" onPress={() => setTarget(null)} /> : null}
             </View>
             <View style={{ alignSelf: 'stretch', gap: space.sm }}>
-              <Button label={onBreak ? '휴식 건너뛰고 집중 시작' : prefs.mode === 'pomodoro' ? '집중 시작' : '타이머 시작'} icon="play" onPress={start} />
+              <Button
+                label={onBreak ? '휴식 건너뛰고 집중 시작' : prefs.mode === 'pomodoro' ? '집중 시작' : prefs.mode === 'timer' ? '타이머 시작' : '스톱워치 시작'}
+                icon="play" onPress={start} />
               {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={endRest} /> : null}
             </View>
           </>
         )}
 
-        {weekCount ? (
+        {weekly.totalCount > 0 ? (
           <Card style={{ alignSelf: 'stretch', gap: space.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <Txt variant="section" tone="muted">이번 주</Txt>
-              <Txt variant="smallStrong">{formatMinutes(weekSeconds)} · {weekCount}회</Txt>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Txt variant="section" tone="muted">최근 7일 집중</Txt>
+              <Txt variant="smallStrong" tone="accent">
+                {formatMinutes(weekly.totalSeconds)} · {weekly.totalCount}회
+              </Txt>
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm }} accessibilityLabel={`이번 주 집중 ${formatMinutes(weekSeconds)}`}>
-              {week.map((item) => {
-                const isToday = item.date.equals(day);
+            <View style={styles.chart} accessibilityLabel={`최근 7일 집중 ${formatMinutes(weekly.totalSeconds)}`}>
+              {weekly.days.map((bar) => {
+                const height = bar.minutes > 0 ? Math.max(8, Math.round((bar.minutes / weekly.maxMinutes) * 64)) : 4;
                 return (
-                  <View key={item.date.toString()} style={{ flex: 1, alignItems: 'center', gap: 4 }}>
-                    <Txt variant="caption" tone="faint" numberOfLines={1}>{item.seconds ? Math.max(1, Math.round(item.seconds / 60)) : ''}</Txt>
-                    <View style={{ height: 56, justifyContent: 'flex-end', alignSelf: 'stretch' }}>
+                  <View key={bar.date} style={styles.barCol}>
+                    <Txt variant="caption" tone={bar.isToday ? 'accent' : 'faint'} style={{ height: 14 }}>
+                      {bar.minutes > 0 ? `${bar.minutes}m` : ''}
+                    </Txt>
+                    <View style={styles.barTrack}>
                       <View
-                        style={{
-                          height: item.seconds ? Math.max(4, (item.seconds / busiest) * 56) : 3, borderRadius: 4,
-                          backgroundColor: item.seconds ? (isToday ? colors.accent : colors.accentSoft) : colors.surfaceMuted,
-                        }} />
+                        style={[
+                          styles.barFill,
+                          {
+                            height,
+                            backgroundColor: bar.minutes === 0
+                              ? colors.surfaceMuted
+                              : bar.isToday ? colors.accent : colors.accentSoft,
+                            borderColor: bar.minutes > 0 && !bar.isToday ? colors.accent : 'transparent',
+                            borderWidth: bar.minutes > 0 && !bar.isToday ? 1 : 0,
+                          },
+                        ]} />
                     </View>
-                    <Txt variant="caption" tone={isToday ? 'accent' : 'faint'}>{weekdayLabels[item.date.dayOfWeek - 1]}</Txt>
+                    <Txt variant="caption" tone={bar.isToday ? 'accent' : 'muted'} style={{ fontWeight: bar.isToday ? '700' : '500' }}>
+                      {bar.weekday}
+                    </Txt>
                   </View>
                 );
               })}
@@ -573,4 +665,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2,
     borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.sm, height: 38, minWidth: 72,
   },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 102 },
+  barCol: { flex: 1, alignItems: 'center', gap: 4 },
+  barTrack: { height: 64, justifyContent: 'flex-end', width: '100%', alignItems: 'center' },
+  barFill: { width: 22, borderRadius: 6 },
 });

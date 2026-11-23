@@ -1,69 +1,120 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, TextInput, View } from 'react-native';
 
+import { Checkbox } from '@/components/Checkbox';
 import { Button, Chip, EmptyState, Icon, IconButton, Row, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
-import { bySchedule, useProjects, useTagActions, useTagNames, useTags, useTaskIndex } from '@/data/tasks';
+import {
+  bySchedule, useCompletedTasks, useProjects, useSubtaskProgress, useTagActions, useTagNames, useTags, useTaskActions, useTaskIndex,
+} from '@/data/tasks';
 import { TaskList } from '@/features/tasks/TaskList';
-import { dueBucket } from '@/lib/dates';
+import { useMinute } from '@/lib/clock';
+import { deviceTimeZone, dueBucket, dueDate, formatDate, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import type { Priority, Tag } from '@/lib/shared';
+import { searchTasks } from '@/lib/search';
+import type { Tag } from '@/lib/shared';
+import { isStaleTask } from '@/lib/smart';
 import { showToast } from '@/lib/toast';
 import { fontFamily, radius, space, type, useTheme } from '@/theme';
 
-/** Lower-cased and with spaces removed, so "보고 서" still finds "보고서". */
-const fold = (text: string) => text.toLowerCase().replace(/\s+/g, '');
-
-type QuickFilter = null | 'overdue' | 'p1' | 'unscheduled';
+type QuickFilter = null | 'overdue' | 'today' | 'week' | 'p1' | 'repeating' | 'checklist' | 'stale' | 'unscheduled';
 
 const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
   overdue: '지연된 할 일',
+  today: '오늘 할 일',
+  week: '이번 주 예정',
   p1: '우선순위 P1',
+  repeating: '반복 할 일',
+  checklist: '하위 작업이 있는 체크리스트',
+  stale: '14일 이상 오래된 할 일',
   unscheduled: '날짜 없는 할 일',
 };
 
-/** Finds open tasks by title, notes, project, tag, or priority (`p1`–`p4`), with quick 1-tap filters. */
+/**
+ * Finds tasks with Korean 초성 (chosung) matching, structured `#project`, `@tag`, `p1`–`p4` filters,
+ * relevance ranking, smart 1-tap views, and optional unified completed-task search.
+ */
 export default function Search() {
   const { colors } = useTheme();
   const { tasks } = useTaskIndex();
+  const { progress: subtaskProgress } = useSubtaskProgress();
+  const { data: completedAll } = useCompletedTasks();
   const { data: projects } = useProjects();
   const { data: tags } = useTags();
   const tagActions = useTagActions();
+  const taskActions = useTaskActions();
   const tagNames = useTagNames();
+
   const [query, setQuery] = useState('');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
+  const [includeCompleted, setIncludeCompleted] = useState(false);
   const [managingTag, setManagingTag] = useState<Tag | null>(null);
   const [renamingTag, setRenamingTag] = useState<Tag | null>(null);
   const [tagInput, setTagInput] = useState('');
 
+  const nowMs = useMinute() * 60_000;
+  const zone = deviceTimeZone();
+  const nowDate = today(zone);
+  const projectNames = useMemo(() => new Map((projects ?? []).map((project) => [project.id, project.name])), [projects]);
+
   const results = useMemo(() => {
     if (quickFilter) {
+      const tz = deviceTimeZone();
+      const todayRef = Temporal.Instant.fromEpochMilliseconds(nowMs).toZonedDateTimeISO(tz).toPlainDate();
       return tasks.filter((task) => {
         if (quickFilter === 'overdue') return dueBucket(task) === 'overdue';
+        if (quickFilter === 'today') return dueBucket(task) === 'today';
+        if (quickFilter === 'week') {
+          const d = dueDate(task);
+          if (!d) return false;
+          const delta = todayRef.until(d).days;
+          return delta >= 0 && delta <= 7;
+        }
         if (quickFilter === 'p1') return task.priority === 1;
+        if (quickFilter === 'repeating') return !!task.recurrence_rule;
+        if (quickFilter === 'checklist') return (subtaskProgress.get(task.id)?.total ?? 0) > 0;
+        if (quickFilter === 'stale') return isStaleTask(task, nowMs, 14);
         return !task.due_at;
       }).sort(bySchedule);
     }
-    const rawWords = query.trim().split(/\s+/).filter(Boolean);
-    if (!rawWords.length) return [];
-    const priorityFilter = rawWords
-      .map((word) => /^p([1-4])$/i.exec(word)?.[1])
-      .find((value): value is string => value !== undefined);
-    const words = rawWords.filter((word) => !/^p[1-4]$/i.test(word)).map(fold);
-    const projectNames = new Map((projects ?? []).map((project) => [project.id, project.name]));
-    return tasks.filter((task) => {
-      if (priorityFilter && task.priority !== (Number(priorityFilter) as Priority)) return false;
-      if (!words.length) return true;
-      const haystack = fold([task.title, task.notes ?? '', task.project_id ? projectNames.get(task.project_id) ?? '' : '',
-        ...(tagNames.get(task.id) ?? [])].join(' '));
-      return words.every((word) => haystack.includes(word.replace(/^[#@]/, '')));
-    }).sort(bySchedule);
-  }, [query, quickFilter, tasks, projects, tagNames]);
+    if (!query.trim()) return [];
+    return searchTasks(tasks, query, { projectNames, tagNames });
+  }, [query, quickFilter, tasks, projectNames, tagNames, subtaskProgress, nowMs]);
+
+  const completedResults = useMemo(() => {
+    if (!includeCompleted || !query.trim() || quickFilter) return [];
+    return searchTasks(completedAll ?? [], query, { projectNames, tagNames }).slice(0, 30);
+  }, [includeCompleted, query, quickFilter, completedAll, projectNames, tagNames]);
 
   const active = !!query.trim() || quickFilter !== null;
-  const overdueCount = useMemo(() => tasks.filter((task) => dueBucket(task) === 'overdue').length, [tasks]);
-  const p1Count = useMemo(() => tasks.filter((task) => task.priority === 1).length, [tasks]);
-  const unscheduledCount = useMemo(() => tasks.filter((task) => !task.due_at).length, [tasks]);
+  const counts = useMemo(() => {
+    const tz = deviceTimeZone();
+    const todayRef = Temporal.Instant.fromEpochMilliseconds(nowMs).toZonedDateTimeISO(tz).toPlainDate();
+    let overdue = 0;
+    let todayCount = 0;
+    let week = 0;
+    let p1 = 0;
+    let repeating = 0;
+    let checklist = 0;
+    let stale = 0;
+    let unscheduled = 0;
+    for (const task of tasks) {
+      const bucket = dueBucket(task);
+      if (bucket === 'overdue') overdue++;
+      if (bucket === 'today') todayCount++;
+      const d = dueDate(task);
+      if (d) {
+        const delta = todayRef.until(d).days;
+        if (delta >= 0 && delta <= 7) week++;
+      }
+      if (task.priority === 1) p1++;
+      if (task.recurrence_rule) repeating++;
+      if ((subtaskProgress.get(task.id)?.total ?? 0) > 0) checklist++;
+      if (isStaleTask(task, nowMs, 14)) stale++;
+      if (!task.due_at) unscheduled++;
+    }
+    return { overdue, todayCount, week, p1, repeating, checklist, stale, unscheduled };
+  }, [tasks, subtaskProgress, nowMs]);
 
   const saveTagRename = () => {
     const trimmed = tagInput.trim().replace(/^@/, '');
@@ -91,9 +142,9 @@ export default function Search() {
               setQuery(next);
               if (next) setQuickFilter(null);
             }}
-            autoFocus placeholder="할 일, 메모, #프로젝트, @태그, p1" accessibilityLabel="검색어"
+            autoFocus placeholder="제목, 초성(ㅈㅂㄱ), #프로젝트, @태그, p1" accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
-            style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 16, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
+            style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 15, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
           {active ? (
             <IconButton
               name="x" label="지우기" size={18} color={colors.textMuted}
@@ -104,24 +155,64 @@ export default function Search() {
           ) : null}
         </View>
       </View>
+
+      {query.trim() && !quickFilter ? (
+        <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+          <Chip
+            icon="check-circle" label="완료한 일 포함" selected={includeCompleted}
+            onPress={() => setIncludeCompleted((prev) => !prev)} />
+          <Txt variant="caption" tone="faint">초성 · #프로젝트 · @태그 · p1 조합 가능</Txt>
+        </View>
+      ) : null}
+
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: space.xxl * 2, flexGrow: 1 }}>
           {!active ? (
             <View style={{ padding: space.lg, gap: space.lg }}>
               <View style={{ gap: space.sm }}>
-                <Txt variant="section" tone="muted">빠른 보기</Txt>
+                <Txt variant="section" tone="muted">스마트 필터</Txt>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                   <Chip
-                    icon="alert-circle" label={`지연됨${overdueCount ? ' ' + overdueCount : ''}`}
-                    color={overdueCount ? colors.danger : undefined} onPress={() => setQuickFilter('overdue')} />
+                    icon="alert-circle" label={`지연됨${counts.overdue ? ' ' + counts.overdue : ''}`}
+                    color={counts.overdue ? colors.danger : undefined} onPress={() => setQuickFilter('overdue')} />
                   <Chip
-                    icon="flag" label={`P1 긴급${p1Count ? ' ' + p1Count : ''}`}
-                    color={p1Count ? colors.danger : undefined} onPress={() => setQuickFilter('p1')} />
+                    icon="sun" label={`오늘${counts.todayCount ? ' ' + counts.todayCount : ''}`}
+                    color={counts.todayCount ? colors.success : undefined} onPress={() => setQuickFilter('today')} />
                   <Chip
-                    icon="inbox" label={`날짜 없음${unscheduledCount ? ' ' + unscheduledCount : ''}`}
+                    icon="calendar" label={`이번 주${counts.week ? ' ' + counts.week : ''}`}
+                    onPress={() => setQuickFilter('week')} />
+                  <Chip
+                    icon="flag" label={`P1 긴급${counts.p1 ? ' ' + counts.p1 : ''}`}
+                    color={counts.p1 ? colors.danger : undefined} onPress={() => setQuickFilter('p1')} />
+                  <Chip
+                    icon="repeat" label={`반복${counts.repeating ? ' ' + counts.repeating : ''}`}
+                    onPress={() => setQuickFilter('repeating')} />
+                  <Chip
+                    icon="check-square" label={`체크리스트${counts.checklist ? ' ' + counts.checklist : ''}`}
+                    onPress={() => setQuickFilter('checklist')} />
+                  {counts.stale > 0 ? (
+                    <Chip
+                      icon="clock" label={`오래됨 ${counts.stale}`}
+                      color={colors.warning} onPress={() => setQuickFilter('stale')} />
+                  ) : null}
+                  <Chip
+                    icon="inbox" label={`날짜 없음${counts.unscheduled ? ' ' + counts.unscheduled : ''}`}
                     onPress={() => setQuickFilter('unscheduled')} />
                 </View>
               </View>
+
+              {projects?.length ? (
+                <View style={{ gap: space.sm }}>
+                  <Txt variant="section" tone="muted">프로젝트별 검색</Txt>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+                    {projects.map((project) => (
+                      <Chip
+                        key={project.id} icon="hash" label={project.name}
+                        onPress={() => setQuery('#' + project.name + ' ')} />
+                    ))}
+                  </View>
+                </View>
+              ) : null}
 
               {tags?.length ? (
                 <View style={{ gap: space.sm }}>
@@ -154,26 +245,66 @@ export default function Search() {
                 accessibilityRole="button" accessibilityLabel="완료한 일 보기" onPress={() => router.push('/completed')}
                 style={({ pressed }) => [styles.link, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
                 <Icon name="check-circle" size={18} color={colors.success} />
-                <Txt style={{ flex: 1 }}>완료한 일 보기</Txt>
+                <Txt style={{ flex: 1 }}>완료한 일 전체 보기</Txt>
                 <Icon name="chevron-right" size={18} color={colors.textFaint} />
               </Pressable>
             </View>
-          ) : results.length ? (
+          ) : results.length > 0 || completedResults.length > 0 ? (
             <>
-              <SectionTitle
-                title={quickFilter ? filterLabels[quickFilter] : '검색 결과'} count={results.length}
-                action={quickFilter ? (
-                  <Pressable onPress={() => setQuickFilter(null)} hitSlop={8}>
-                    <Txt variant="smallStrong" tone="accent">필터 해제</Txt>
-                  </Pressable>
-                ) : undefined} />
-              <TaskList tasks={results} />
+              {results.length > 0 ? (
+                <>
+                  <SectionTitle
+                    title={quickFilter ? filterLabels[quickFilter] : '할 일'} count={results.length}
+                    action={quickFilter ? (
+                      <Pressable onPress={() => setQuickFilter(null)} hitSlop={8}>
+                        <Txt variant="smallStrong" tone="accent">필터 해제</Txt>
+                      </Pressable>
+                    ) : undefined} />
+                  <TaskList tasks={results} />
+                </>
+              ) : null}
+              {completedResults.length > 0 ? (
+                <>
+                  <SectionTitle title="완료한 일" count={completedResults.length} />
+                  {completedResults.map((task) => {
+                    const doneDay = task.completed_at
+                      ? formatDate(Temporal.Instant.from(task.completed_at).toZonedDateTimeISO(zone).toPlainDate(), nowDate)
+                      : '';
+                    return (
+                      <View key={task.id} style={styles.completedRow}>
+                        <Checkbox
+                          checked size={20} color={colors.success}
+                          onPress={() => {
+                            haptic.tap();
+                            taskActions.reopen(task);
+                            showToast(`‘${task.title}’을 다시 열었습니다.`);
+                          }}
+                          label={task.title + ' 다시 열기'} />
+                        <View style={[styles.completedBody, { borderBottomColor: colors.border }]}>
+                          <Text numberOfLines={1} style={[type.body as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
+                            {task.title}
+                          </Text>
+                          <Txt variant="caption" tone="faint">{doneDay}</Txt>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </>
+              ) : null}
             </>
           ) : (
             <EmptyState
               icon="search" title={quickFilter ? `${filterLabels[quickFilter]}이 없습니다` : '찾는 할 일이 없습니다'}
-              message={quickFilter ? undefined : '완료한 일은 ‘완료한 일 보기’에서 찾을 수 있습니다.'}
-              action={quickFilter ? <Button label="필터 해제" kind="secondary" onPress={() => setQuickFilter(null)} /> : undefined} />
+              message={quickFilter
+                ? undefined
+                : includeCompleted
+                  ? '다른 키워드나 초성으로 검색해 보세요.'
+                  : '위의 ‘완료한 일 포함’을 켜면 완료 기록까지 함께 찾습니다.'}
+              action={quickFilter ? (
+                <Button label="필터 해제" kind="secondary" onPress={() => setQuickFilter(null)} />
+              ) : !includeCompleted ? (
+                <Button label="완료한 일에서도 찾기" kind="secondary" onPress={() => setIncludeCompleted(true)} />
+              ) : undefined} />
           )}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -223,4 +354,9 @@ const styles = StyleSheet.create({
   },
   link: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg, borderWidth: 1, borderRadius: radius.lg },
   input: { minHeight: 48, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space.md },
+  completedRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingLeft: space.lg },
+  completedBody: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 11, paddingRight: space.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
 });

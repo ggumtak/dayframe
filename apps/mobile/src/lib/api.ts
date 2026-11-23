@@ -2,8 +2,8 @@ import { accessToken, refreshedToken } from './auth';
 import { apiBase, env } from './env';
 import type {
   ApiError, AppVersion, CompleteTaskInput, FinishFocusInput, FocusInput, FocusSession, Habit, HabitInput, HabitLog,
-  HabitLogInput, HabitPatch, HabitStats, McpConnection, NewMcpConnection, Page, Project, ProjectInput, RescheduleResult, Tag, Task, TaskCompletion,
-  TaskInput, TaskPatch, TaskTag, User, UserPatch,
+  HabitLogInput, HabitPatch, HabitStats, McpConnection, NewMcpConnection, Page, Project, ProjectInput, RescheduleResult,
+  Section, SectionInput, SectionPatch, Tag, Task, TaskCompletion, TaskInput, TaskPatch, TaskTag, User, UserPatch,
 } from './shared';
 
 /** An HTTP failure from the Dayframe API, carrying the stable error `code` from the contract. */
@@ -115,6 +115,10 @@ export const api = {
   createProject: (input: ProjectInput) => json<Project>('/projects', 'POST', input),
   updateProject: (id: string, patch: Partial<ProjectInput>) => json<Project>('/projects/' + id, 'PATCH', patch),
   deleteProject: (id: string) => request<void>('/projects/' + id, { method: 'DELETE' }),
+  sections: () => all<Section>('/sections'),
+  createSection: (input: SectionInput) => json<Section>('/sections', 'POST', input),
+  updateSection: (id: string, patch: SectionPatch) => json<Section>('/sections/' + id, 'PATCH', patch),
+  deleteSection: (id: string) => request<void>('/sections/' + id, { method: 'DELETE' }),
   tags: () => all<Tag>('/tags'),
   createTag: (name: string) => json<Tag>('/tags', 'POST', { name }),
   updateTag: (id: string, name: string) => json<Tag>('/tags/' + id, 'PATCH', { name }),

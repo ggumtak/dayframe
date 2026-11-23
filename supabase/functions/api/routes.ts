@@ -139,10 +139,14 @@ async function completeTask(request: Request, db: Supabase, id: string) {
   }
   const item = onlyResult(await db.rest<Task[]>("tasks", { id: uuidFilter(id) }));
   // Let the transaction detect completed requests that raced with this read.
-  // An occurrence moved earlier than its slot must not come back as its own next occurrence.
+  // An occurrence moved earlier than its slot must not come back as its own next occurrence;
+  // completion-based repeats anchor from the actual completion time instead.
+  const now = Temporal.Now.instant();
+  const mode = item.recurrence_mode ?? "schedule";
+  const after = mode === "completion" ? now : occurrenceFloor(item, now);
   const next = item.recurrence_rule && item.recurrence_anchor_at
     ? nextOccurrence(item.recurrence_rule, item.timezone, item.recurrence_anchor_at,
-      occurrenceFloor(item, Temporal.Now.instant()), item.all_day, item.recurrence_local_time) : null;
+      after, item.all_day, item.recurrence_local_time, mode) : null;
   return db.rest<TaskCompletion>("rpc/complete_task", {}, "POST", { ...args, p_next_due: next });
 }
 

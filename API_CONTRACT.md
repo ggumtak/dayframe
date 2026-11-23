@@ -33,18 +33,21 @@ Deleting a project cascades to its sections, directly assigned tasks and their d
 
 ### Quick entry and recurrence
 
-POST `{"text":"Tomorrow 7pm gym every Mon, Wed #health @workout p2","timezone":"Asia/Seoul"}` to `/tasks/parse`. The preview includes `title`, `due_at`, `all_day`, `timezone`, `recurrence_rule`, `recurrence_local_time`, `project`, `tags`, and `priority`.
+POST `{"text":"Tomorrow 7pm gym every Mon, Wed #health @workout p2","timezone":"Asia/Seoul"}` to `/tasks/parse`. The preview includes `title`, `due_at`, `all_day`, `timezone`, `recurrence_rule`, `recurrence_mode`, `recurrence_local_time`, `duration_minutes`, `project`, `tags`, and `priority`.
 
 | Tokens | Parsed behavior |
 | --- | --- |
-| `오늘`, `내일`, `모레`, `today`, `tomorrow`, `day after tomorrow`, `YYYY-MM-DD` | Calendar dates in the supplied zone |
-| `11월 25일`, `3일 뒤`, `2주 후`, `in 3 days` | Month and day (the next time it comes around), or an offset from today |
+| `오늘`, `내일`, `모레`, `글피`, `이번 주말`, `다음 주말`, `월말`, `today`, `tomorrow`, `day after tomorrow`, `YYYY-MM-DD`, `YYYY.MM.DD`, `YYYY/MM/DD` | Calendar dates in the supplied zone |
+| `11월 25일`, `3일 뒤`, `2주 후`, `2개월 후`, `in 3 days`, `in 2 months` | Month and day (the next time it comes around), or an offset from today |
+| `30분 후`, `2시간 뒤`, `1시간 30분 후`, `in 45 mins`, `in 2 hours` | Relative date and time offset from now |
+| `30분간`, `1시간 동안`, `1시간 30분 동안`, `for 30m`, `for 1h 30m` | Estimated task duration (`duration_minutes`, 1–1440) |
 | `다음주 화요일`, `다음 주 화요일`, `next week Tue`, `next Tue` | Weekday in the next Monday-starting week |
 | `이번주 금요일`, `this Fri` | Weekday in the current Monday-starting week |
 | `오전 8시`, `오후 6시 30분`, `7시 반`, `7pm`, `18:30`, `at 7:15 pm` | Local wall-clock time |
 | `7시`, `7:30` (no 오전/오후 or am/pm) | The likelier half of the day: 1–5시 and 12시 are afternoon; 6–11시 is the next one still ahead today, or the morning on another day or for a repeating task. Words such as 저녁, 밤, 아침, 기상 in the title decide it. `07:30` and `19시` are taken as written |
 | `아침`, `새벽`, `낮`, `저녁`, `밤` before an hour, `정오`, `자정`, `noon`, `midnight` | Day period. `밤 12시` is the midnight that ends the given date |
-| `매일`, `매주`, `매주 월수금`, `월요일마다`, `every Mon, Wed`, `every 2 weeks`, `3일마다`, `daily`, `weekly` | Daily or weekly RRULE with optional weekday or interval |
+| `매일`, `매주`, `매주 월수금`, `월요일마다`, `every Mon, Wed`, `every 2 weeks`, `3일마다`, `daily`, `weekly` | Daily or weekly RRULE with optional weekday or interval (`recurrence_mode: "schedule"`) |
+| `완료 후 3일마다`, `완료 후 매일`, `3일마다!`, `every! 3 days`, `every! 2 weeks` | Completion-based recurrence (`recurrence_mode: "completion"`): next due date is computed from completion time |
 | `평일마다`, `매주 주말`, `격주`, `every weekday`, `every weekend`, `every other week` | Monday–Friday, Saturday–Sunday, or a two-week interval |
 | `매월 25일`, `매달 말일`, `2개월마다`, `monthly on the 25th`, `every month on the last day` | A monthly date, the last day of each month, or a monthly interval |
 | `매년 5월 10일`, `2년마다`, `yearly`, `every 2 years` | A yearly date or interval |

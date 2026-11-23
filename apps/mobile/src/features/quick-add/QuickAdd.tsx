@@ -1,22 +1,23 @@
 import { router, useSegments } from 'expo-router';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BackHandler, Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, type TextInputInstance, View,
+  BackHandler, Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, type TextInputInstance, View,
 } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Chip, Icon, type IconName, Txt } from '@/components/ui';
 import { useNewTaskDate } from '@/data/session';
-import { nextPosition, useProjects, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
-import { describeRecurrence, deviceTimeZone, formatDue, instantFor, today } from '@/lib/dates';
+import { nextPosition, useProjects, useSections, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
+import { describeRecurrence, deviceTimeZone, formatDue, formatDurationMinutes, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { analyzeTask, type Priority, type TaskAnalysis } from '@/lib/shared';
-import { elevation, priorityColor, radius, space, useTheme } from '@/theme';
+import { showToast } from '@/lib/toast';
+import { elevation, priorityColor, radius, space, type, useTheme } from '@/theme';
 
 import { HighlightInput, type PillPalette } from './HighlightInput';
 import { parseErrorMessage } from './messages';
-import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames, removeTokens } from './suggest';
+import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames, parseChecklistLines, removeTokens } from './suggest';
 
 export const TAB_BAR_HEIGHT = 58;
 
@@ -24,6 +25,7 @@ export const TAB_BAR_HEIGHT = 58;
 export interface QuickAddDefaults {
   parentTaskId?: string;
   projectId?: string | null;
+  sectionId?: string | null;
   /** Date new tasks get when no date is typed. */
   dueToday?: boolean;
   /** Text to start from, such as a time picked on the timeline. */
@@ -34,18 +36,24 @@ interface QuickAddValue {
   open: (defaults?: QuickAddDefaults) => void;
   /** Lets the focused screen set defaults for the floating button. */
   setScreenDefaults: (defaults: QuickAddDefaults | null) => void;
+  /** Temporarily hides the floating + button while another bottom bar (e.g. BatchBar) is active. */
+  setFabHidden: (hidden: boolean) => void;
 }
 
-const QuickAddContext = createContext<QuickAddValue>({ open: () => {}, setScreenDefaults: () => {} });
+const QuickAddContext = createContext<QuickAddValue>({ open: () => {}, setScreenDefaults: () => {}, setFabHidden: () => {} });
 export const useQuickAdd = () => useContext(QuickAddContext);
 
-const inserts: { label: string; text: string; icon: IconName; kind?: 'date' | 'recurrence' | 'priority' }[] = [
+const inserts: { label: string; text: string; icon: IconName; kind?: 'date' | 'time' | 'recurrence' | 'priority' | 'notes' }[] = [
   { label: '오늘', text: '오늘', icon: 'sun', kind: 'date' },
   { label: '내일', text: '내일', icon: 'sunrise', kind: 'date' },
+  { label: '주말', text: '이번 주말', icon: 'coffee', kind: 'date' },
+  { label: '오전 9시', text: '오전 9시', icon: 'clock', kind: 'time' },
+  { label: '저녁 7시', text: '저녁 7시', icon: 'moon', kind: 'time' },
   { label: '매일', text: '매일', icon: 'repeat', kind: 'recurrence' },
   { label: '프로젝트', text: '#', icon: 'hash' },
   { label: '태그', text: '@', icon: 'tag' },
   { label: '우선순위', text: 'p1', icon: 'flag', kind: 'priority' },
+  { label: '메모', text: '', icon: 'align-left', kind: 'notes' },
 ];
 const priorities: Priority[] = [1, 2, 3, 4];
 
@@ -54,6 +62,8 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   const insets = useSafeAreaInsets();
   const input = useRef<TextInputInstance>(null);
   const [text, setText] = useState(defaults.initialText ?? '');
+  const [notes, setNotes] = useState('');
+  const [showNotes, setShowNotes] = useState(false);
   const [added, setAdded] = useState(0);
   const [pickingPriority, setPickingPriority] = useState(false);
   // Tapping the default 오늘 chip leaves the tasks added from this sheet undated.
@@ -61,6 +71,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   const [newTaskDate] = useNewTaskDate();
   const { tasks, byId } = useTaskIndex();
   const { data: projects } = useProjects();
+  const { data: sections } = useSections();
   const { data: tags } = useTags();
   const actions = useTaskActions();
   const timezone = deviceTimeZone();
@@ -69,14 +80,17 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   // Today view works the same). A subtask follows its parent instead.
   const defaultsToToday = !parent && (!!defaults.dueToday || newTaskDate === 'today');
 
+  const multiLines = useMemo(() => (text.includes('\n') ? parseChecklistLines(text) : []), [text]);
+  const isMultiLine = multiLines.length >= 2;
+
   const result = useMemo<{ analysis?: TaskAnalysis; error?: string | null }>(() => {
-    if (!text.trim()) return {};
+    if (!text.trim() || isMultiLine) return {};
     try {
       return { analysis: analyzeTask({ text, timezone }, { draft: true }) };
     } catch (error) {
       return { error: parseErrorMessage(error) };
     }
-  }, [text, timezone]);
+  }, [text, timezone, isMultiLine]);
   const { analysis } = result;
   // The schedule is marked as soon as it is typed, but there is nothing to add until a title follows.
   const parsed = analysis?.task.title ? analysis.task : undefined;
@@ -87,7 +101,6 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     const length = defaults.initialText?.length ?? 0;
     if (!length) return;
     const timer = setTimeout(() => {
-      // Native inputs have setSelection; on the web the element is a plain <textarea>.
       const field = input.current as unknown as { setSelection?: (a: number, b: number) => void; setSelectionRange?: (a: number, b: number) => void } | null;
       if (typeof field?.setSelection === 'function') field.setSelection(length, length);
       else field?.setSelectionRange?.(length, length);
@@ -110,7 +123,76 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     priority: { background: colors.warningSoft, foreground: colors.warning },
   };
 
+  const createSingleLine = (rawLine: string, positionOffset: number, extraNotes?: string | null, overrideParentId?: string) => {
+    const targetParentId = overrideParentId ?? parent?.id;
+    let parsedLine: ReturnType<typeof analyzeTask>['task'] | null = null;
+    try {
+      const res = analyzeTask({ text: rawLine, timezone });
+      if (res.task.title) parsedLine = res.task;
+    } catch {
+      // Fall back to plain title when line contains non-schedule text.
+    }
+    const fallbackToday = !parsedLine?.due_at && !targetParentId && defaultsToToday && !undated;
+    const due_at = fallbackToday ? instantFor(today(timezone), null, timezone) : parsedLine?.due_at ?? null;
+    const projectId = targetParentId || parsedLine?.project ? null : defaults.projectId ?? null;
+    const sectionId = !targetParentId && !parsedLine?.project && projectId && projectId === defaults.projectId
+      ? defaults.sectionId ?? null : null;
+    const siblings = tasks.filter((task) => (targetParentId
+      ? task.parent_task_id === targetParentId
+      : !task.parent_task_id && task.project_id === projectId));
+    return actions.create({
+      input: {
+        title: parsedLine?.title ?? rawLine,
+        notes: extraNotes ?? null,
+        priority: parsedLine?.priority ?? 4,
+        timezone,
+        position: nextPosition(siblings) + positionOffset * 1024,
+        ...(due_at ? { due_at, all_day: fallbackToday ? true : (parsedLine?.all_day ?? true) } : {}),
+        ...(parsedLine?.recurrence_rule ? { recurrence_rule: parsedLine.recurrence_rule, recurrence_mode: parsedLine.recurrence_mode } : {}),
+        ...(parsedLine?.recurrence_local_time ? { recurrence_local_time: parsedLine.recurrence_local_time } : {}),
+        ...(parsedLine?.duration_minutes ? { duration_minutes: parsedLine.duration_minutes } : {}),
+        ...(targetParentId ? { parent_task_id: targetParentId } : {
+          ...(projectId ? { project_id: projectId } : {}),
+          ...(sectionId ? { section_id: sectionId } : {}),
+        }),
+      },
+      projectName: targetParentId ? null : (parsedLine?.project ?? null),
+      tagNames: parsedLine?.tags ?? [],
+    });
+  };
+
+  const submitMultiSeparate = () => {
+    multiLines.forEach((line, index) => {
+      createSingleLine(line, index);
+    });
+    haptic.success();
+    setText('');
+    setNotes('');
+    setAdded((count) => count + multiLines.length);
+    showToast(`${multiLines.length}개 할 일을 한 번에 추가했습니다.`);
+    input.current?.focus();
+  };
+
+  const submitMultiAsChecklist = () => {
+    if (multiLines.length < 2) return;
+    const [head, ...rest] = multiLines;
+    const parentId = createSingleLine(head, 0, notes.trim() ? notes : null);
+    rest.forEach((line, index) => {
+      createSingleLine(line, index, null, parentId);
+    });
+    haptic.success();
+    setText('');
+    setNotes('');
+    setAdded((count) => count + 1);
+    showToast(`‘${head}’와 하위 작업 ${rest.length}개를 추가했습니다.`);
+    input.current?.focus();
+  };
+
   const submit = () => {
+    if (isMultiLine) {
+      submitMultiSeparate();
+      return;
+    }
     if (!parsed) {
       haptic.warning();
       return;
@@ -118,28 +200,38 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     const fallbackToday = !parsed.due_at && defaultsToToday && !undated;
     const due_at = fallbackToday ? instantFor(today(timezone), null, timezone) : parsed.due_at;
     const projectId = parent || parsed.project ? null : defaults.projectId ?? null;
+    const sectionId = !parent && !parsed.project && projectId && projectId === defaults.projectId
+      ? defaults.sectionId ?? null : null;
     const siblings = tasks.filter((task) => (parent
       ? task.parent_task_id === parent.id
       : !task.parent_task_id && task.project_id === projectId));
     actions.create({
       input: {
-        title: parsed.title, priority: parsed.priority, timezone, position: nextPosition(siblings),
+        title: parsed.title,
+        notes: notes.trim() ? notes : null,
+        priority: parsed.priority, timezone, position: nextPosition(siblings),
         ...(due_at ? { due_at, all_day: fallbackToday ? true : parsed.all_day } : {}),
-        ...(parsed.recurrence_rule ? { recurrence_rule: parsed.recurrence_rule } : {}),
+        ...(parsed.recurrence_rule ? { recurrence_rule: parsed.recurrence_rule, recurrence_mode: parsed.recurrence_mode } : {}),
         ...(parsed.recurrence_local_time ? { recurrence_local_time: parsed.recurrence_local_time } : {}),
-        ...(parent ? { parent_task_id: parent.id } : projectId ? { project_id: projectId } : {}),
+        ...(parsed.duration_minutes ? { duration_minutes: parsed.duration_minutes } : {}),
+        ...(parent ? { parent_task_id: parent.id } : {
+          ...(projectId ? { project_id: projectId } : {}),
+          ...(sectionId ? { section_id: sectionId } : {}),
+        }),
       },
       projectName: parent ? null : parsed.project,
       tagNames: parsed.tags,
     });
     haptic.success();
     setText('');
+    setNotes('');
+    setShowNotes(false);
     setAdded((count) => count + 1);
     input.current?.focus();
   };
 
   const tokens = analysis && analysis.text === text ? analysis.tokens : [];
-  const mention = useMemo(() => activeMention(text), [text]);
+  const mention = useMemo(() => (isMultiLine ? null : activeMention(text)), [text, isMultiLine]);
   const suggestions = useMemo(() => {
     if (!mention) return [];
     const pool = mention.kind === 'project' ? (projects ?? []).map((item) => item.name) : (tags ?? []).map((item) => item.name);
@@ -153,8 +245,12 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
       input.current?.focus();
       return;
     }
+    if (item.kind === 'notes') {
+      setShowNotes((open) => !open);
+      return;
+    }
     setPickingPriority(false);
-    if (item.kind === 'date' || item.kind === 'recurrence') {
+    if (item.kind === 'date' || item.kind === 'time' || item.kind === 'recurrence') {
       const scheduleKind = item.kind;
       setText((current) => applyScheduleWord(current, item.text, scheduleKind, tokens));
     } else {
@@ -184,12 +280,16 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
   };
 
   const due = draft?.due_at ? formatDue({ due_at: draft.due_at, timezone, all_day: draft.all_day }) : null;
-  const repeat = describeRecurrence(draft?.recurrence_rule ?? null);
+  const repeat = describeRecurrence(draft?.recurrence_rule ?? null, draft?.recurrence_mode);
+  const durationLabel = draft?.duration_minutes ? formatDurationMinutes(draft.duration_minutes) : null;
   const isNewProject = !!draft?.project
     && !projects?.some((project) => project.name.toLowerCase() === draft.project!.toLowerCase());
   const defaultProject = !draft?.project && defaults.projectId
     ? projects?.find((project) => project.id === defaults.projectId)?.name : undefined;
-  const hasChips = !!draft && (due || repeat || draft.project || draft.tags.length > 0 || draft.priority < 4);
+  const defaultSection = !draft?.project && defaults.sectionId
+    ? sections?.find((section) => section.id === defaults.sectionId)?.name : undefined;
+  const hasChips = !!draft && (due || durationLabel || repeat || draft.project || draft.tags.length > 0 || draft.priority < 4);
+  const canSend = !!parsed || isMultiLine;
 
   return (
     <KeyboardAvoidingView behavior="padding" style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -209,12 +309,35 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
           <Txt variant="caption" tone="muted" numberOfLines={1} style={{ marginBottom: 6 }}>
             하위 작업 · {parent.title}
           </Txt>
+        ) : defaultSection && defaultProject ? (
+          <Txt variant="caption" tone="muted" numberOfLines={1} style={{ marginBottom: 6 }}>
+            #{defaultProject} · {defaultSection}
+          </Txt>
         ) : null}
         <HighlightInput
           ref={input} value={text} onChangeText={setText} tokens={tokens}
           palette={palette} autoFocus onSubmitEditing={submit}
-          placeholder={parent ? '하위 작업 추가' : '예: 내일 저녁 7시 운동 #건강 p2'}
+          placeholder={parent ? '하위 작업 추가 (여러 줄 붙여넣기 가능)' : '예: 30분 후 빨래, 내일 저녁 7시 운동 #건강 p2'}
           accessibilityLabel="할 일 입력" />
+        {showNotes ? (
+          <TextInput
+            value={notes} onChangeText={setNotes} multiline maxLength={10000}
+            placeholder="메모, 링크, 세부 내용..." placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
+            style={[type.small, styles.notesInput, { backgroundColor: colors.surfaceMuted, color: colors.text }]} />
+        ) : null}
+        {isMultiLine ? (
+          <View style={[styles.multiBox, { backgroundColor: colors.accentSoft }]}>
+            <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>
+              {multiLines.length}줄 감지됨 · 붙여넣은 목록을 한 번에 추가할 수 있습니다
+            </Txt>
+            <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+              <Chip icon="layers" label={`${multiLines.length}개 할 일로 추가`} selected onPress={submitMultiSeparate} />
+              {!parent ? (
+                <Chip icon="git-merge" label={`체크리스트(하위 ${multiLines.length - 1}개)로 추가`} onPress={submitMultiAsChecklist} />
+              ) : null}
+            </View>
+          </View>
+        ) : null}
         {result.error ? (
           <Txt variant="small" tone="danger" style={{ marginTop: 6 }} accessibilityLiveRegion="polite">{result.error}</Txt>
         ) : null}
@@ -253,7 +376,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
             })}
           </View>
         ) : null}
-        {hasChips || defaultProject || (defaultsToToday && !due) ? (
+        {!isMultiLine && (hasChips || defaultProject || (defaultsToToday && !due)) ? (
           <View style={styles.chips}>
             {due ? (
               <Animated.View entering={ZoomIn.duration(140)}>
@@ -270,6 +393,11 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
                   input.current?.focus();
                 }} />
             ) : null}
+            {durationLabel ? (
+              <Animated.View entering={ZoomIn.duration(140)}>
+                <Chip icon="clock" label={durationLabel + ' ×'} color={colors.schedule} onPress={() => stripToken((token) => token.kind === 'duration')} />
+              </Animated.View>
+            ) : null}
             {repeat ? (
               <Animated.View entering={ZoomIn.duration(140)}>
                 <Chip icon="repeat" label={repeat + ' ×'} color={colors.schedule} onPress={() => stripToken((token) => token.kind === 'recurrence')} />
@@ -281,7 +409,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
                   icon="hash" label={draft.project + (isNewProject ? ' · 새 프로젝트' : '') + ' ×'} color={colors.accent}
                   onPress={() => stripToken((token) => token.kind === 'project')} />
               </Animated.View>
-            ) : defaultProject ? <Chip icon="hash" label={defaultProject} /> : null}
+            ) : defaultProject ? <Chip icon="hash" label={defaultSection ? `${defaultProject} · ${defaultSection}` : defaultProject} /> : null}
             {draft?.tags.map((tag) => (
               <Animated.View key={tag} entering={ZoomIn.duration(140)}>
                 <Chip
@@ -301,7 +429,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
         <View style={styles.tools}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6 }} style={{ flex: 1 }}>
             {inserts.map((item) => {
-              const active = item.kind === 'priority' && pickingPriority;
+              const active = (item.kind === 'priority' && pickingPriority) || (item.kind === 'notes' && (showNotes || !!notes.trim()));
               return (
                 <Pressable
                   key={item.label} accessibilityRole="button" accessibilityLabel={item.label + ' 넣기'} onPress={() => insert(item)}
@@ -321,9 +449,9 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
             </Animated.View>
           ) : null}
           <Pressable
-            accessibilityRole="button" accessibilityLabel="할 일 추가" accessibilityState={{ disabled: !parsed }} onPress={submit}
-            style={({ pressed }) => [styles.send, { backgroundColor: parsed ? colors.accent : colors.surfaceMuted, opacity: pressed ? 0.8 : 1 }]}>
-            <Icon name="arrow-up" size={20} color={parsed ? colors.onAccent : colors.textFaint} />
+            accessibilityRole="button" accessibilityLabel="할 일 추가" accessibilityState={{ disabled: !canSend }} onPress={submit}
+            style={({ pressed }) => [styles.send, { backgroundColor: canSend ? colors.accent : colors.surfaceMuted, opacity: pressed ? 0.8 : 1 }]}>
+            <Icon name="arrow-up" size={20} color={canSend ? colors.onAccent : colors.textFaint} />
           </Pressable>
         </View>
       </Animated.View>
@@ -337,16 +465,18 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
   const segments: string[] = useSegments();
   const [active, setActive] = useState<QuickAddDefaults | null>(null);
+  const [fabHidden, setFabHidden] = useState(false);
   const screenDefaults = useRef<QuickAddDefaults | null>(null);
 
   const value = useMemo<QuickAddValue>(() => ({
     open: (defaults) => setActive(defaults ?? screenDefaults.current ?? {}),
     setScreenDefaults: (defaults) => { screenDefaults.current = defaults; },
+    setFabHidden: (hidden) => setFabHidden(hidden),
   }), []);
   const close = useCallback(() => setActive(null), []);
 
-  // Detail and settings screens add in their own way; every tab keeps the button.
-  const showButton = segments[0] === '(tabs)';
+  // Detail and settings screens add in their own way; every tab keeps the button unless a bottom batch bar is open.
+  const showButton = segments[0] === '(tabs)' && !fabHidden;
   // On the habits tab the button makes a habit, as in TickTick; everywhere else it adds a task.
   const onHabits = showButton && segments[1] === 'habits';
 
@@ -377,6 +507,13 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   bar: {
     borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: space.lg, paddingTop: space.lg,
+  },
+  notesInput: {
+    marginTop: space.sm, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: 8,
+    minHeight: 40, maxHeight: 84, textAlignVertical: 'top',
+  },
+  multiBox: {
+    marginTop: space.sm, borderRadius: radius.md, padding: space.md, gap: space.sm,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: space.md },
   tools: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.md },

@@ -4,15 +4,15 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Chip, Icon, type IconName, Row, Sheet, Txt } from '@/components/ui';
-import { useProjects, useTaskActions } from '@/data/tasks';
+import { useProjects, useSections, useSubtaskProgress, useTagNames, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
-import { describeRecurrence, formatDue, today } from '@/lib/dates';
+import { describeRecurrence, formatDue, formatDurationMinutes, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Priority, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, useTheme } from '@/theme';
 
-import { useTaskFlow } from './useTaskFlow';
+import { toMarkdownChecklist, useTaskFlow } from './useTaskFlow';
 
 function Action({ icon, label, onPress, color }: { icon: IconName; label: string; onPress: () => void; color?: string }) {
   const { colors } = useTheme();
@@ -30,23 +30,39 @@ function Action({ icon, label, onPress, color }: { icon: IconName; label: string
  * What a long press on a task offers: the common changes in one sheet, without opening the task.
  * `onSchedule` opens the full date picker the list already has.
  */
-export function TaskMenu({ task, onClose, onSchedule }: { task: Task | null; onClose: () => void; onSchedule: (task: Task) => void }) {
+export function TaskMenu({
+  task, onClose, onSchedule, onStartSelect,
+}: {
+  task: Task | null; onClose: () => void; onSchedule: (task: Task) => void; onStartSelect?: (task: Task) => void;
+}) {
   if (!task) return null;
-  return <TaskMenuContent key={task.id} task={task} onClose={onClose} onSchedule={onSchedule} />;
+  return <TaskMenuContent key={task.id} task={task} onClose={onClose} onSchedule={onSchedule} onStartSelect={onStartSelect} />;
 }
 
-function TaskMenuContent({ task, onClose, onSchedule }: { task: Task; onClose: () => void; onSchedule: (task: Task) => void }) {
+function TaskMenuContent({
+  task, onClose, onSchedule, onStartSelect,
+}: {
+  task: Task; onClose: () => void; onSchedule: (task: Task) => void; onStartSelect?: (task: Task) => void;
+}) {
   const { colors } = useTheme();
   const flow = useTaskFlow();
   const actions = useTaskActions();
+  const { children } = useTaskIndex();
+  const { completedChildren } = useSubtaskProgress();
   const { data: projects } = useProjects();
+  const { data: sections } = useSections();
+  const tagNames = useTagNames();
   const quickAdd = useQuickAdd();
   const [movingProject, setMovingProject] = useState(false);
 
   const now = today(task.timezone);
   const due = formatDue(task);
-  const repeat = describeRecurrence(task.recurrence_rule);
+  const repeat = describeRecurrence(task.recurrence_rule, task.recurrence_mode);
+  const durationLabel = task.duration_minutes ? formatDurationMinutes(task.duration_minutes) : null;
   const projectName = task.project_id ? projects?.find((item) => item.id === task.project_id)?.name : undefined;
+  const projectSections = task.project_id ? (sections ?? []).filter((section) => section.project_id === task.project_id) : [];
+  const openSubs = children.get(task.id) ?? [];
+  const doneSubs = completedChildren.get(task.id) ?? [];
   const run = (action: () => void) => {
     onClose();
     action();
@@ -57,7 +73,7 @@ function TaskMenuContent({ task, onClose, onSchedule }: { task: Task; onClose: (
       <View style={{ gap: 2, marginBottom: space.md }}>
         <Txt variant="heading" numberOfLines={2}>{task.title}</Txt>
         <Txt variant="small" tone="muted">
-          {[due ?? '날짜 없음', repeat, projectName ? '#' + projectName : null].filter(Boolean).join(' · ')}
+          {[due ?? '날짜 없음', durationLabel, repeat, projectName ? '#' + projectName : null].filter(Boolean).join(' · ')}
         </Txt>
       </View>
 
@@ -87,7 +103,7 @@ function TaskMenuContent({ task, onClose, onSchedule }: { task: Task; onClose: (
         })}
       </View>
 
-      <View style={{ marginTop: space.sm }}>
+      <ScrollView style={{ maxHeight: 320, marginTop: space.sm }}>
         {!task.parent_task_id && projects?.length ? (
           <>
             <Row
@@ -116,18 +132,60 @@ function TaskMenuContent({ task, onClose, onSchedule }: { task: Task; onClose: (
             ) : null}
           </>
         ) : null}
+        {!task.parent_task_id && projectSections.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingBottom: space.sm }}>
+            <Chip
+              icon="minus" label="섹션 없음" selected={!task.section_id}
+              onPress={() => run(() => {
+                actions.update(task.id, { section_id: null });
+                showToast('섹션에서 뺐습니다.');
+              })} />
+            {projectSections.map((section) => (
+              <Chip
+                key={section.id} icon="bookmark" label={section.name} selected={task.section_id === section.id}
+                onPress={() => run(() => {
+                  actions.update(task.id, { section_id: section.id });
+                  showToast(`‘${section.name}’ 섹션으로 옮겼습니다.`);
+                })} />
+            ))}
+          </ScrollView>
+        ) : null}
+        {onStartSelect && !task.parent_task_id ? (
+          <Row icon="check-square" label="여러 개 선택" detail="일괄 편집" onPress={() => run(() => onStartSelect(task))} />
+        ) : null}
         {task.parent_task_id ? null : (
           <Row icon="corner-down-right" label="하위 작업 추가" onPress={() => run(() => quickAdd.open({ parentTaskId: task.id }))} />
         )}
+        {doneSubs.length > 0 ? (
+          <Row
+            icon="rotate-ccw" label="하위 작업 체크 초기화" detail={`${doneSubs.length}개 다시 열기`}
+            onPress={() => run(() => flow.resetChecklist(doneSubs))} />
+        ) : null}
         <Row
-          icon="clock" label="이 할 일로 집중 시작"
-          onPress={() => run(() => router.navigate({ pathname: '/focus', params: { taskId: task.id, at: String(Date.now()) } }))} />
+          icon="copy" label="할 일 복제" detail={openSubs.length + doneSubs.length > 0 ? `하위 ${openSubs.length + doneSubs.length}개 포함` : undefined}
+          onPress={() => run(() => flow.duplicate(task, { openSubtasks: openSubs, completedSubtasks: doneSubs, tagNames: tagNames.get(task.id) }))} />
         <Row
-          icon="copy" label="제목 복사"
-          onPress={() => run(() => void Clipboard.setStringAsync(task.title).then(() => showToast('제목을 복사했습니다.')).catch(() => {}))} />
+          icon="clock" label="이 할 일로 집중 시작" detail={durationLabel ?? undefined}
+          onPress={() => run(() => router.navigate({
+            pathname: '/focus',
+            params: {
+              taskId: task.id, at: String(Date.now()),
+              ...(task.duration_minutes ? { duration: String(task.duration_minutes) } : {}),
+            },
+          }))} />
+        <Row
+          icon="clipboard" label={openSubs.length + doneSubs.length > 0 ? '체크리스트 복사 (Markdown)' : '제목 복사'}
+          onPress={() => run(() => {
+            const payload = openSubs.length + doneSubs.length > 0
+              ? toMarkdownChecklist(task, openSubs, doneSubs)
+              : task.title;
+            void Clipboard.setStringAsync(payload)
+              .then(() => showToast(openSubs.length + doneSubs.length > 0 ? '체크리스트를 복사했습니다.' : '제목을 복사했습니다.'))
+              .catch(() => {});
+          })} />
         <Row icon="maximize-2" label="자세히 보기" onPress={() => run(() => router.push({ pathname: '/task/[id]', params: { id: task.id } }))} />
         <Row icon="trash-2" label="삭제" tone="danger" onPress={() => run(() => flow.remove(task))} />
-      </View>
+      </ScrollView>
     </Sheet>
   );
 }

@@ -12,6 +12,7 @@ import type { Habit, HabitLog, HabitStats } from '@/lib/shared';
 import { radius, space, useTheme } from '@/theme';
 
 import { nextCheckIn } from './checkIn';
+import { computeHabitStrength } from './strength';
 
 const SIZE = 52;
 const STROKE = 4;
@@ -67,6 +68,7 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
   const monday = weekStart(day);
   const week = Array.from({ length: 7 }, (_, index) => monday.add({ days: index }));
   const streak = stats?.current_streak ?? 0;
+  const strength = computeHabitStrength(habit, logs, day);
 
   const checkIn = () => {
     const next = nextCheckIn(habit, todayCount, progress);
@@ -93,6 +95,11 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
                 <View style={[styles.streak, { backgroundColor: colors.warningSoft }]} accessibilityLabel={`${streak}${weekly ? '주' : '일'} 연속`}>
                   <Icon name="zap" size={11} color={colors.warning} />
                   <Txt variant="caption" style={{ color: colors.warning, fontWeight: '700' }}>{streak}{weekly ? '주' : '일'}</Txt>
+                </View>
+              ) : null}
+              {strength.score > 0 ? (
+                <View style={[styles.streak, { backgroundColor: colors.successSoft }]} accessibilityLabel={`습관 강도 ${strength.score}%`}>
+                  <Txt variant="caption" style={{ color: colors.success, fontWeight: '700' }}>{strength.score}%</Txt>
                 </View>
               ) : null}
             </View>
@@ -125,9 +132,11 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
                 );
               })}
             </View>
-            <Txt variant="small" tone="muted">
-              {weekly ? `이번 주 ${progress}/${habit.target_count}회` : habit.target_count > 1 ? `오늘 ${progress}/${habit.target_count}회` : done ? '오늘 완료' : '오늘 아직'}
-              {todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : ''}
+            <Txt variant="small" tone={strength.missedYesterday ? 'default' : 'muted'} style={strength.missedYesterday ? { color: colors.warning } : undefined}>
+              {strength.missedYesterday
+                ? '어제 놓쳤어요 · 이틀 연속 빠지지 않게 오늘 체크!'
+                : (weekly ? `이번 주 ${progress}/${habit.target_count}회` : habit.target_count > 1 ? `오늘 ${progress}/${habit.target_count}회` : done ? '오늘 완료' : '오늘 아직')
+                  + (todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : '')}
             </Txt>
           </View>
           <CheckIn

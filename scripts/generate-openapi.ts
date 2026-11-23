@@ -21,7 +21,9 @@ const project = { ...owned, name: str, position: int };
 const task = {
   ...owned, project_id: nullable(uuid), section_id: nullable(uuid), parent_task_id: nullable(uuid),
   title: str, notes: nullable(str), priority: enumOf(1, 2, 3, 4), position: int, due_at: nullable(stamp),
-  all_day: bool, timezone: str, recurrence_rule: nullable(str), recurrence_anchor_at: nullable(stamp), recurrence_local_time: nullable(str), occurrence_at: nullable(stamp),
+  all_day: bool, timezone: str, recurrence_rule: nullable(str), recurrence_mode: enumOf("schedule", "completion"),
+  recurrence_anchor_at: nullable(stamp), recurrence_local_time: nullable(str), occurrence_at: nullable(stamp),
+  duration_minutes: nullable(int),
   completed_at: nullable(stamp), updated_at: stamp,
 };
 const schemas: Record<string, object> = {
@@ -34,7 +36,9 @@ const schemas: Record<string, object> = {
   TaskTag: obj({ user_id: uuid, task_id: uuid, tag_id: uuid }),
   TaskCompletion: obj({ task: ref("Task"), completed_at: stamp, occurrence_due_at: nullable(stamp) }),
   ParsedTask: obj({ title: str, due_at: nullable(stamp), all_day: bool, timezone: str,
-    recurrence_rule: nullable(str), recurrence_local_time: nullable(str), project: nullable(str), tags: array(str), priority: enumOf(1, 2, 3, 4) }),
+    recurrence_rule: nullable(str), recurrence_mode: enumOf("schedule", "completion"),
+    recurrence_local_time: nullable(str), duration_minutes: nullable(int),
+    project: nullable(str), tags: array(str), priority: enumOf(1, 2, 3, 4) }),
   RescheduleResult: obj({ count: { ...int, minimum: 0 } }),
   Habit: obj({ ...owned, name: str, cadence: enumOf("daily", "weekly"), target_count: int, timezone: str,
     start_date: date, archived_at: nullable(stamp) }),

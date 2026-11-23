@@ -1,8 +1,10 @@
 import { Temporal } from "@js-temporal/polyfill";
+import type { RecurrenceMode } from "../../../packages/shared/types.ts";
 
 const week = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
 export type Weekday = typeof week[number];
 export type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
+export type { RecurrenceMode };
 
 export class InvalidSchedule extends Error {}
 
@@ -32,12 +34,42 @@ export function nextOccurrence(
   after: Temporal.Instant,
   allDay: boolean,
   localTime?: string | null,
+  mode: RecurrenceMode = "schedule",
 ): string {
   const { frequency, interval, weekdays, lastDay } = recurrence(rule);
   const anchor = Temporal.Instant.from(anchorAt).toZonedDateTimeISO(timezone);
   const date = after.toZonedDateTimeISO(timezone).toPlainDate();
   const anchorDate = anchor.toPlainDate();
   const time = allDay ? null : localTime ? Temporal.PlainTime.from(localTime) : anchor.toPlainTime();
+
+  if (mode === "completion") {
+    if (frequency === "DAILY") {
+      const candidate = date.add({ days: interval });
+      return instantOn(candidate, time, timezone).toInstant().toString();
+    }
+    if (frequency === "WEEKLY") {
+      if (!weekdays.length) {
+        return instantOn(date.add({ weeks: interval }), time, timezone).toInstant().toString();
+      }
+      const mondayOffset = date.dayOfWeek - 1;
+      for (let offset = 1; offset <= interval * 7 + 7; offset++) {
+        const candidate = date.add({ days: offset });
+        if (Math.floor((offset + mondayOffset) / 7) % interval !== 0) continue;
+        if (!weekdays.includes(week[candidate.dayOfWeek - 1])) continue;
+        const at = instantOn(candidate, time, timezone).toInstant();
+        if (Temporal.Instant.compare(at, after) > 0) return at.toString();
+      }
+      throw new InvalidSchedule("No next occurrence could be calculated");
+    }
+    if (frequency === "MONTHLY") {
+      const next = date.add({ months: interval });
+      const candidate = lastDay ? next.with({ day: next.daysInMonth }) : next;
+      return instantOn(candidate, time, timezone).toInstant().toString();
+    }
+    // YEARLY
+    return instantOn(date.add({ years: interval }), time, timezone).toInstant().toString();
+  }
+
   if (frequency === "MONTHLY" || frequency === "YEARLY") {
     const monthly = frequency === "MONTHLY";
     const elapsedYears = date.year - anchorDate.year;

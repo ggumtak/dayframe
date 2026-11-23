@@ -35,7 +35,7 @@ before(async () => {
   `);
   for (const file of ["20261121000000_core.sql", "20261121000100_operations.sql", "20261122000000_mcp_connections.sql",
     "20261122000100_calendar_recurrence.sql", "20261123000000_occurrence_slot.sql",
-    "20261123000100_new_task_date.sql"]) {
+    "20261123000100_new_task_date.sql", "20261123000200_duration_and_completion_recurrence.sql"]) {
     await db.exec(await readFile(new URL("../supabase/migrations/" + file, import.meta.url), "utf8"));
   }
   await db.query("insert into auth.users values ($1), ($2)", [alice, bob]);
@@ -233,4 +233,41 @@ test("AI connection tokens are write-only for their owner and readable only by t
   await db.query("update mcp_connections set last_used_at = now() where token_hash = $1", [hash]);
   await as("authenticated", alice);
   assert.equal((await db.query("delete from mcp_connections returning id")).rows.length, 1);
+});
+
+test("duration_minutes and completion-based recurrence constraints, subtasks view, and early completion", async () => {
+  await as("authenticated", alice);
+  const compId = "12121212-1212-4121-8121-121212121212";
+  const compReq = "34343434-3434-4343-8343-343434343434";
+  // Insert task due far in the future with completion-based recurrence and 45m duration.
+  await db.query(
+    "insert into tasks(id,title,due_at,recurrence_rule,recurrence_mode,duration_minutes) values ($1,'Filter','2099-05-01T10:00Z','FREQ=DAILY;INTERVAL=3','completion',45)",
+    [compId],
+  );
+  // Early completion: next occurrence is 3 days from now (well before 2099-05-01), allowed in completion mode!
+  const rev = (await db.query<{ rev: string }>("select updated_at::text as rev from tasks where id=$1", [compId])).rows[0].rev;
+  const earlyNext = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  await db.query("select complete_task($1,$2,$3,$4)", [compId, compReq, rev, earlyNext]);
+  const after = await db.query<{ same_anchor: boolean; duration_minutes: number; recurrence_mode: string }>(
+    "select due_at = recurrence_anchor_at as same_anchor, duration_minutes, recurrence_mode from tasks where id=$1",
+    [compId],
+  );
+  assert.deepEqual(after.rows, [{ same_anchor: true, duration_minutes: 45, recurrence_mode: "completion" }]);
+
+  // Clearing recurrence_rule automatically resets recurrence_mode back to 'schedule'.
+  const cleared = await db.query<{ recurrence_mode: string }>(
+    "update tasks set recurrence_rule=null where id=$1 returning recurrence_mode",
+    [compId],
+  );
+  assert.deepEqual(cleared.rows, [{ recurrence_mode: "schedule" }]);
+
+  // Duration bounds (1..1440) and subtasks view exposes new columns.
+  await assert.rejects(db.query("update tasks set duration_minutes=0 where id=$1", [compId]), { code: "23514" });
+  await assert.rejects(db.query("update tasks set duration_minutes=1441 where id=$1", [compId]), { code: "23514" });
+  await db.query("insert into tasks(parent_task_id,title,duration_minutes) values ($1,'Sub',15)", [compId]);
+  const sub = await db.query<{ duration_minutes: number; recurrence_mode: string }>(
+    "select duration_minutes, recurrence_mode from subtasks where parent_task_id=$1",
+    [compId],
+  );
+  assert.deepEqual(sub.rows, [{ duration_minutes: 15, recurrence_mode: "schedule" }]);
 });
