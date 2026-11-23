@@ -554,6 +554,15 @@ export function nextPosition(siblings: Task[]): number {
   return siblings.reduce((max, task) => Math.max(max, task.position), 0) + 1024;
 }
 
+/**
+ * The same queued writes the hooks use, for code that runs outside a component (an answer that arrives
+ * after its screen has closed). They go through the shared scope, so they follow the task's own create.
+ */
+const runWrite = <V,>(mutationKey: readonly unknown[], vars: V) =>
+  void queryClient.getMutationCache().build(queryClient, { mutationKey }).execute(vars).catch(() => {});
+export const runUpdateTask = (vars: UpdateTaskVars) => runWrite(writes.updateTask, vars);
+export const runSetTaskTags = (vars: SetTaskTagsVars) => runWrite(writes.setTaskTags, vars);
+
 export function useTaskActions() {
   // `mutate` keeps its identity across renders, so the returned actions do too and memoized rows stay put.
   const { mutate: create } = useMutation<Task, Error, CreateTaskVars>({ mutationKey: writes.createTask });

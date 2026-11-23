@@ -40,6 +40,10 @@ const schemas: Record<string, object> = {
     recurrence_local_time: nullable(str), duration_minutes: nullable(int),
     project: nullable(str), tags: array(str), priority: enumOf(1, 2, 3, 4) }),
   RescheduleResult: obj({ count: { ...int, minimum: 0 } }),
+  AiStatus: obj({ available: bool }),
+  AiClassification: obj({ project_id: nullable(uuid), tag_ids: array(uuid), priority: nullable(enumOf(1, 2, 3)),
+    duration_minutes: nullable(int) }),
+  AiPlan: obj({ order: array(obj({ task_id: uuid, reason: str })), note: str }),
   Habit: obj({ ...owned, name: str, cadence: enumOf("daily", "weekly"), target_count: int, timezone: str,
     start_date: date, archived_at: nullable(stamp) }),
   HabitLog: obj({ user_id: uuid, habit_id: uuid, log_date: date,
@@ -60,6 +64,7 @@ const inputs = {
   SectionPatch: v.project.partial(), TagInput: v.tag, TaskInput: v.task, TaskPatch: v.taskPatch, ParseTaskInput: v.parse,
   CompleteTaskInput: v.complete, HabitInput: v.habit, HabitPatch: v.habitPatch, HabitLogInput: v.log,
   FocusInput: v.focus, FinishFocusInput: v.finish, McpConnectionInput: v.mcpConnection,
+  AiClassifyInput: v.aiClassify, AiPlanInput: v.aiPlan,
 };
 for (const [name, input] of Object.entries(inputs)) {
   const { $schema: _dialect, ...jsonSchema } = z.toJSONSchema(input, { io: "input" });
@@ -181,6 +186,14 @@ operation("/habits/{id}/logs/{date}", "delete", "deleteHabitLog", "Delete a habi
 resource("/focus-sessions", "FocusSession", "focus session", "Focus", { input: "FocusInput", remove: true });
 operation("/focus-sessions/{id}/finish", "post", "finishFocusSession", "Complete or cancel a focus session", "Focus",
   { input: "FinishFocusInput", result: "FocusSession", parameters: [id] });
+operation("/ai/status", "get", "getAiStatus", "Check whether AI suggestions are available", "Assistants",
+  { result: "AiStatus", description: "False until the server has an Anthropic API key. The other /ai routes then answer 503 AI_UNAVAILABLE." });
+operation("/ai/classify", "post", "classifyTask", "Suggest where a new task belongs", "Assistants",
+  { input: "AiClassifyInput", result: "AiClassification",
+    description: "Suggests one of the account's existing projects and tags, a priority and a length. Nothing is created or changed, and a field stays empty unless the task clearly calls for it." });
+operation("/ai/plan-today", "post", "planToday", "Suggest an order for today's tasks", "Assistants",
+  { input: "AiPlanInput", result: "AiPlan",
+    description: "Returns every given open task once, in a suggested order with a short reason each. Nothing is changed." });
 operation("/mcp-connections", "get", "listMcpConnections", "List AI assistant connections", "Assistants", { result: paged("McpConnection") });
 operation("/mcp-connections", "post", "createMcpConnection", "Create an AI assistant connection", "Assistants",
   { input: "McpConnectionInput", result: "NewMcpConnection", status: 201,

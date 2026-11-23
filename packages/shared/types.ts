@@ -70,6 +70,21 @@ export interface TaskCompletion {
 }
 export interface RescheduleResult { count: number }
 
+/** Whether the server can reach the AI model; the app hides its AI features when it cannot. */
+export interface AiStatus { available: boolean }
+/** Where a new task seems to belong. Each field is null (or empty) unless the task clearly calls for it. */
+export interface AiClassification {
+  project_id: UUID | null;
+  tag_ids: UUID[];
+  priority: 1 | 2 | 3 | null;
+  duration_minutes: number | null;
+}
+/** Today's open tasks in a suggested order, each with the reason for its place. */
+export interface AiPlan {
+  order: { task_id: UUID; reason: string }[];
+  note: string;
+}
+
 export interface ParseTaskInput { text: string; timezone: string; now?: Instant }
 export interface ParsedTask {
   title: string;

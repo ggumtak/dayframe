@@ -1,10 +1,11 @@
 import { Temporal } from "@js-temporal/polyfill";
 import { z } from "zod";
 import type {
-  AppVersion, FocusSession, Habit, HabitLog, HabitStats, McpConnection, NewMcpConnection, Page, Project, RescheduleResult,
+  AiStatus, AppVersion, FocusSession, Habit, HabitLog, HabitStats, McpConnection, NewMcpConnection, Page, Project, RescheduleResult,
   Section, Tag, Task, TaskCompletion, TaskTag, User,
 } from "../../../packages/shared/types.ts";
-import { ApiProblem, onlyResult, queryInteger, readJson, requireChanges, Supabase, validate } from "./http.ts";
+import { classifyTask, planToday } from "./ai.ts";
+import { ApiProblem, onlyResult, queryInteger, readJson, requireChanges, Supabase, type SupabaseConfig, validate } from "./http.ts";
 import { connectionUrl, hashToken, newToken } from "./mcp.ts";
 import { parseTask } from "./parser.ts";
 import { movedOccurrenceSlot, nextOccurrence, occurrenceFloor } from "./schedule.ts";
@@ -205,6 +206,7 @@ async function mcpConnections(request: Request, db: Supabase, userId: string, pa
 
 export async function authenticatedRoute(
   request: Request, db: Supabase, userId: string, parts: string[], params: URLSearchParams, baseUrl = "",
+  config?: SupabaseConfig,
 ): Promise<RouteResult> {
   const [resource, key, suffix, extra] = parts;
   const method = request.method;
@@ -229,6 +231,18 @@ export async function authenticatedRoute(
   if (resource === "tasks" && key === "reschedule-overdue" && parts.length === 2) {
     if (method !== "POST") throw unsupported();
     return { data: await db.rest<RescheduleResult>("rpc/reschedule_overdue", {}, "POST", {}) };
+  }
+
+  if (resource === "ai" && parts.length === 2) {
+    const ai: SupabaseConfig = config ?? { url: baseUrl, key: "" };
+    if (key === "status") {
+      if (method !== "GET") throw unsupported();
+      return { data: { available: !!ai.anthropicKey } satisfies AiStatus };
+    }
+    if (method !== "POST") throw unsupported();
+    if (key === "classify") return { data: await classifyTask(request, db, ai) };
+    if (key === "plan-today") return { data: await planToday(request, db, ai) };
+    throw notFound();
   }
 
   if (resource === "mcp-connections" && parts.length <= 2) return mcpConnections(request, db, userId, parts, baseUrl);

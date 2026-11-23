@@ -2746,6 +2746,193 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /ai/status:
+    get:
+      operationId: getAiStatus
+      summary: Check whether AI suggestions are available
+      tags:
+        - Assistants
+      description: False until the server has an Anthropic API key. The other /ai routes then answer 503 AI_UNAVAILABLE.
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiStatus"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /ai/classify:
+    post:
+      operationId: classifyTask
+      summary: Suggest where a new task belongs
+      tags:
+        - Assistants
+      description: Suggests one of the account's existing projects and tags, a priority and a length. Nothing is created
+        or changed, and a field stays empty unless the task clearly calls for it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiClassifyInput"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiClassification"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /ai/plan-today:
+    post:
+      operationId: planToday
+      summary: Suggest an order for today's tasks
+      tags:
+        - Assistants
+      description: Returns every given open task once, in a suggested order with a short reason each. Nothing is changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiPlanInput"
+      responses:
+        "200":
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiPlan"
+        "400":
+          description: Invalid input, reference, or schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Missing or invalid Supabase access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Action unavailable to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Resource or published release not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Unique conflict, stale revision, or incompatible retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Body exceeds 64 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "415":
+          description: Expected application/json.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /mcp-connections:
     get:
       operationId: listMcpConnections
@@ -3237,6 +3424,59 @@ components:
           minimum: 0
       required:
         - count
+      additionalProperties: false
+    AiStatus:
+      type: object
+      properties:
+        available: *a19
+      required:
+        - available
+      additionalProperties: false
+    AiClassification:
+      type: object
+      properties:
+        project_id:
+          anyOf:
+            - *a4
+            - type: "null"
+        tag_ids:
+          type: array
+          items: *a4
+        priority:
+          anyOf:
+            - enum:
+                - 1
+                - 2
+                - 3
+            - type: "null"
+        duration_minutes:
+          anyOf:
+            - *a15
+            - type: "null"
+      required:
+        - project_id
+        - tag_ids
+        - priority
+        - duration_minutes
+      additionalProperties: false
+    AiPlan:
+      type: object
+      properties:
+        order:
+          type: array
+          items:
+            type: object
+            properties:
+              task_id: *a4
+              reason: *a14
+            required:
+              - task_id
+              - reason
+            additionalProperties: false
+        note: *a14
+      required:
+        - order
+        - note
       additionalProperties: false
     Habit:
       type: object
@@ -3831,6 +4071,36 @@ components:
           type: string
           minLength: 1
           maxLength: 60
+      additionalProperties: false
+    AiClassifyInput:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        notes:
+          anyOf:
+            - type: string
+              maxLength: 10000
+            - type: "null"
+      required:
+        - title
+      additionalProperties: false
+    AiPlanInput:
+      type: object
+      properties:
+        task_ids:
+          description: Today's open tasks, as the app shows them.
+          minItems: 1
+          maxItems: 60
+          type: array
+          items:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      required:
+        - task_ids
       additionalProperties: false
     ProjectPage:
       type: object
