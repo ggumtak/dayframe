@@ -12,7 +12,10 @@ import { instantOn, InvalidSchedule } from "./schedule.ts";
  */
 
 const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
-const INSTRUCTIONS = "Dayframe holds the user's tasks, projects, tags and habits. Dates and times are in the user's own time zone. "
+const INSTRUCTIONS = "Dayframe is the user's one and only to-do list, schedule and habit tracker. Use it whenever the user talks about "
+  + "things to do, plans, reminders or habits, even when they do not name Dayframe: Korean requests such as \"할 일 추가해 줘\", "
+  + "\"내일 3시에 치과 넣어 줘\", \"오늘 뭐 해야 돼?\", \"이거 끝냈어\", \"다음 주로 미뤄 줘\", \"운동했어\" or \"물 마셨어\" all mean this app. "
+  + "In Dayframe a user's list of tasks is called 목록 (a project in the API). Dates and times are in the user's own time zone. "
   + "Call list_tasks or list_habits to get IDs before changing anything. add_task takes the user's words as they are, "
   + "in Korean or English, for example \"내일 저녁 7시 운동 매주 월수금 #건강 @외출 p1\". Deleting cannot be undone.";
 
@@ -247,7 +250,7 @@ const destroy = { readOnlyHint: false, destructiveHint: true, openWorldHint: fal
 export const tools: Tool[] = [
   {
     name: "list_tasks", title: "List tasks", annotations: read,
-    description: "Lists open tasks. view: today (due today plus overdue, the default), overdue, upcoming (after today), inbox (no project), or all.",
+    description: "Lists the user's open tasks (할 일, 투두, 일정): \"오늘 뭐 해야 돼?\", \"이번 주 일정\", \"밀린 거\". view: today (due today plus overdue, the default), overdue, upcoming (after today), inbox (no project), or all.",
     inputSchema: object({
       view: { type: "string", enum: ["today", "overdue", "upcoming", "inbox", "all"] },
       project: { type: "string", description: "Only tasks in the project with this name" },
@@ -278,7 +281,7 @@ export const tools: Tool[] = [
   },
   {
     name: "add_task", title: "Add a task", annotations: write,
-    description: "Adds a task from natural language in Korean or English. Dates (내일, 11월 25일, next Tue), times (저녁 7시, 7pm), "
+    description: "Adds a task to the user's to-do list (할 일 추가, 일정 넣기, 리마인더, \"~해야 해\"). Adds it from natural language in Korean or English. Dates (내일, 11월 25일, next Tue), times (저녁 7시, 7pm), "
       + "repeats (매일, 매주 월수금, 매달 말일, every weekday, yearly), #project, @tag and p1–p4 are understood; the rest becomes the title. "
       + "Set parent_task_id to add a subtask. Text without a date follows the user's setting: by default it is due today, so it shows in "
       + "their Today view; include a date in the text to schedule it elsewhere.",
@@ -318,7 +321,7 @@ export const tools: Tool[] = [
   },
   {
     name: "update_task", title: "Change a task", annotations: write,
-    description: "Changes a task. schedule takes natural language such as \"내일 오후 3시\" or \"매주 월수금 저녁 7시\" and replaces the date, time and repeat. "
+    description: "Changes a task: rename it, move it to another day (\"미뤄 줘\", \"내일로\"), set priority, notes or list. schedule takes natural language such as \"내일 오후 3시\" or \"매주 월수금 저녁 7시\" and replaces the date, time and repeat. "
       + "clear_schedule removes them. project takes a project name, or an empty string to move the task to the inbox.",
     inputSchema: object({
       task_id: taskId, title: { type: "string" }, notes: { type: "string", description: "Empty string clears the notes" },
@@ -349,7 +352,7 @@ export const tools: Tool[] = [
   },
   {
     name: "complete_task", title: "Complete a task", annotations: { ...write, idempotentHint: false },
-    description: "Marks a task done. A repeating task moves to its next date instead of closing.",
+    description: "Marks a task done (\"끝냈어\", \"했어\", \"완료\"). A repeating task moves to its next date instead of closing.",
     inputSchema: object({ task_id: taskId }, ["task_id"]),
     async run(api, args) {
       const id = identifier(args.task_id, "task_id");
@@ -381,7 +384,7 @@ export const tools: Tool[] = [
   },
   {
     name: "move_overdue_to_today", title: "Move overdue tasks to today", annotations: { ...write, idempotentHint: true },
-    description: "Moves every open task dated before today to today, keeping each task's time of day.",
+    description: "Moves every overdue task (밀린 할 일) to today, keeping each task's time of day.",
     inputSchema: object(),
     run: (api) => api.call<{ count: number }>("POST", "tasks/reschedule-overdue").then((result) => ({ moved: result.count })),
   },
@@ -396,7 +399,7 @@ export const tools: Tool[] = [
   },
   {
     name: "list_habits", title: "List habits", annotations: read,
-    description: "Lists active habits with today's progress and the current streak.",
+    description: "Lists the user's habits (습관, 루틴) with today's progress and the current streak.",
     inputSchema: object(),
     async run(api) {
       const habits = (await api.all<Habit>("habits")).filter((habit) => !habit.archived_at);
@@ -432,7 +435,7 @@ export const tools: Tool[] = [
   },
   {
     name: "log_habit", title: "Log a habit", annotations: { ...write, idempotentHint: true },
-    description: "Sets a habit's entry for one day. status: completed (count is that day's total, default 1), skipped, frozen (keeps the streak), "
+    description: "Records a habit (\"운동했어\", \"물 마셨어\", \"오늘 명상 건너뛸게\"): sets its entry for one day. status: completed (count is that day's total, default 1), skipped, frozen (keeps the streak), "
       + "or clear to remove the entry. date is YYYY-MM-DD and defaults to today.",
     inputSchema: object({
       habit_id: habitId, status: { type: "string", enum: ["completed", "skipped", "frozen", "clear"] },
