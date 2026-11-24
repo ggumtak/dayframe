@@ -38,7 +38,7 @@ jobs:
       # are computed exactly as they were for the APK this update runs on.
       EXPO_PUBLIC_GITHUB_REPO: ${{ github.repository }}
       EXPO_PUBLIC_SELF_CHECK: ''
-      ANDROID_ABIS: 'armeabi-v7a,arm64-v8a'
+      ANDROID_ABIS: 'arm64-v8a'
     steps:
       - name: Require main
         env:
