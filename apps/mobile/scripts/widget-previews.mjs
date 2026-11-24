@@ -1,10 +1,12 @@
-// Draws the pictures Android shows in its widget picker (assets/widgets/*.png), one per widget in
+// Draws the pictures Android shows in its widget picker (assets/widgets/*.webp), one per widget in
 // app.config.ts. They mirror src/features/widget/widgets.tsx with sample data, so redraw them when a
 // widget's layout changes:
 //
 //   node scripts/widget-previews.mjs
 //
-// Needs Playwright with Chromium, which is not one of the app's dependencies (`npx playwright install chromium`).
+// Needs Playwright with Chromium and sharp, which are not app dependencies (`npx playwright install chromium`,
+// `npm i --no-save sharp`). The screenshots are saved as lossless WebP (same pixels as the PNG, about a quarter
+// of its size), which Android draws natively and which keeps the APK smaller.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -106,7 +108,9 @@ const widgets = [
     + `<div style="margin-left:10px"><div style="font-size:15px;font-weight:600;line-height:20px">할 일 추가</div><div style="font-size:12px;color:${c.faint};line-height:16px">예: 내일 7시 운동 #건강</div></div></div>` },
 ];
 
-const { chromium } = createRequire(import.meta.url)('playwright');
+const require = createRequire(import.meta.url);
+const { chromium } = require('playwright');
+const sharp = require('sharp');
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch();
 const page = await browser.newPage({ deviceScaleFactor: 3 });
@@ -118,7 +122,8 @@ for (const widget of widgets) {
   await page.goto(pathToFileURL(sheet).href);
   await page.evaluate(() => document.fonts.ready);
   if (!(await page.evaluate(() => document.fonts.check('15px Pretendard')))) throw new Error('Pretendard did not load');
-  await page.screenshot({ path: join(out, widget.name + '.png'), omitBackground: true });
+  const png = await page.screenshot({ omitBackground: true });
+  await sharp(png).webp({ lossless: true, effort: 6 }).toFile(join(out, widget.name + '.webp'));
   console.log('drew', widget.name);
 }
 rmSync(sheet);

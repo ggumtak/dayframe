@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LayoutAnimationConfig, LinearTransition } from 'react-native-reanimated';
 
 import { Checkbox } from '@/components/Checkbox';
 import { SortableList } from '@/components/SortableList';
@@ -196,16 +196,23 @@ export const TaskRows = memo(function TaskRows({
         onReorder={(ordered, moved) => reorder(positionsFor(ordered, moved))} onHold={setMenu} />
     );
   }
+  // Rows fade only when one is added or removed while the list is on screen. Not when the list mounts (a tab opened,
+  // a screen pushed, data arriving) or leaves: a whole list fading in or out reads as a flash, and on Android a
+  // translucent row also lets what is behind it show through.
   return (
-    <>
-      {tasks.map((task) => (
-        <Animated.View
-          key={task.id} layout={LinearTransition.duration(180)} entering={FadeIn.duration(160)} exiting={FadeOut.duration(140)}
-          style={{ backgroundColor: rowBackground }}>
-          {row(task)}
-        </Animated.View>
-      ))}
-    </>
+    // One child: with several, LayoutAnimationConfig wraps each in its own skipExiting config, which would also skip a
+    // single row's fade-out when it is completed.
+    <LayoutAnimationConfig skipEntering skipExiting>
+      <View>
+        {tasks.map((task) => (
+          <Animated.View
+            key={task.id} layout={LinearTransition.duration(180)} entering={FadeIn.duration(160)} exiting={FadeOut.duration(140)}
+            style={{ backgroundColor: rowBackground }}>
+            {row(task)}
+          </Animated.View>
+        ))}
+      </View>
+    </LayoutAnimationConfig>
   );
 });
 
