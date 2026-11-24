@@ -74,7 +74,8 @@ export function requireChanges<T extends object>(patch: T): T {
 export interface SupabaseConfig {
   url: string;
   key: string;
-  /** Service-role key. Only the AI-connection endpoint uses it, to resolve a connection token to its owner. */
+  /** Service-role key. The AI-connection endpoint uses it to resolve a connection token to its owner, and the
+   *  update manifest endpoint to read app_updates, which no other role can read. */
   serviceKey?: string;
   fetch?: typeof fetch;
 }

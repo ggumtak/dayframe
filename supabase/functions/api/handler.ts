@@ -1,7 +1,7 @@
 import type { ApiError } from "../../../packages/shared/types.ts";
 import { ApiProblem, Supabase, type SupabaseConfig } from "./http.ts";
 import { handleMcp } from "./mcp.ts";
-import { authenticatedRoute, version } from "./routes.ts";
+import { authenticatedRoute, updateManifest, version } from "./routes.ts";
 import { InvalidSchedule } from "./schedule.ts";
 
 export function createHandler(config: SupabaseConfig) {
@@ -28,6 +28,12 @@ export function createHandler(config: SupabaseConfig) {
         const result = await version(new Supabase(config));
         if (result.cache) headers.set("Cache-Control", "public, max-age=60");
         return json(result.data, 200);
+      }
+      if (route[1] === "updates/manifest") {
+        if (request.method !== "GET") throw new ApiProblem(405, "METHOD_NOT_ALLOWED", "Use GET");
+        const reply = await updateManifest(request, url.searchParams, config);
+        for (const [name, value] of Object.entries(reply.headers)) headers.set(name, value);
+        return new Response(reply.body, { status: reply.status, headers });
       }
       const token = /^Bearer\s+([^\s]+)$/i.exec(request.headers.get("authorization") ?? "")?.[1];
       if (!token) throw new ApiProblem(401, "UNAUTHORIZED", "Supply a Supabase access token");

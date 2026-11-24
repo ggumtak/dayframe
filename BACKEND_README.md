@@ -53,7 +53,7 @@ Enable email sign-in and configure email delivery in Supabase. For OAuth, enable
 
 A single Edge Function exposes the anonymous version route and the authenticated API. Every private route validates the session against Supabase Auth before data access and passes the same access token to PostgREST. PostgreSQL RLS enforces owner restrictions independently. The Edge Function and mobile client use publishable credentials. Write release metadata through the SQL editor or from a trusted CI environment with restricted secret access.
 
-The same function serves the AI assistant endpoint at `/functions/v1/api/mcp/<token>`, also reachable as `https://<ref>.functions.supabase.co/api/mcp/<token>`, the form new connections are given. It needs the `SUPABASE_SERVICE_ROLE_KEY` that Supabase provides to every Edge Function, and uses it only to resolve a connection token to its owner and open a session for that owner. Data is always read and written with the owner's session.
+The same function serves the AI assistant endpoint at `/functions/v1/api/mcp/<token>`, also reachable as `https://<ref>.functions.supabase.co/api/mcp/<token>`, the form new connections are given. It needs the `SUPABASE_SERVICE_ROLE_KEY` that Supabase provides to every Edge Function, and uses it only to resolve a connection token to its owner and open a session for that owner. The update manifest route uses the same key, read-only, to look up the newest row of `app_updates`. Data is always read and written with the owner's session.
 
 Projects have a membership relation reserved for future invitations. Owner-scoped primary and foreign keys prevent a user from joining their rows to another owner's projects, tasks, tags, habits or logs. Sharing can add membership-aware policies and invitation flows to the existing project relation. Keep private habits, focus history and account profiles owner-only.
 
@@ -75,5 +75,9 @@ insert into public.app_releases (
 ~~~
 
 The service selects the highest published `version_code`. Rows with no publication time or with a future publication time stay out of the response. Roll forward with a higher build number for a replacement. Set the optional Apple Store/TestFlight URL after iOS distribution is configured.
+
+## Publish an over-the-air update
+
+JavaScript-only changes ship without an APK: run Actions > *Publish over-the-air update* on `main`. It records each update in `public.app_updates` (service role only) and stores its files in the public Storage bucket `app-updates`; `GET /api/v1/updates/manifest` reads the table with the function's `SUPABASE_SERVICE_ROLE_KEY`. Setup, the native-fingerprint rule and optional code signing are in [apps/mobile/scripts/updates/README.md](apps/mobile/scripts/updates/README.md).
 
 Run `npm run openapi` after changing route validation or the documented operations. `npm run check` verifies the generated contract and runs OpenAPI lint.

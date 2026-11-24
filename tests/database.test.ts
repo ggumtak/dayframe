@@ -32,10 +32,13 @@ before(async () => {
     create function auth.uid() returns uuid language sql stable
       as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to anon, authenticated, service_role;
+    create schema storage;
+    create table storage.buckets(id text primary key, name text not null, public boolean not null default false);
   `);
   for (const file of ["20261121000000_core.sql", "20261121000100_operations.sql", "20261122000000_mcp_connections.sql",
     "20261122000100_calendar_recurrence.sql", "20261123000000_occurrence_slot.sql",
-    "20261123000100_new_task_date.sql", "20261123000200_duration_and_completion_recurrence.sql"]) {
+    "20261123000100_new_task_date.sql", "20261123000200_duration_and_completion_recurrence.sql",
+    "20261124000000_app_updates.sql"]) {
     await db.exec(await readFile(new URL("../supabase/migrations/" + file, import.meta.url), "utf8"));
   }
   await db.query("insert into auth.users values ($1), ($2)", [alice, bob]);
@@ -208,6 +211,32 @@ test("release metadata exposes only published rows and prevents user writes", as
   await assert.rejects(db.query("select * from tasks"), { code: "42501" });
   await as("authenticated", alice);
   await assert.rejects(db.query("update app_releases set published_at=now()"), { code: "42501" });
+});
+
+test("over-the-air updates are readable and writable only by the service role, and stay consistent", async () => {
+  const id = "0f8b7c1e-8d0a-4c55-9a43-5a3c2d1e0b9f";
+  const manifest = (fields: object) => JSON.stringify({ id, createdAt: "2026-11-24T03:00:00.000Z", runtimeVersion: "abc123",
+    launchAsset: {}, assets: [], metadata: {}, extra: {}, ...fields });
+  const insert = "insert into app_updates(id, platform, runtime_version, manifest, signature, message) values ($1, 'android', 'abc123', $2, $3, $4)";
+  for (const role of ["anon", "authenticated"] as const) {
+    await as(role, alice);
+    await assert.rejects(db.query("select id from app_updates"), { code: "42501" });
+    await assert.rejects(db.query(insert, [id, manifest({}), null, ""]), { code: "42501" });
+  }
+  await as("service_role");
+  // The stored manifest must describe the row it sits in.
+  await assert.rejects(db.query(insert, [id, manifest({ id: "11111111-1111-4111-8111-111111111111" }), null, ""]), { code: "23514" });
+  await assert.rejects(db.query(insert, [id, manifest({ runtimeVersion: "other" }), null, ""]), { code: "23514" });
+  await assert.rejects(db.query(insert, [id, manifest({}), "sig\r\ninjected", ""]), { code: "23514" });
+  await assert.rejects(db.query(insert, [id, "not json", null, ""]), { code: "22P02" });
+  const signature = 'sig="abc=", keyid="dayframe-0123456789ab", alg="rsa-v1_5-sha256"';
+  await db.query(insert, [id, manifest({}), signature, "빠른 추가 개선"]);
+  const row = (await db.query<{ manifest: string; signature: string }>("select manifest, signature from app_updates")).rows[0];
+  assert.equal(row.manifest, manifest({}), "manifest bytes are kept exactly as signed");
+  assert.equal(row.signature, signature);
+  await assert.rejects(db.query("update app_updates set message = 'x'"), { code: "42501" });
+  await db.exec("reset role");
+  assert.deepEqual((await db.query("select id, public from storage.buckets")).rows, [{ id: "app-updates", public: true }]);
 });
 
 test("AI connection tokens are write-only for their owner and readable only by the service role", async () => {

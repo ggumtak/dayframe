@@ -1,0 +1,110 @@
+name: Publish over-the-air update
+
+# Ships a JavaScript/asset-only change to installed apps without a new APK (apps/mobile/scripts/updates/README.md).
+# It refuses when main's native fingerprint differs from the latest APK release's: that change needs an APK
+# (Actions > Build Android APK) first. Run it by hand on main.
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'What changed (kept with the update).'
+        required: false
+        default: ''
+      force:
+        description: 'Publish even if the newest update already has exactly this code.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-ota
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish update
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      EXPO_NO_TELEMETRY: '1'
+      # The same build environment as a release APK (build-android-apk.yml), so the bundle and the fingerprint
+      # are computed exactly as they were for the APK this update runs on.
+      EXPO_PUBLIC_GITHUB_REPO: ${{ github.repository }}
+      EXPO_PUBLIC_SELF_CHECK: ''
+      ANDROID_ABIS: 'arm64-v8a'
+    steps:
+      - name: Require main
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+            echo "::error::Updates are published from $DEFAULT_BRANCH. This run is on $GITHUB_REF_NAME."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Find the latest APK release and its runtime
+        run: |
+          tag="$(gh release view --json tagName --jq .tagName)"
+          [[ "$tag" =~ ^v([0-9]+)\.([0-9]{1,2})\.([0-9]{1,2})$ ]] || { echo "::error::Latest release '$tag' is not a version tag."; exit 1; }
+          # Written by build-android-apk.yml from the APK's own assets/fingerprint.
+          if ! released="$(gh release download "$tag" --pattern android-runtime-version.txt --output - 2> /dev/null)"; then
+            echo "::error::Release $tag has no android-runtime-version.txt: it predates over-the-air updates. Release an APK first."
+            exit 1
+          fi
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "RELEASED_RUNTIME=$released" >> "$GITHUB_ENV"
+          # Only Constants.expoConfig.version reads these; they do not change the fingerprint.
+          echo "APP_VERSION=${tag#v}" >> "$GITHUB_ENV"
+          echo "ANDROID_VERSION_CODE=$(( 10#${BASH_REMATCH[1]} * 10000 + 10#${BASH_REMATCH[2]} * 100 + 10#${BASH_REMATCH[3]} ))" >> "$GITHUB_ENV"
+
+      - name: Check the native fingerprint
+        run: |
+          npx expo-updates fingerprint:generate --platform android > "$RUNNER_TEMP/fingerprint.json"
+          runtime="$(jq -r .hash "$RUNNER_TEMP/fingerprint.json")"
+          [[ "$runtime" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Could not compute the fingerprint."; exit 1; }
+          if [[ "$runtime" != "$RELEASED_RUNTIME" ]]; then
+            echo "::error::native change: release an APK. main's runtime is $runtime but $RELEASE_TAG runs $RELEASED_RUNTIME, so no installed app could take this update."
+            exit 1
+          fi
+          echo "RUNTIME=$runtime" >> "$GITHUB_ENV"
+          echo "Runtime $runtime matches $RELEASE_TAG"
+
+      - name: Export the JavaScript bundle and assets
+        run: npx expo export --platform android --output-dir "$RUNNER_TEMP/ota"
+
+      - name: Upload and record the update
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          UPDATES_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATES_SIGNING_PRIVATE_KEY }}
+          MESSAGE: ${{ inputs.message }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -o pipefail
+          args=(--dist "$RUNNER_TEMP/ota" --runtime "$RUNTIME" --message "$MESSAGE" --commit "$GITHUB_SHA")
+          if [[ "$FORCE" == "true" ]]; then args+=(--force); fi
+          node scripts/updates/publish.mjs "${args[@]}" | tee "$RUNNER_TEMP/publish.log"
+          {
+            echo "### Over-the-air update for $RELEASE_TAG"
+            echo "- Runtime: \`$RUNTIME\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            sed 's/^/- /' "$RUNNER_TEMP/publish.log"
+          } >> "$GITHUB_STEP_SUMMARY"
