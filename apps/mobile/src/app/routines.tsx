@@ -1,89 +1,100 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Chip, Header, Icon, IconButton, Screen, Txt } from '@/components/ui';
-import { useHabitActions, useHabits } from '@/data/habits';
-import { type Routine, routineGroups, routineLabel, sameRoutine } from '@/features/habits/routines';
-import { deviceTimeZone } from '@/lib/dates';
-import { haptic } from '@/lib/haptics';
+import { Button, Chip, Header, Icon, IconButton, Screen, Txt } from '@/components/ui';
+import { useHabits } from '@/data/habits';
+import { HabitAvatar } from '@/features/habits/HabitAvatar';
+import { galleryCategories, type Routine, routineKey, routineLabel } from '@/features/habits/routines';
 import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
-/** A dense board of everyday routines; a tap adds one as a habit. */
+const PresetCard = memo(function PresetCard({ routine, added, onOpen }: { routine: Routine; added: boolean; onOpen: (routine: Routine) => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button" accessibilityState={{ selected: added }}
+      accessibilityLabel={`${routine.name}, ${routineLabel(routine)}, ${routine.quote}${added ? ', 이미 있는 습관' : ', 눌러서 만들기'}`}
+      onPress={() => onOpen(routine)}
+      style={({ pressed }) => [styles.card, {
+        backgroundColor: colors.surface, borderColor: added ? colors.accentSoft : colors.border, opacity: pressed ? 0.7 : 1,
+      }]}>
+      <HabitAvatar name={routine.name} emoji={routine.emoji} color={routine.color} size={44} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Txt variant="bodyStrong" numberOfLines={1}>{routine.name}</Txt>
+        <Txt variant="small" tone="muted" numberOfLines={1}>{routine.quote}</Txt>
+      </View>
+      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+        <Txt variant="caption" tone="faint">{routineLabel(routine)}</Txt>
+        {added ? (
+          <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}>
+            <Icon name="check" size={11} color={colors.accent} />
+            <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>추가됨</Txt>
+          </View>
+        ) : <Icon name="chevron-right" size={16} color={colors.textFaint} />}
+      </View>
+    </Pressable>
+  );
+});
+
+/** 습관 갤러리: ready-made habits by category. A tap opens the new-habit form filled in from the preset. */
 export default function Routines() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { data: habits } = useHabits();
-  const actions = useHabitActions();
-  const [group, setGroup] = useState<string | null>(null);
-  const [added, setAdded] = useState<string[]>([]);
-  const active = (habits ?? []).filter((habit) => !habit.archived_at);
-  const has = (routine: Routine) => added.includes(routine.name) || active.some((habit) => sameRoutine(habit.name, routine.name));
-  const shown = routineGroups.filter((item) => !group || item.title === group);
+  const [category, setCategory] = useState(galleryCategories[0].title);
+  const owned = useMemo(
+    () => new Set((habits ?? []).filter((habit) => !habit.archived_at).map((habit) => routineKey(habit.name))),
+    [habits],
+  );
+  const shown = useMemo(() => galleryCategories.find((item) => item.title === category) ?? galleryCategories[0], [category]);
 
-  const add = (routine: Routine) => {
-    if (has(routine)) {
+  const open = useCallback((routine: Routine) => {
+    if (owned.has(routineKey(routine.name))) {
       showToast('이미 습관에 있습니다. 습관 탭에서 관리할 수 있습니다.');
       return;
     }
-    haptic.success();
-    actions.create({ name: routine.name, cadence: routine.cadence ?? 'daily', target_count: routine.target ?? 1, timezone: deviceTimeZone() });
-    setAdded((current) => [...current, routine.name]);
-    showToast(`‘${routine.name}’을 습관에 추가했습니다.`);
-  };
+    router.push({
+      pathname: '/habit/new',
+      params: {
+        name: routine.name, emoji: routine.emoji, color: routine.color, quote: routine.quote,
+        cadence: routine.cadence ?? 'daily', target: String(routine.target ?? 1),
+      },
+    });
+  }, [owned]);
 
   return (
     <Screen>
       <Header
-        title="추천 루틴" subtitle={added.length ? `${added.length}개 추가함` : '누르면 바로 습관에 추가됩니다'}
+        title="습관 갤러리" subtitle="골라서 내 습관으로 시작해 보세요"
         left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} style={{ flexGrow: 0, flexShrink: 0 }}>
-        <Chip label="전체" selected={!group} onPress={() => setGroup(null)} />
-        {routineGroups.map((item) => <Chip key={item.title} label={item.title} selected={group === item.title} onPress={() => setGroup(item.title)} />)}
-      </ScrollView>
-      <ScrollView contentContainerStyle={{ padding: space.lg, paddingTop: space.sm, paddingBottom: space.xxl * 2, gap: space.xl }}>
-        {shown.map((item) => (
-          <View key={item.title} style={{ gap: space.sm }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Icon name={item.icon} size={16} color={colors.accent} />
-              <Txt variant="section">{item.title}</Txt>
-            </View>
-            <View style={styles.board}>
-              {item.items.map((routine) => {
-                const done = has(routine);
-                return (
-                  <Pressable
-                    key={routine.name} accessibilityRole="button" accessibilityState={{ selected: done }}
-                    accessibilityLabel={routine.name + ', ' + routineLabel(routine) + (done ? ', 추가됨' : ', 습관에 추가')}
-                    onPress={() => add(routine)}
-                    style={({ pressed }) => [styles.routine, {
-                      backgroundColor: done ? colors.accentSoft : colors.surface, borderColor: done ? colors.accentSoft : colors.border,
-                      opacity: pressed ? 0.7 : 1,
-                    }]}>
-                    <View style={{ flexShrink: 1 }}>
-                      <Txt variant="smallStrong" numberOfLines={2} style={{ color: done ? colors.accent : colors.text }}>{routine.name}</Txt>
-                      <Txt variant="caption" tone="faint">{routineLabel(routine)}</Txt>
-                    </View>
-                    <Icon name={done ? 'check' : 'plus'} size={16} color={done ? colors.accent : colors.textFaint} />
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
+        {galleryCategories.map((item) => (
+          <Chip key={item.title} icon={item.icon} label={item.title} selected={category === item.title} onPress={() => setCategory(item.title)} />
         ))}
-        <Txt variant="small" tone="faint" style={{ textAlign: 'center' }}>
-          원하는 게 없으면 습관 탭의 + 로 직접 만들 수 있습니다. 추가한 습관은 상세 화면에서 알림 시각도 정할 수 있습니다.
+      </ScrollView>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: space.lg, paddingTop: space.sm, paddingBottom: space.xl, gap: space.sm }}>
+        {shown.items.map((routine) => (
+          <PresetCard key={routine.name} routine={routine} added={owned.has(routineKey(routine.name))} onOpen={open} />
+        ))}
+        <Txt variant="small" tone="faint" style={{ textAlign: 'center', marginTop: space.sm }}>
+          만든 뒤에는 습관 상세 화면에서 아이콘, 문구, 알림 시각을 바꿀 수 있습니다.
         </Txt>
       </ScrollView>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + space.md, backgroundColor: colors.background, borderTopColor: colors.border }]}>
+        <Button label="직접 만들기" icon="plus" onPress={() => router.push('/habit/new')} />
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   filters: { gap: 6, paddingHorizontal: space.lg, paddingBottom: space.sm, alignItems: 'center' },
-  board: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  routine: {
-    flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 9, paddingHorizontal: space.md,
-    borderRadius: radius.md, borderWidth: 1, maxWidth: '100%',
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, paddingHorizontal: space.md,
+    borderRadius: radius.lg, borderWidth: 1,
   },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: radius.pill, paddingHorizontal: 7, height: 20 },
+  footer: { paddingHorizontal: space.lg, paddingTop: space.md, borderTopWidth: StyleSheet.hairlineWidth },
 });

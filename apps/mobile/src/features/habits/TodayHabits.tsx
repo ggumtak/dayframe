@@ -12,6 +12,8 @@ import { usePersistentState } from '@/lib/persist';
 import { fontFamily, space, type, useTheme } from '@/theme';
 
 import { nextCheckIn } from './checkIn';
+import { HabitAvatar } from './HabitAvatar';
+import { useHabitMetaMap } from './habitMeta';
 import { computeHabitStrength } from './strength';
 
 type Fold = 'open' | 'closed';
@@ -54,6 +56,7 @@ export function TodayHabits() {
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
   const details = useHabitDetails(habits);
   const actions = useHabitActions();
+  const habitMeta = useHabitMetaMap();
   const [fold, setFold] = usePersistentState<Fold>('dayframe-today-habits', 'open', isFold);
 
   const rows = habits.map((habit, order) => {
@@ -96,6 +99,7 @@ export function TodayHabits() {
             <Mark ratio={progress / habit.target_count} settled={settled} />
           </Pressable>
           <View style={[styles.body, { borderBottomColor: colors.border }]}>
+            <HabitAvatar name={habit.name} emoji={habitMeta[habit.id]?.emoji} color={habitMeta[habit.id]?.color} size={22} />
             <Text numberOfLines={1} style={[type.body as TextStyle, { flex: 1, color: settled ? colors.textFaint : colors.text }]}>{habit.name}</Text>
             {missedYesterday ? (
               <Text style={[styles.count, { color: colors.warning, fontWeight: '600' }]}>어제 놓침</Text>

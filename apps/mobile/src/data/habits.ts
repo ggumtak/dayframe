@@ -1,8 +1,9 @@
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { periodProgress, periodStart } from '@/features/habits/goal';
 import { api } from '@/lib/api';
-import { Temporal, today, weekStart } from '@/lib/dates';
+import { today } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
 import type { Habit, HabitInput, HabitLog, HabitLogStatus, HabitStats } from '@/lib/shared';
 
@@ -10,6 +11,9 @@ import { hold, queryClient, settle } from './client';
 import { keys, writes } from './keys';
 
 const scope = { id: 'dayframe-writes' };
+
+// The goal rules live in a pure module so every habit screen and its tests share them.
+export { periodProgress, periodStart };
 
 export type CreateHabitVars = HabitInput & { id: string };
 
@@ -57,17 +61,6 @@ queryClient.setMutationDefaults(writes.deleteHabit, {
 
 /** Sets one day's total. A null status clears the day. */
 export interface SetHabitLogVars { habitId: string; date: string; status: HabitLogStatus | null; count: number }
-
-/** The start of the day or ISO week that `date` falls in. */
-export function periodStart(habit: Pick<Habit, 'cadence'>, date: string): string {
-  const day = Temporal.PlainDate.from(date);
-  return (habit.cadence === 'weekly' ? weekStart(day) : day).toString();
-}
-
-export function periodProgress(habit: Pick<Habit, 'cadence'>, logs: HabitLog[], date: string): number {
-  const start = periodStart(habit, date);
-  return logs.reduce((sum, log) => (periodStart(habit, log.log_date) === start ? sum + log.count : sum), 0);
-}
 
 queryClient.setMutationDefaults(writes.setHabitLog, {
   scope,

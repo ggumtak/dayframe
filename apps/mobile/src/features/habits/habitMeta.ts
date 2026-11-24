@@ -5,8 +5,16 @@ import type { IconName } from '@/components/ui';
 
 export type HabitTimeOfDay = 'morning' | 'afternoon' | 'evening' | 'anytime';
 
+/**
+ * What this device remembers about a habit beyond what the server stores: when in the day it belongs, and
+ * how it looks (an emoji on a colour, and a line to cheer oneself on). Every field is optional, so the
+ * `{ timeOfDay }` objects saved by earlier versions still read as they are.
+ */
 export interface HabitMeta {
-  timeOfDay: HabitTimeOfDay;
+  timeOfDay?: HabitTimeOfDay;
+  emoji?: string;
+  color?: string;
+  quote?: string;
 }
 
 export const HABIT_TIME_GROUPS: { key: HabitTimeOfDay; label: string; icon: IconName }[] = [
@@ -44,8 +52,17 @@ function save() {
   AsyncStorage.setItem(KEY, JSON.stringify(cache)).catch(() => {});
 }
 
-export function setHabitMeta(habitId: string, meta: HabitMeta): void {
-  cache = { ...cache, [habitId]: meta };
+/**
+ * Merges `patch` into what is stored for the habit, so setting the time of day keeps its emoji and colour.
+ * A field given as an empty string or undefined is removed.
+ */
+export function setHabitMeta(habitId: string, patch: Partial<HabitMeta>): void {
+  const merged: Record<string, unknown> = { ...cache[habitId] };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined || value === '') delete merged[key];
+    else merged[key] = value;
+  }
+  cache = { ...cache, [habitId]: merged as HabitMeta };
   notify();
   save();
 }
