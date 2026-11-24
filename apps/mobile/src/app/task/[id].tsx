@@ -8,17 +8,18 @@ import { Button, Chip, EmptyState, Icon, IconButton, Loading, ProgressBar, Row, 
 import {
   attachTagByName, nextDueAfterComplete, nextPosition, useProjects, useSections, useSubtaskProgress, useTags, useTaskIndex, useTaskTags,
 } from '@/data/tasks';
-import { TaskReminderChips } from '@/features/reminders/ReminderChips';
+import { reminderSummary } from '@/features/reminders/lead';
+import { TaskReminderPicker } from '@/features/reminders/ReminderChips';
 import { useReminderOverrides } from '@/features/reminders/overrides';
 import { useReminderSettings } from '@/features/reminders/settings';
 import { useProjectMetaMap } from '@/features/tasks/projectMeta';
-import { RepeatSheet } from '@/features/tasks/RepeatSheet';
+import { RepeatSheet, repeatPatch } from '@/features/tasks/RepeatSheet';
 import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
 import { saveCustomTemplate } from '@/features/tasks/templates';
-import { localTimeString, toMarkdownChecklist, useTaskFlow } from '@/features/tasks/useTaskFlow';
+import { toMarkdownChecklist, useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { errorMessage } from '@/lib/api';
-import { describeRecurrence, deviceTimeZone, dueBucket, dueMinutes, formatDue, formatDurationMinutes, instantFor, isPastDue, Temporal, today } from '@/lib/dates';
+import { describeRecurrence, deviceTimeZone, dueBucket, formatDue, formatDurationMinutes, isPastDue, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { analyzeTask, type Priority, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -127,15 +128,7 @@ function TaskEditor({ task }: { task: Task }) {
   }, [subtaskText, subtaskPlain]);
 
   // Compact reminder summary for the metadata pill.
-  const ownReminder = reminderOverrides.tasks[task.id];
-  const reminderOff = !reminderSettings.enabled || ownReminder === 'off' || (task.all_day && reminderSettings.allDayHour === null);
-  const reminderLabel = !reminderSettings.enabled ? '알림 꺼짐'
-    : ownReminder === 'off' ? '알림 끄기'
-      : task.all_day ? (reminderSettings.allDayHour === null ? '알림 없음' : `오전 ${reminderSettings.allDayHour}시`)
-        : (() => {
-          const lead = typeof ownReminder === 'number' ? ownReminder : reminderSettings.leadMinutes;
-          return lead === 0 ? '정시 알림' : lead === 60 ? '1시간 전' : `${lead}분 전`;
-        })();
+  const { label: reminderLabel, off: reminderOff } = reminderSummary(reminderOverrides.tasks[task.id], reminderSettings, task.all_day);
 
   const saveTitle = () => {
     if (skipSave.current) return;
@@ -196,20 +189,10 @@ function TaskEditor({ task }: { task: Task }) {
 
   const applyRepeat = (rule: string | null, mode: RecurrenceMode) => {
     setSheet(null);
-    if (rule === task.recurrence_rule && mode === task.recurrence_mode) return;
-    if (!rule) {
-      flow.update(task.id, { recurrence_rule: null, recurrence_mode: 'schedule', recurrence_local_time: null });
-      return;
-    }
-    const minutes = dueMinutes(task);
-    const patch: TaskPatch = task.due_at
-      ? { recurrence_rule: rule, recurrence_mode: mode, recurrence_local_time: task.all_day || minutes === null ? null : localTimeString(minutes) }
-      : {
-        due_at: instantFor(today(task.timezone), null, task.timezone), all_day: true,
-        recurrence_rule: rule, recurrence_mode: mode, recurrence_local_time: null,
-      };
+    const patch = repeatPatch(task, rule, mode);
+    if (!patch) return;
     flow.update(task.id, patch);
-    haptic.tap();
+    if (rule) haptic.tap();
   };
 
   const applyDuration = (minutes: number | null) => {
@@ -510,7 +493,9 @@ function TaskEditor({ task }: { task: Task }) {
       </Sheet>
 
       <Sheet visible={sheet === 'reminder'} onClose={() => setSheet(null)} title="알림">
-        <TaskReminderChips taskId={task.id} allDay={task.all_day} />
+        <TaskReminderPicker
+          taskId={task.id} allDay={task.all_day} dueAt={task.due_at} timezone={task.timezone}
+          repeats={!!task.recurrence_rule} onPicked={() => setSheet(null)} />
       </Sheet>
 
       <Sheet visible={sheet === 'priority'} onClose={() => setSheet(null)} title="우선순위">

@@ -6,11 +6,12 @@ import { AndroidImportance, AndroidNotificationVisibility } from 'expo-notificat
 import { nextCheckIn } from '@/features/habits/checkIn';
 import { widgetHabitChanged, widgetTaskChanged } from '@/features/widget/render';
 import { api } from '@/lib/api';
-import { describeRecurrence, formatTime, Temporal } from '@/lib/dates';
+import { describeRecurrence, formatDate, formatTime, Temporal } from '@/lib/dates';
 import { nextOccurrence, occurrenceFloor, type Task } from '@/lib/shared';
 
 import { cancelOccurrence } from './cancel';
 import { completeOccurrence } from './complete';
+import { leadAhead } from './lead';
 import type { ReminderOverrides } from './overrides';
 import {
   HABIT_PREFIX, parseHabitReminderId, parseReminderId, planHabitReminders, planReminders, type PlannedReminder, REMINDER_PREFIX,
@@ -69,18 +70,19 @@ export interface ReminderContext {
   openSubtasks: (task: Task) => number;
 }
 
-function leadText(minutes: number): string {
-  return minutes === 60 ? '1시간 후' : minutes + '분 후';
-}
-
 /** What the alert says: the time, repeat and project, then notes and open subtasks, with 완료 and 10분 뒤에 buttons. How much of it the
  * phone shows (a brief or a detailed popup) is the phone's own per-app setting. */
 export function reminderContent(
-  task: Task, occurrence: string, settings: ReminderSettings, context: ReminderContext, lead = settings.leadMinutes,
+  task: Task, occurrence: string, settings: ReminderSettings, context: ReminderContext, lead: number = settings.leadMinutes, at?: number,
 ): Notifications.NotificationContentInput {
   const due = Temporal.Instant.from(occurrence).toZonedDateTimeISO(task.timezone);
-  const time = task.all_day ? '오늘 · 종일' : formatTime(due.hour * 60 + due.minute);
-  const when = !task.all_day && lead ? leadText(lead) + ' · ' + time : time;
+  const time = formatTime(due.hour * 60 + due.minute);
+  // An alert that rings on an earlier day names the day it is about ("내일 오후 3:00", "내일 · 종일").
+  const dueDay = due.toPlainDate();
+  const alertDay = at === undefined ? dueDay : Temporal.Instant.fromEpochMilliseconds(at).toZonedDateTimeISO(task.timezone).toPlainDate();
+  const when = task.all_day ? formatDate(dueDay, alertDay) + ' · 종일'
+    : !dueDay.equals(alertDay) ? formatDate(dueDay, alertDay) + ' ' + time
+      : lead ? leadAhead(lead) + ' · ' + time : time;
   const base = { title: task.title, sound: true, priority: 'high', color: '#3574F0', data: { url: 'dayframe:///task/' + task.id } };
   const facts = [when, describeRecurrence(task.recurrence_rule, task.recurrence_mode), context.projectName(task) ? '#' + context.projectName(task) : null];
   const lines = [facts.filter(Boolean).join(' · ')];
@@ -120,7 +122,7 @@ export async function syncReminders(
   const wanted = new Map<string, { item: { at: number }; content: Notifications.NotificationContentInput; signature: string; channel: string }>(
     planned.map((item) => {
       const lead = own[item.taskId];
-      const content = reminderContent(byId.get(item.taskId)!, item.occurrence, settings, context, typeof lead === 'number' ? lead : settings.leadMinutes);
+      const content = reminderContent(byId.get(item.taskId)!, item.occurrence, settings, context, typeof lead === 'number' ? lead : settings.leadMinutes, item.at);
       return [item.id, { item, content, signature: signature(item, content), channel: CHANNEL }] as const;
     }));
   // Habit alerts follow their own times and are not affected by the task alert switch.

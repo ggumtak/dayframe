@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
-/** Minutes before a task's time, or off. Absent means the default from settings. */
-export type TaskReminder = 0 | 5 | 10 | 30 | 60 | 'off';
+import { cleanReminder, type TaskReminder } from './lead';
+
+export type { TaskReminder };
 
 /**
  * Per-task alert timing and per-habit alert times. They live on this phone only: alerts are scheduled
@@ -24,7 +25,13 @@ export function loadReminderOverrides(): Promise<ReminderOverrides> {
   loaded ??= AsyncStorage.getItem(KEY)
     .then((stored) => {
       const parsed = stored ? JSON.parse(stored) as Partial<ReminderOverrides> : {};
-      current = { tasks: parsed.tasks ?? {}, habits: parsed.habits ?? {} };
+      // Values saved by older versions (0, 5, 10, 30, 60 or 'off') read back unchanged; anything unreadable is dropped.
+      const tasks: Record<string, TaskReminder> = {};
+      for (const [id, value] of Object.entries(parsed.tasks ?? {})) {
+        const clean = cleanReminder(value);
+        if (clean !== undefined) tasks[id] = clean;
+      }
+      current = { tasks, habits: parsed.habits ?? {} };
       notify();
       return current;
     })
@@ -42,7 +49,7 @@ function save(next: ReminderOverrides) {
 export function setTaskReminder(taskId: string, value: TaskReminder | null): void {
   const tasks = { ...current.tasks };
   if (value === null) delete tasks[taskId];
-  else tasks[taskId] = value;
+  else tasks[taskId] = cleanReminder(value) ?? 'off';
   save({ ...current, tasks });
 }
 
