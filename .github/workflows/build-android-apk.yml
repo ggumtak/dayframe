@@ -108,6 +108,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Over-the-air updates reach an APK only when built for its native fingerprint
+      # (apps/mobile/scripts/updates/README.md). Computed here before prebuild, as publish-ota.yml computes it.
+      - name: Compute the over-the-air runtime
+        run: |
+          set -o pipefail
+          npx expo-updates fingerprint:generate --platform android | jq -r .hash > "$RUNNER_TEMP/runtime.txt"
+
       - name: Generate the Android project
         run: npx expo prebuild --platform android --clean --no-install
 
@@ -187,6 +194,15 @@ jobs:
             echo "- Size: $(du -h "$apk" | cut -f1)"
             echo "- SHA-256: \`$(cut -d' ' -f1 "$apk.sha256")\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the over-the-air runtime
+        run: |
+          embedded="$(unzip -p "$GITHUB_WORKSPACE/dayframe.apk" assets/fingerprint)"
+          echo "- Over-the-air runtime: \`$embedded\`" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$embedded" != "$(< "$RUNNER_TEMP/runtime.txt")" ]]; then
+            echo "::error::The APK runs runtime '$embedded' but publish-ota.yml would compute '$(< "$RUNNER_TEMP/runtime.txt")', so no update could reach it."
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -271,6 +287,13 @@ jobs:
             gh release create "$RELEASE_TAG" dayframe.apk dayframe.apk.sha256 \
               --title "Dayframe $APP_VERSION" "${notes[@]}" --target "$GITHUB_SHA"
           fi
+
+      # publish-ota.yml reads this to refuse updates built for any other native code.
+      - name: Record the over-the-air runtime
+        run: |
+          unzip -p dayframe.apk assets/fingerprint > android-runtime-version.txt
+          [[ "$(< android-runtime-version.txt)" =~ ^[0-9a-f]{40}$ ]]
+          gh release upload "$RELEASE_TAG" android-runtime-version.txt --clobber
 
       # Optional: lets the backend's /app/version report this release (and a minimum supported version).
       # Without it the app still finds the update through the GitHub Releases API.
