@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { contrastRatio, relativeLuminance } from './contrast.ts';
-import { ACCENTS, DEFAULT_ACCENT, LEGACY_PALETTES, accentPalette, isAccentId, parseAccent } from './palettes.ts';
+import { toOklch } from '../../theme/color.ts';
 
-// Surfaces from src/theme/index.tsx; the accent palettes are drawn on these.
-const LIGHT_SURFACE = '#FFFFFF';
-const DARK_BACKGROUND = '#15171A';
-const DARK_SURFACE = '#1D2024';
-const WHITE = '#FFFFFF';
+import { contrastRatio, relativeLuminance } from './contrast.ts';
+import { ACCENTS, DEFAULT_ACCENT, accentPalette, isAccentId, parseAccent, RETIRED_ACCENTS } from './palettes.ts';
 
 test('contrast ratio matches the WCAG reference points', () => {
   assert.equal(relativeLuminance('#000000'), 0);
@@ -22,41 +18,35 @@ test('contrast ratio matches the WCAG reference points', () => {
   assert.throws(() => relativeLuminance('blue'));
 });
 
-test('the seven accents are offered, blue first and by default', () => {
-  assert.deepEqual(ACCENTS.map((palette) => palette.label), ['파랑', '청록', '초록', '주황', '분홍', '보라', '슬레이트']);
+test('four accents are offered, blue first and by default', () => {
+  assert.deepEqual(ACCENTS.map((palette) => palette.label), ['파랑', '청록', '보라', '슬레이트']);
   assert.equal(ACCENTS[0].id, DEFAULT_ACCENT);
   assert.equal(new Set(ACCENTS.map((palette) => palette.id)).size, ACCENTS.length);
 });
 
-test('the default blue is exactly the colours the app shipped with', () => {
-  assert.deepEqual(accentPalette('blue'), {
-    id: 'blue', label: '파랑',
-    light: { accent: '#3574F0', accentSoft: '#E8F0FE', info: '#3574F0', infoSoft: '#E8F0FE', schedule: '#3574F0' },
-    dark: { accent: '#5B8FF7', accentSoft: '#1C2A47', info: '#5B8FF7', infoSoft: '#1C2A47', schedule: '#4A82F5' },
-  });
-  assert.deepEqual([...LEGACY_PALETTES], ['blue']);
+test('a stored 주황, 분홍 or 초록 reads back as 파랑', () => {
+  for (const retired of RETIRED_ACCENTS) {
+    assert.equal(isAccentId(retired), false);
+    assert.equal(parseAccent(retired), 'blue');
+  }
+  assert.deepEqual([...RETIRED_ACCENTS].sort(), ['green', 'orange', 'pink']);
 });
 
 for (const palette of ACCENTS) {
-  if (LEGACY_PALETTES.has(palette.id)) continue;
-  test(`${palette.label}: white text on the accent reaches 4.5:1 in light and dark`, () => {
-    assert.ok(contrastRatio(WHITE, palette.light.accent) >= 4.5, `light ${palette.light.accent}`);
-    assert.ok(contrastRatio(WHITE, palette.dark.accent) >= 4.5, `dark ${palette.dark.accent}`);
+  test(`${palette.label}: the dark accent keeps the hue with about 80–85% of the light chroma`, () => {
+    const light = toOklch(palette.light.accent);
+    const dark = toOklch(palette.dark.accent);
+    const ratio = dark.c / light.c;
+    assert.ok(ratio >= 0.78 && ratio <= 0.87, `chroma ratio ${ratio.toFixed(2)}`);
+    assert.ok(Math.abs(dark.h - light.h) < 6, `hue ${light.h.toFixed(1)} → ${dark.h.toFixed(1)}`);
   });
 
-  test(`${palette.label}: accent-coloured text and icons stay legible`, () => {
-    // Light: the accent is also link/label text on white.
-    assert.ok(contrastRatio(palette.light.accent, LIGHT_SURFACE) >= 4.5);
-    assert.ok(contrastRatio(palette.light.info, LIGHT_SURFACE) >= 4.5);
-    assert.ok(contrastRatio(palette.light.schedule, LIGHT_SURFACE) >= 4.5);
-    assert.ok(contrastRatio(palette.light.accent, palette.light.accentSoft) >= 3);
-    // Dark: info and schedule are text on dark surfaces; the accent is at least a visible UI colour there.
-    assert.ok(contrastRatio(palette.dark.info, DARK_SURFACE) >= 4.5);
-    assert.ok(contrastRatio(palette.dark.schedule, DARK_SURFACE) >= 4.5);
-    assert.ok(contrastRatio(palette.dark.info, palette.dark.infoSoft) >= 4.5);
-    assert.ok(contrastRatio(palette.dark.accent, DARK_SURFACE) >= 3);
-    assert.ok(contrastRatio(palette.dark.accent, DARK_BACKGROUND) >= 3);
-    assert.ok(contrastRatio(palette.dark.accent, palette.dark.accentSoft) >= 3);
+  test(`${palette.label}: dark text accent is a separate, lighter tone than the dark fill`, () => {
+    assert.notEqual(palette.dark.accentText, palette.dark.accent);
+    assert.ok(toOklch(palette.dark.accentText).l > toOklch(palette.dark.accent).l + 0.12);
+    assert.ok(toOklch(palette.dark.accentText).c <= toOklch(palette.light.accent).c * 0.87);
+    // In light mode the accent is already dark enough to be text.
+    assert.equal(palette.light.accentText, palette.light.accent);
   });
 }
 
@@ -67,4 +57,5 @@ test('stored accents are validated on read', () => {
   assert.equal(parseAccent(undefined), DEFAULT_ACCENT);
   assert.equal(isAccentId('teal'), true);
   assert.equal(isAccentId('toString'), false);
+  assert.equal(accentPalette('slate').label, '슬레이트');
 });

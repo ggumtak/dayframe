@@ -7,7 +7,7 @@ import type { HabitLog } from '@/lib/shared';
 import {
   dayMet, dayState, earliestStart, logsByDate, monthCells, outsideHabit, periodProgress, periodStart, weekDates,
 } from './goal.ts';
-import { HABIT_COLORS, HABIT_EMOJIS, HABIT_QUOTES, initialOf, nextQuote, softTint } from './palette.ts';
+import { HABIT_COLORS, HABIT_EMOJIS, HABIT_QUOTES, initialOf, nextQuote } from './palette.ts';
 import { featuredRoutines, galleryCategories, routineGroups, routineLabel, sameRoutine } from './routines.ts';
 
 function log(date: string, count = 1, status: HabitLog['status'] = 'completed'): HabitLog {
@@ -62,10 +62,7 @@ test('the overview reaches back to the oldest habit start and dims days outside 
   assert.equal(outsideHabit(habit, Temporal.PlainDate.from('2026-11-25'), today), true);
 });
 
-test('palette helpers: tints, initials and cycling suggestions', () => {
-  assert.equal(softTint('#3574F0', false), '#3574F01F');
-  assert.equal(softTint('#3574F0', true), '#3574F033');
-  assert.equal(softTint('blue', false), 'blue');
+test('palette helpers: initials and cycling suggestions', () => {
   assert.equal(initialOf('  물 2리터'), '물');
   assert.equal(initialOf('yoga'), 'Y');
   assert.equal(initialOf('   '), '·');

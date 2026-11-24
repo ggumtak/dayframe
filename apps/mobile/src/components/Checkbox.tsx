@@ -5,16 +5,18 @@ import Animated, { useAnimatedStyle, useSharedValue, withSequence, withSpring, w
 import { haptic } from '@/lib/haptics';
 import { useTheme } from '@/theme';
 
-/** A round check that fills with a small bounce, so finishing something feels like something. */
-export function Checkbox({ checked, color, size = 22, tinted, onPress, label }: {
-  checked: boolean; color?: string; size?: number;
-  /** Washes the empty circle with its colour, so a priority shows before the task is read. */
-  tinted?: boolean; onPress: () => void; label: string;
+/**
+ * A round check that fills with a small bounce, so finishing something feels like something. The empty ring is the
+ * neutral `control` colour for every task (priority is the `!!!` mark, not a colour); it fills with the accent only
+ * while checking. `done` draws a completed item that has settled: a quiet grey disc.
+ */
+export function Checkbox({ checked, done, size = 22, onPress, label }: {
+  checked: boolean; done?: boolean; size?: number; onPress: () => void; label: string;
 }) {
   const { colors } = useTheme();
-  const tint = color ?? colors.textFaint;
   const scale = useSharedValue(1);
   const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const fill = done ? colors.textFaint : colors.accent;
 
   return (
     <Pressable
@@ -27,10 +29,10 @@ export function Checkbox({ checked, color, size = 22, tinted, onPress, label }: 
       }}>
       <Animated.View
         style={[{
-          width: size, height: size, borderRadius: size / 2, borderWidth: tinted ? 2 : 1.5, borderColor: tint,
-          backgroundColor: checked ? tint : tinted ? tint + '1F' : 'transparent', alignItems: 'center', justifyContent: 'center',
+          width: size, height: size, borderRadius: size / 2, borderWidth: 1.5, borderColor: checked ? fill : colors.control,
+          backgroundColor: checked ? fill : 'transparent', alignItems: 'center', justifyContent: 'center',
         }, animated]}>
-        {checked ? <Feather name="check" size={size * 0.62} color={colors.surface} /> : null}
+        {checked ? <Feather name="check" size={size * 0.62} color={done ? colors.surface : colors.onAccent} /> : null}
       </Animated.View>
     </Pressable>
   );

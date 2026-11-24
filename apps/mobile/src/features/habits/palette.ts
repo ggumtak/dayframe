@@ -1,9 +1,12 @@
 /**
- * The look a habit can take: a small set of colours that read on light and dark backgrounds, a curated emoji
- * set, and cheering lines to suggest. Pure data and helpers, free of React Native so they can be tested.
+ * The look a habit can take: a curated emoji set and cheering lines to suggest. Pure data and helpers, free of
+ * React Native so they can be tested.
  */
 
-/** The same hues the project colours use, so habits and projects feel like one app. */
+/**
+ * Colours earlier versions let a habit wear. They stay as data (stored looks and the gallery's routines keep them),
+ * but are no longer offered or drawn: habit grids use the accent alone, where colour means "done".
+ */
 export const HABIT_COLORS = [
   '#3574F0', // 파랑
   '#1F9D63', // 초록
@@ -41,16 +44,6 @@ export const HABIT_QUOTES = [
 export function nextQuote(current: string): string {
   const index = HABIT_QUOTES.indexOf(current.trim() as (typeof HABIT_QUOTES)[number]);
   return HABIT_QUOTES[(index + 1) % HABIT_QUOTES.length];
-}
-
-/**
- * A soft background for a colour: a translucent version of it, a little stronger on dark backgrounds where
- * a faint tint would vanish. Expects `#RRGGBB`; anything else comes back unchanged.
- */
-export function softTint(color: string, dark: boolean, strength: 'soft' | 'medium' = 'soft'): string {
-  if (!/^#[0-9a-fA-F]{6}$/.test(color)) return color;
-  const alpha = strength === 'medium' ? (dark ? '73' : '59') : dark ? '33' : '1F';
-  return color + alpha;
 }
 
 /** The first visible character of a name, for an avatar without an emoji ("물 2리터" gives "물"). */

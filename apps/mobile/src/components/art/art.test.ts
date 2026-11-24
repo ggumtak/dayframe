@@ -39,7 +39,7 @@ test('header text stays clearly readable on every backdrop colour, every accent,
 });
 
 test('every piece stays within the node budget and resolves every colour', () => {
-  const p = artPalette(sampleTheme('pink', true));
+  const p = artPalette(sampleTheme('purple', true));
   for (const [name, art] of [...Object.entries(ILLUSTRATIONS), ...Object.entries(BACKDROPS)]) {
     assert.ok(nodeCount(art) <= 60, `${name} has ${nodeCount(art)} nodes`);
     for (const node of svgNodes(art, p)) {
