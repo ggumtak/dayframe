@@ -2,22 +2,24 @@ import { FlexWidget, ListWidget, SvgWidget, TextWidget } from 'react-native-andr
 
 import type { UpcomingRow, WidgetRow } from './items';
 import { ACTIONS } from './names';
+import { priorityMark } from '../tasks/priority';
 
 
 type Hex = `#${string}`;
 interface Palette {
-  background: Hex; text: Hex; muted: Hex; faint: Hex; accent: Hex; accentSoft: Hex; onAccent: Hex; danger: Hex; warning: Hex;
-  success: Hex; border: Hex; track: Hex;
+  background: Hex; text: Hex; muted: Hex; faint: Hex; control: Hex; accent: Hex; accentText: Hex; onAccent: Hex; danger: Hex;
+  border: Hex; track: Hex;
 }
 
-// The app's own colours, so the widgets read as part of it on either home screen.
+// The app's own tokens (src/theme/tokens.ts, default blue), copied because widgets are drawn natively, outside the
+// theme. The same budget as the app: neutral rows, the accent only for the add button and progress, red only overdue.
 const light: Palette = {
-  background: '#FFFFFF', text: '#1D2129', muted: '#667085', faint: '#A4ACB9', accent: '#3574F0', accentSoft: '#E8F0FE', onAccent: '#FFFFFF',
-  danger: '#DC4C3E', warning: '#E5870B', success: '#1F9D63', border: '#E6E9EE', track: '#F3F5F8',
+  background: '#FFFFFF', text: '#1D2129', muted: '#5C6675', faint: '#858E9C', control: '#868E9C', accent: '#2B66E0', accentText: '#2B66E0',
+  onAccent: '#FFFFFF', danger: '#CC3A2E', border: '#E6E9EE', track: '#F3F5F8',
 };
 const dark: Palette = {
-  background: '#1D2024', text: '#ECEEF1', muted: '#9BA3AF', faint: '#687080', accent: '#5B8FF7', accentSoft: '#1C2A47', onAccent: '#FFFFFF',
-  danger: '#F0685C', warning: '#F0A03C', success: '#4CC38A', border: '#31353C', track: '#272B31',
+  background: '#1D2024', text: '#E8EAED', muted: '#A0A7B2', faint: '#767E8B', control: '#7A8290', accent: '#3B6CD0', accentText: '#82ADFE',
+  onAccent: '#F5F7FA', danger: '#F08074', border: '#31353C', track: '#272B31',
 };
 
 const RADIUS = 20;
@@ -34,16 +36,13 @@ function progressRing(ratio: number, palette: Palette): string {
   const r = 9;
   const length = 2 * Math.PI * r;
   if (ratio >= 1) {
-    return svg(`<circle cx="12" cy="12" r="10" fill="${palette.success}"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`);
+    return svg(`<circle cx="12" cy="12" r="10" fill="${palette.accent}"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="${palette.onAccent}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`);
   }
-  return svg(`<circle cx="12" cy="12" r="${r}" fill="none" stroke="${palette.track}" stroke-width="2.6"/>`
-    + (ratio > 0 ? `<circle cx="12" cy="12" r="${r}" fill="none" stroke="${palette.success}" stroke-width="2.6" stroke-linecap="round" `
+  return svg(`<circle cx="12" cy="12" r="${r}" fill="none" stroke="${palette.control}" stroke-width="1.5"/>`
+    + (ratio > 0 ? `<circle cx="12" cy="12" r="${r}" fill="none" stroke="${palette.accent}" stroke-width="2.6" stroke-linecap="round" `
       + `stroke-dasharray="${(length * ratio).toFixed(2)} ${length.toFixed(2)}" transform="rotate(-90 12 12)"/>` : ''));
 }
 
-function tint(palette: Palette, priority: number): Hex {
-  return priority === 1 ? palette.danger : priority === 2 ? palette.warning : priority === 3 ? palette.accent : palette.faint;
-}
 
 function Header({ title, subtitle, palette, uri, add, subtitleColor }: {
   title: string; subtitle: string; palette: Palette; uri: string; add?: boolean; subtitleColor?: Hex;
@@ -92,15 +91,17 @@ function TaskLine({ row, palette, completable }: { row: WidgetRow; palette: Pale
       style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', paddingLeft: completable ? 8 : 16, paddingRight: 16, height: 44 }}>
       {completable ? (
         <SvgWidget
-          svg={ring(tint(palette, row.priority))} clickAction={ACTIONS.complete}
+          svg={ring(palette.control)} clickAction={ACTIONS.complete}
           clickActionData={{ id: row.id, occurrence: row.occurrence }} accessibilityLabel={row.title + ' 완료'}
           style={{ height: 44, width: 40, paddingHorizontal: 8, paddingVertical: 10 }} />
       ) : (
-        <FlexWidget style={{ width: 4, height: 18, borderRadius: 2, backgroundColor: tint(palette, row.priority), marginRight: 12 }} />
+        <FlexWidget style={{ width: 4, height: 18, marginRight: 12 }} />
       )}
       <FlexWidget style={{ flex: 1, height: 44, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: palette.border }}>
         <FlexWidget style={{ flex: 1 }}>
-          <TextWidget text={row.title} maxLines={1} truncate="END" style={{ fontSize: 15, color: palette.text }} />
+          <TextWidget
+            text={(row.priority < 4 ? priorityMark(row.priority as 1 | 2 | 3) + ' ' : '') + row.title} maxLines={1} truncate="END"
+            style={{ fontSize: 15, color: palette.text }} />
         </FlexWidget>
         {row.when ? <TextWidget text={row.when} maxLines={1} style={{ fontSize: 12, color: row.overdue ? palette.danger : palette.muted, marginLeft: 8 }} /> : null}
       </FlexWidget>
@@ -116,7 +117,7 @@ function Today({ rows, date, signedIn, notice, palette }: TodayWidgetProps & { p
   return (
     <Frame palette={palette}>
       <Header
-        title="오늘" uri="dayframe:///" add={signedIn} palette={palette} subtitleColor={notice ? palette.danger : undefined}
+        title="오늘" uri="dayframe:///" add={signedIn} palette={palette} 
         subtitle={notice ?? date + (signedIn && rows.length ? ' · ' + rows.length + '개' : '')} />
       {!signedIn ? <Message text={SIGNED_OUT} palette={palette} uri="dayframe:///" />
         : rows.length === 0 ? <Message text="오늘 할 일을 모두 마쳤습니다." palette={palette} uri="dayframe:///add" />
@@ -145,7 +146,7 @@ function Upcoming({ rows, signedIn, palette }: UpcomingWidgetProps & { palette: 
             <ListWidget style={{ height: 'match_parent', width: 'match_parent' }}>
               {rows.map((row) => (row.kind === 'day' ? (
                 <FlexWidget key={row.key} style={{ width: 'match_parent', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 2 }}>
-                  <TextWidget text={row.label} style={{ fontSize: 12, fontWeight: '700', color: palette.accent }} />
+                  <TextWidget text={row.label} style={{ fontSize: 12, fontWeight: '700', color: palette.muted }} />
                 </FlexWidget>
               ) : <TaskLine key={row.id} row={row} palette={palette} completable={false} />))}
             </ListWidget>
@@ -165,7 +166,7 @@ function Habits({ rows, signedIn, notice, palette }: HabitsWidgetProps & { palet
   return (
     <Frame palette={palette}>
       <Header
-        title="습관" uri="dayframe:///habits" palette={palette} subtitleColor={notice ? palette.danger : undefined}
+        title="습관" uri="dayframe:///habits" palette={palette} 
         subtitle={notice ?? (signedIn && rows.length ? '오늘 ' + done + '/' + rows.length + ' 달성' : '')} />
       {!signedIn ? <Message text={SIGNED_OUT} palette={palette} uri="dayframe:///" />
         : rows.length === 0 ? <Message text="앱에서 습관을 추가해 보세요." palette={palette} uri="dayframe:///habit/new" />
@@ -182,7 +183,7 @@ function Habits({ rows, signedIn, notice, palette }: HabitsWidgetProps & { palet
                     <FlexWidget style={{ flex: 1 }}>
                       <TextWidget text={row.name} maxLines={1} truncate="END" style={{ fontSize: 15, color: palette.text }} />
                     </FlexWidget>
-                    <TextWidget text={row.label} style={{ fontSize: 12, color: row.ratio >= 1 ? palette.success : palette.muted, marginLeft: 8 }} />
+                    <TextWidget text={row.label} style={{ fontSize: 12, color: row.ratio >= 1 ? palette.faint : palette.muted, marginLeft: 8 }} />
                   </FlexWidget>
                 </FlexWidget>
               ))}
@@ -209,8 +210,8 @@ function FocusButton({ label, palette, action, data, primary }: { label: string;
   return (
     <FlexWidget
       clickAction={action} clickActionData={data} accessibilityLabel={label}
-      style={{ flex: 1, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: primary ? palette.accent : palette.accentSoft }}>
-      <TextWidget text={label} style={{ fontSize: 14, fontWeight: '700', color: primary ? palette.onAccent : palette.accent }} />
+      style={{ flex: 1, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: primary ? palette.accent : palette.track }}>
+      <TextWidget text={label} style={{ fontSize: 14, fontWeight: '700', color: primary ? palette.onAccent : palette.text }} />
     </FlexWidget>
   );
 }
@@ -220,14 +221,14 @@ function Focus({ signedIn, running, endsAt, plannedMinutes, count, minutes, noti
   const isStopwatch = !!running && plannedMinutes === 480;
   return (
     <Frame palette={palette}>
-      <Header title="집중" subtitle={notice ?? today} uri="dayframe:///focus" palette={palette} subtitleColor={notice ? palette.danger : undefined} />
+      <Header title="집중" subtitle={notice ?? today} uri="dayframe:///focus" palette={palette}  />
       {!signedIn ? <Message text={SIGNED_OUT} palette={palette} uri="dayframe:///" /> : (
         <FlexWidget style={{ width: 'match_parent', height: 'match_parent', paddingHorizontal: 14, paddingBottom: 8, justifyContent: 'space-between' }}>
           <FlexWidget clickAction="OPEN_URI" clickActionData={{ uri: 'dayframe:///focus' }} style={{ width: 'match_parent', flex: 1, justifyContent: 'center' }}>
             {running ? (
               <FlexWidget>
                 <TextWidget text={isStopwatch ? '측정 중' : endsAt + '까지'} style={{ fontSize: 24, fontWeight: '700', color: palette.text }} />
-                <TextWidget text={isStopwatch ? '스톱워치 실행 중' : plannedMinutes + '분 집중 중'} style={{ fontSize: 13, color: palette.accent, marginTop: 2 }} />
+                <TextWidget text={isStopwatch ? '스톱워치 실행 중' : plannedMinutes + '분 집중 중'} style={{ fontSize: 13, color: palette.muted, marginTop: 2 }} />
               </FlexWidget>
             ) : (
               <TextWidget text="뽀모도로" style={{ fontSize: 20, fontWeight: '700', color: palette.text }} />
@@ -298,7 +299,7 @@ function Calendar({ signedIn, title, weeks, stamp, canBack, canAhead, palette }:
         </FlexWidget>
         <NavButton label="이전 달" direction={-1} enabled={canBack} palette={palette} />
         <SvgWidget
-          svg={svg(`<circle cx="12" cy="12" r="3.5" fill="${palette.accent}"/>`)} clickAction={ACTIONS.calendarMove} clickActionData={{ by: 0 }}
+          svg={svg(`<circle cx="12" cy="12" r="3.5" fill="${palette.muted}"/>`)} clickAction={ACTIONS.calendarMove} clickActionData={{ by: 0 }}
           accessibilityLabel="이번 달" style={{ height: 32, width: 28, padding: 6 }} />
         <NavButton label="다음 달" direction={1} enabled={canAhead} palette={palette} />
       </FlexWidget>
@@ -307,7 +308,7 @@ function Calendar({ signedIn, title, weeks, stamp, canBack, canAhead, palette }:
           <FlexWidget style={{ width: 'match_parent', flexDirection: 'row' }}>
             {['월', '화', '수', '목', '금', '토', '일'].map((name, index) => (
               <FlexWidget key={name} style={{ flex: 1, alignItems: 'center', paddingVertical: 2 }}>
-                <TextWidget text={name} style={{ fontSize: 11, color: index === 6 ? palette.danger : index === 5 ? palette.accent : palette.faint }} />
+                <TextWidget text={name} style={{ fontSize: 11, color: palette.faint }} />
               </FlexWidget>
             ))}
           </FlexWidget>
@@ -318,12 +319,12 @@ function Calendar({ signedIn, title, weeks, stamp, canBack, canAhead, palette }:
                   key={column} clickAction="OPEN_URI" clickActionData={{ uri: `dayframe:///upcoming?view=month&date=${cell.date}&at=${stamp}` }}
                   accessibilityLabel={cell.day + '일' + (cell.count ? ', 일정 ' + cell.count + '개' : '')}
                   style={{ flex: 1, height: 'match_parent', alignItems: 'center', justifyContent: 'center' }}>
-                  <FlexWidget style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: cell.today ? palette.accent : palette.background }}>
+                  <FlexWidget style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: cell.today ? palette.text : palette.background }}>
                     <TextWidget
                       text={String(cell.day)}
-                      style={{ fontSize: 13, fontWeight: cell.today || cell.count ? '700' : '400', color: cell.today ? palette.onAccent : column === 6 ? palette.danger : column === 5 ? palette.accent : palette.text }} />
+                      style={{ fontSize: 13, fontWeight: cell.today || cell.count ? '700' : '400', color: cell.today ? palette.background : palette.text }} />
                   </FlexWidget>
-                  <FlexWidget style={{ width: 4, height: 4, borderRadius: 2, marginTop: 1, backgroundColor: cell.count ? palette.accent : palette.background }} />
+                  <FlexWidget style={{ width: 4, height: 4, borderRadius: 2, marginTop: 1, backgroundColor: cell.count ? palette.muted : palette.background }} />
                 </FlexWidget>
               ) : <FlexWidget key={column} style={{ flex: 1 }} />))}
             </FlexWidget>

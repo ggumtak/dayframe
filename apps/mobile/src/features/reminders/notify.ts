@@ -18,6 +18,12 @@ import {
   type ReminderSettings, SNOOZE_PREFIX,
 } from './plan';
 
+/**
+ * The Android notification accent (small icon and action text). A native setting the theme cannot reach, so it is the
+ * default blue accent from src/theme (and app.config.ts), for task and habit alerts alike.
+ */
+const NOTIFICATION_COLOR = '#2B66E0';
+
 const CHANNEL = 'task-reminders';
 const CATEGORY = 'task-actions';
 const HABIT_CATEGORY = 'habit-actions';
@@ -83,7 +89,7 @@ export function reminderContent(
   const when = task.all_day ? formatDate(dueDay, alertDay) + ' · 종일'
     : !dueDay.equals(alertDay) ? formatDate(dueDay, alertDay) + ' ' + time
       : lead ? leadAhead(lead) + ' · ' + time : time;
-  const base = { title: task.title, sound: true, priority: 'high', color: '#3574F0', data: { url: 'dayframe:///task/' + task.id } };
+  const base = { title: task.title, sound: true, priority: 'high', color: NOTIFICATION_COLOR, data: { url: 'dayframe:///task/' + task.id } };
   const facts = [when, describeRecurrence(task.recurrence_rule, task.recurrence_mode), context.projectName(task) ? '#' + context.projectName(task) : null];
   const lines = [facts.filter(Boolean).join(' · ')];
   const notes = task.notes?.trim();
@@ -131,7 +137,7 @@ export async function syncReminders(
     const habit = habits.get(item.habitId)!;
     const content: Notifications.NotificationContentInput = {
       title: habit.name, body: item.date === Temporal.Now.plainDateISO(habit.timezone).toString() ? habit.progress : '오늘의 습관을 기록할 시간입니다.',
-      sound: true, priority: 'high', color: '#1F9D63', categoryIdentifier: HABIT_CATEGORY, data: { url: 'dayframe:///habit/' + habit.id },
+      sound: true, priority: 'high', color: NOTIFICATION_COLOR, categoryIdentifier: HABIT_CATEGORY, data: { url: 'dayframe:///habit/' + habit.id },
     };
     wanted.set(item.id, { item, content, signature: signature(item, content), channel: CHANNEL });
   }
@@ -198,7 +204,7 @@ export async function handleReminderAction(response: Response): Promise<void> {
     await Notifications.scheduleNotificationAsync({
       identifier: SNOOZE_PREFIX + id.replace(/^(task|snooze)-/, ''),
       content: {
-        title: content.title ?? '할 일', body: content.body ?? '', sound: true, priority: 'high', color: '#3574F0',
+        title: content.title ?? '할 일', body: content.body ?? '', sound: true, priority: 'high', color: NOTIFICATION_COLOR,
         categoryIdentifier: CATEGORY, data: { url: 'dayframe:///task/' + parsed.taskId },
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: Date.now() + SNOOZE_MINUTES * 60_000, channelId: CHANNEL },
