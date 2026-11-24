@@ -71,7 +71,7 @@ function KeyEditor({ onDone, canCancel }: { onDone: () => void; canCancel: boole
           spellCheck={false} textContentType="password" returnKeyType="done" onSubmitEditing={() => void save()}
           style={[styles.input, { color: colors.text, fontFamily }]} />
         <Pressable accessibilityRole="button" accessibilityLabel="붙여넣기" onPress={() => void paste()} hitSlop={6} style={styles.paste}>
-          <Icon name="clipboard" size={16} color={colors.accent} />
+          <Icon name="clipboard" size={16} color={colors.accentText} />
           <Txt variant="smallStrong" tone="accent">붙여넣기</Txt>
         </Pressable>
       </View>
@@ -89,15 +89,15 @@ function CheckLine({ result }: { result: CheckResult }) {
   if (result.ok) {
     const name = AI_MODELS.find((model) => model.id === result.model)?.name ?? result.model;
     return (
-      <View style={[styles.check, { backgroundColor: colors.successSoft }]}>
-        <Icon name="check-circle" size={18} color={colors.success} />
+      <View style={styles.check}>
+        <Icon name="check-circle" size={18} color={colors.textMuted} />
         <Txt variant="small" style={{ flex: 1 }}>연결되었습니다. {name}{josa(name, '으로/로')} 요청할 수 있습니다.</Txt>
       </View>
     );
   }
   const text = AI_ERROR_TEXT[result.kind];
   return (
-    <View style={[styles.check, { backgroundColor: colors.dangerSoft }]}>
+    <View style={styles.check}>
       <Icon name="alert-circle" size={18} color={colors.danger} />
       <View style={{ flex: 1, gap: 2 }}>
         <Txt variant="smallStrong">{text.title}</Txt>
@@ -162,7 +162,7 @@ export default function AiKeySettings() {
         {!ready ? null : hasKey && !editing ? (
           <Card style={{ gap: space.md }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-              <View style={[styles.keyIcon, { backgroundColor: colors.accentSoft }]}><Icon name="key" size={18} color={colors.accent} /></View>
+              <View style={[styles.keyIcon, { backgroundColor: colors.surfaceMuted }]}><Icon name="key" size={18} color={colors.textMuted} /></View>
               <View style={{ flex: 1 }}>
                 <Txt variant="bodyStrong" accessibilityLabel="저장한 키">{masked}</Txt>
                 <Txt variant="small" tone="muted">이 휴대폰에만 저장되어 있습니다.</Txt>
@@ -198,7 +198,7 @@ export default function AiKeySettings() {
                 onPress={() => { setAiPrefs({ model: model.id }); setCheck(null); }}
                 style={({ pressed }) => [styles.model, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
                   pressed && { opacity: 0.6 }]}>
-                <View style={[styles.radio, { borderColor: selected ? colors.accent : colors.textFaint }]}>
+                <View style={[styles.radio, { borderColor: selected ? colors.accent : colors.control }]}>
                   {selected ? <View style={[styles.radioDot, { backgroundColor: colors.accent }]} /> : null}
                 </View>
                 <View style={{ flex: 1 }}>
@@ -231,7 +231,7 @@ export default function AiKeySettings() {
           <Txt variant="small" tone="muted">Anthropic 콘솔에 로그인한 뒤 API Keys 메뉴에서 키를 만들고 복사합니다.</Txt>
           <View style={[styles.address, { backgroundColor: colors.surfaceMuted }]}>
             <Txt variant="bodyStrong" selectable style={{ flex: 1 }}>{CONSOLE} → API Keys</Txt>
-            <IconButton name="copy" label="콘솔 주소 복사" size={18} color={colors.accent} onPress={() => void copyConsole()} />
+            <IconButton name="copy" label="콘솔 주소 복사" size={18} color={colors.textMuted} onPress={() => void copyConsole()} />
           </View>
         </Card>
       </Section>
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
   input: { flex: 1, fontSize: 16, paddingVertical: space.sm },
   paste: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: space.md, minHeight: 44 },
   keyIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  check: { flexDirection: 'row', gap: space.sm, padding: space.md, borderRadius: radius.md, alignItems: 'flex-start' },
+  check: { flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' },
   model: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 10, height: 10, borderRadius: 5 },

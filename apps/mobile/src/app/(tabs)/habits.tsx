@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 
 import { EmptyHabits } from '@/components/art';
-import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, Txt } from '@/components/ui';
+import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, Txt } from '@/components/ui';
 import { periodProgress, useHabitDetails, useHabits } from '@/data/habits';
 import { dayMet, logsByDate } from '@/features/habits/goal';
 import { HabitCard } from '@/features/habits/HabitCard';
@@ -79,7 +79,7 @@ export default function Habits() {
         right={(
           <View style={{ flexDirection: 'row' }}>
             <IconButton name="grid" label="기록 한눈에 보기" onPress={() => router.push('/habit/overview')} color={colors.textMuted} />
-            <IconButton name="plus" label="습관 추가" onPress={() => router.push('/routines')} color={colors.accent} />
+            <IconButton name="plus" label="습관 추가" onPress={() => router.push('/routines')} color={colors.textMuted} />
           </View>
         )} />
       {isLoading ? <Loading /> : (
@@ -89,11 +89,6 @@ export default function Habits() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {habits.length ? (
             <>
-              <View style={{ gap: 6 }}>
-                <ProgressBar value={done / habits.length} color={colors.success} />
-                <Txt variant="caption" tone="faint">{done === habits.length ? '오늘 습관을 모두 달성했습니다!' : `${habits.length - done}개 남았습니다`}</Txt>
-              </View>
-
               <Card style={{ gap: space.sm, paddingVertical: space.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }}>이번 주 습관 달성</Txt>
@@ -106,7 +101,7 @@ export default function Habits() {
                     const height = bar.future ? 4 : bar.met > 0 ? Math.max(10, Math.round(bar.ratio * 38)) : 4;
                     return (
                       <View key={bar.key} style={styles.barCol}>
-                        <Txt variant="caption" tone={full ? 'success' : 'faint'} style={{ fontSize: 10 }}>
+                        <Txt variant="caption" tone="faint" style={{ fontSize: 10 }}>
                           {!bar.future && bar.met > 0 ? `${bar.met}/${bar.eligible}` : ''}
                         </Txt>
                         <View style={styles.barTrack}>
@@ -117,13 +112,11 @@ export default function Habits() {
                                 height,
                                 backgroundColor: bar.future
                                   ? colors.surfaceMuted
-                                  : full ? colors.success : bar.met > 0 ? colors.successSoft : colors.surfaceMuted,
-                                borderColor: !bar.future && bar.met > 0 && !full ? colors.success : 'transparent',
-                                borderWidth: !bar.future && bar.met > 0 && !full ? 1 : 0,
+                                  : full ? colors.accent : bar.met > 0 ? colors.accentRamp[1] : colors.surfaceMuted,
                               },
                             ]} />
                         </View>
-                        <Txt variant="caption" tone={isToday ? 'accent' : 'faint'} style={{ fontWeight: isToday ? '700' : '500' }}>
+                        <Txt variant="caption" tone={isToday ? 'default' : 'faint'} style={{ fontWeight: isToday ? '700' : '500' }}>
                           {weekdayName(bar.date)}
                         </Txt>
                       </View>
@@ -136,7 +129,7 @@ export default function Habits() {
                 <View key={group.key} style={{ gap: space.md }}>
                   {hasTimeGroups ? (
                     <View style={styles.groupHead}>
-                      <Icon name={group.icon} size={14} color={colors.accent} />
+                      <Icon name={group.icon} size={14} color={colors.textFaint} />
                       <Txt variant="section" tone="muted">{group.label}</Txt>
                       <Txt variant="caption" tone="faint">{group.items.length}</Txt>
                     </View>

@@ -6,31 +6,28 @@ import { EmptyHabits } from '@/components/art';
 import { Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Screen, Segmented, Txt } from '@/components/ui';
 import { useHabitDetails, useHabits } from '@/data/habits';
 import { type DayState, dayState, earliestStart, logsByDate, monthCells, outsideHabit, weekDates } from '@/features/habits/goal';
-import { habitLook } from '@/features/habits/display';
-import { HabitAvatar } from '@/features/habits/HabitAvatar';
-import { type HabitMeta, useHabitMetaMap } from '@/features/habits/habitMeta';
-import { softTint } from '@/features/habits/palette';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, type PlainDate, Temporal, today, weekdayName, weekStart } from '@/lib/dates';
 import type { Habit, HabitLog } from '@/lib/shared';
-import { radius, space, useTheme } from '@/theme';
+import { type Colors, radius, space, useTheme } from '@/theme';
 
 type Mode = 'week' | 'month';
 const NO_LOGS: HabitLog[] = [];
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const stateLabel: Record<DayState, string> = { met: '달성', partial: '일부', skipped: '건너뜀', frozen: '쉬어감', empty: '기록 없음' };
 
-/** The colours of one day cell, from the habit's own colour (or the app's success green without one). */
-function useCellColors(meta: HabitMeta | undefined) {
-  const { colors, isDark } = useTheme();
-  const base = meta?.color ?? colors.success;
-  return useMemo(() => ({
-    met: base,
-    partial: softTint(base, isDark, 'medium'),
-    skipped: colors.border,
-    frozen: colors.border,
-    empty: colors.surfaceMuted,
-  } satisfies Record<DayState, string>), [base, isDark, colors]);
+/**
+ * The colours of a day cell: one accent ramp for every habit, built once per theme. Habits are told apart by name,
+ * so the cells' colour means only how the day went.
+ */
+const cellCache = new WeakMap<Colors, Record<DayState, string>>();
+function cellColors(colors: Colors): Record<DayState, string> {
+  let fills = cellCache.get(colors);
+  if (!fills) {
+    fills = { met: colors.accent, partial: colors.accentRamp[1], skipped: colors.border, frozen: colors.border, empty: colors.surfaceMuted };
+    cellCache.set(colors, fills);
+  }
+  return fills;
 }
 
 function Mark({ state, size }: { state: DayState; size: number }) {
@@ -41,12 +38,12 @@ function Mark({ state, size }: { state: DayState; size: number }) {
 }
 
 /** One habit's week: seven cells, Monday first. */
-const WeekRow = memo(function WeekRow({ habit, logs, meta, days, todayKey }: {
-  habit: Habit; logs: HabitLog[]; meta?: HabitMeta; days: PlainDate[]; todayKey: string;
+const WeekRow = memo(function WeekRow({ habit, logs, days, todayKey }: {
+  habit: Habit; logs: HabitLog[]; days: PlainDate[]; todayKey: string;
 }) {
+  const { colors } = useTheme();
   const byDate = useMemo(() => logsByDate(logs), [logs]);
-  const fills = useCellColors(meta);
-  const look = habitLook(habit.name, meta);
+  const fills = cellColors(colors);
   const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   return (
     <Pressable
@@ -54,7 +51,6 @@ const WeekRow = memo(function WeekRow({ habit, logs, meta, days, todayKey }: {
       onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
       style={({ pressed }) => [styles.weekRow, pressed && { opacity: 0.7 }]}>
       <View style={styles.weekName}>
-        <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={26} />
         <Txt variant="smallStrong" numberOfLines={1} style={{ flex: 1 }}>{habit.name}</Txt>
       </View>
       <View style={styles.weekCells}>
@@ -75,13 +71,12 @@ const WeekRow = memo(function WeekRow({ habit, logs, meta, days, todayKey }: {
 });
 
 /** One habit's month as a small grid, for the two-column monthly view. */
-const MiniMonth = memo(function MiniMonth({ habit, logs, meta, cells, todayKey }: {
-  habit: Habit; logs: HabitLog[]; meta?: HabitMeta; cells: (PlainDate | null)[]; todayKey: string;
+const MiniMonth = memo(function MiniMonth({ habit, logs, cells, todayKey }: {
+  habit: Habit; logs: HabitLog[]; cells: (PlainDate | null)[]; todayKey: string;
 }) {
   const { colors } = useTheme();
   const byDate = useMemo(() => logsByDate(logs), [logs]);
-  const fills = useCellColors(meta);
-  const look = habitLook(habit.name, meta);
+  const fills = cellColors(colors);
   const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   const { days, met } = useMemo(() => {
     const list = cells.map((date) => (date ? {
@@ -109,7 +104,6 @@ const MiniMonth = memo(function MiniMonth({ habit, logs, meta, cells, todayKey }
       style={({ pressed }) => [styles.miniWrap, pressed && { opacity: 0.7 }]}>
       <Card style={styles.miniCard}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={22} />
           <Txt variant="smallStrong" numberOfLines={1} style={{ flex: 1 }}>{habit.name}</Txt>
           <Txt variant="caption" tone="faint">{met}일</Txt>
         </View>
@@ -144,7 +138,6 @@ function Stepper({ label, onPrev, onNext, canPrev, canNext, prevLabel, nextLabel
 /** 기록 한눈에 보기: every active habit's record side by side, by week or by month. Read-only. */
 export default function HabitOverview() {
   const { data, isLoading } = useHabits();
-  const habitMeta = useHabitMetaMap();
   useMinute();
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
   const details = useHabitDetails(habits);
@@ -191,7 +184,7 @@ export default function HabitOverview() {
               <View style={styles.weekCells}>
                 {days.map((date) => (
                   <Txt
-                    key={date.toString()} variant="caption" tone={date.toString() === todayKey ? 'accent' : 'faint'}
+                    key={date.toString()} variant="caption" tone={date.toString() === todayKey ? 'default' : 'faint'}
                     style={[styles.weekHead, date.toString() === todayKey && { fontWeight: '700' }]}>
                     {weekdayName(date)}{'\n'}{date.day}
                   </Txt>
@@ -200,8 +193,7 @@ export default function HabitOverview() {
             </View>
             {habits.map((habit) => (
               <WeekRow
-                key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} meta={habitMeta[habit.id]}
-                days={days} todayKey={todayKey} />
+                key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} days={days} todayKey={todayKey} />
             ))}
           </Card>
           <Legend />
@@ -215,8 +207,7 @@ export default function HabitOverview() {
           <View style={styles.grid}>
             {habits.map((habit) => (
               <MiniMonth
-                key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} meta={habitMeta[habit.id]}
-                cells={cells} todayKey={todayKey} />
+                key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} cells={cells} todayKey={todayKey} />
             ))}
           </View>
           <Legend />
@@ -227,10 +218,10 @@ export default function HabitOverview() {
 }
 
 function Legend() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const items = [
-    { label: '달성', color: colors.success },
-    { label: '일부', color: softTint(colors.success, isDark, 'medium') },
+    { label: '달성', color: colors.accent },
+    { label: '일부', color: colors.accentRamp[1] },
     { label: '건너뜀·쉬어감', color: colors.border },
     { label: '기록 없음', color: colors.surfaceMuted },
   ];
@@ -249,7 +240,7 @@ function Legend() {
 const styles = StyleSheet.create({
   stepper: { flexDirection: 'row', alignItems: 'center' },
   weekRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 6 },
-  weekName: { width: 104, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  weekName: { width: 96, flexDirection: 'row', alignItems: 'center' },
   weekCells: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
   weekCell: { flex: 1, aspectRatio: 1, maxWidth: 30, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   weekHead: { flex: 1, maxWidth: 30, textAlign: 'center', fontSize: 10, lineHeight: 13 },

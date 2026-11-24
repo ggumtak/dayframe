@@ -11,7 +11,7 @@ import { haptic } from '@/lib/haptics';
 import { usePersistentState } from '@/lib/persist';
 import type { Task } from '@/lib/shared';
 import { bySmartRank, classifyEisenhower, type EisenhowerQuadrant, type SubtaskProgress } from '@/lib/smart';
-import { radius, space, useTheme } from '@/theme';
+import { space, useTheme } from '@/theme';
 
 type MatrixScope = 'near' | 'all';
 const isMatrixScope = (value: string): value is MatrixScope => value === 'near' || value === 'all';
@@ -73,13 +73,6 @@ export function EisenhowerView({
     return map;
   }, [scopedRoots, subtaskProgress, nowMs]);
 
-  const palette = (key: EisenhowerQuadrant) => {
-    if (key === 'q1') return { fg: colors.danger, bg: colors.dangerSoft };
-    if (key === 'q2') return { fg: colors.warning, bg: colors.warningSoft };
-    if (key === 'q3') return { fg: colors.info, bg: colors.infoSoft };
-    return { fg: colors.textMuted, bg: colors.surfaceMuted };
-  };
-
   const toggle = (key: EisenhowerQuadrant) => {
     haptic.tap();
     setCollapsed((prev) => {
@@ -92,8 +85,9 @@ export function EisenhowerView({
 
   return (
     <ScrollView
-      contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.md }}
+      contentContainerStyle={{ paddingTop: space.lg, paddingBottom: 140, gap: space.md }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
+      <View style={{ paddingHorizontal: space.lg, gap: space.md }}>
       <Segmented<MatrixScope>
         value={scope} onChange={setScope}
         options={[
@@ -103,32 +97,33 @@ export function EisenhowerView({
       <Txt variant="small" tone="muted">
         우선순위(가장 높음·높음)와 날짜(오늘·지연)를 보고 자동으로 나눕니다. 할 일을 길게 눌러 우선순위나 날짜를 바꾸면 바로 다른 칸으로 옮겨집니다.
       </Txt>
+      </View>
       {QUADRANTS.map((meta) => {
         const items = grouped[meta.key];
-        const tone = palette(meta.key);
         const isCollapsed = collapsed.has(meta.key);
         return (
-          <View key={meta.key} style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-            <View style={[styles.head, { backgroundColor: tone.bg }]}>
+          // The quadrant's place in the order is its meaning, so every quadrant looks the same: a heading, then rows.
+          <View key={meta.key}>
+            <View style={[styles.head, { borderBottomColor: colors.border }]}>
               <Pressable
                 accessibilityRole="button" accessibilityLabel={`${meta.title} ${items.length}개 ${isCollapsed ? '펼치기' : '접기'}`}
                 onPress={() => toggle(meta.key)}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                <Icon name={meta.icon} size={16} color={tone.fg} />
+                <Icon name={meta.icon} size={16} color={colors.textFaint} />
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Txt variant="bodyStrong" style={{ color: tone.fg }}>{meta.title}</Txt>
-                    <Txt variant="smallStrong" style={{ color: tone.fg, opacity: 0.8 }}>{items.length}</Txt>
+                    <Txt variant="bodyStrong" style={{ fontWeight: '700' }}>{meta.title}</Txt>
+                    <Txt variant="small" tone="faint">{items.length}</Txt>
                   </View>
                   <Txt variant="caption" tone="muted">{meta.subtitle}</Txt>
                 </View>
-                <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={16} color={tone.fg} />
+                <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
               </Pressable>
               <Pressable
                 accessibilityRole="button" accessibilityLabel={meta.title + '에 할 일 추가'} hitSlop={8}
                 onPress={() => quickAdd.open({ initialText: meta.quickAddText, dueToday: meta.dueToday })}
                 style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.6 : 1 }]}>
-                <Icon name="plus" size={17} color={tone.fg} />
+                <Icon name="plus" size={17} color={colors.textMuted} />
               </Pressable>
             </View>
             {!isCollapsed ? (
@@ -148,10 +143,9 @@ export function EisenhowerView({
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: radius.lg, borderWidth: 1, overflow: 'hidden' },
   head: {
-    flexDirection: 'row', alignItems: 'center', gap: space.sm,
-    paddingLeft: space.md, paddingRight: space.sm, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', gap: space.sm, borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingLeft: space.lg, paddingRight: space.sm, paddingVertical: 8,
   },
   addBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
 });

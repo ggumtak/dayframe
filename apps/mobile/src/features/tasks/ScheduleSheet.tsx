@@ -218,7 +218,7 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
                 style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, flex: 1 }]} />
               <Button label="적용" onPress={applyTyped} disabled={!parsedText?.patch} style={{ minHeight: 46 }} />
             </View>
-            {parsedText?.label ? <Txt variant="small" tone="success">{parsedText.label}</Txt> : null}
+            {parsedText?.label ? <Txt variant="small" tone="muted">{parsedText.label}</Txt> : null}
             {parsedText?.error ? <Txt variant="small" tone="danger">{parsedText.error}</Txt> : null}
           </View>
         ) : (
@@ -323,7 +323,7 @@ function BackRow({ onPress }: { onPress: () => void }) {
     <Pressable
       accessibilityRole="button" accessibilityLabel="일정으로 돌아가기" hitSlop={8} onPress={onPress}
       style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}>
-      <Icon name="chevron-left" size={18} color={colors.accent} />
+      <Icon name="chevron-left" size={18} color={colors.accentText} />
       <Txt variant="smallStrong" tone="accent">일정</Txt>
     </Pressable>
   );

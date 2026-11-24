@@ -12,9 +12,6 @@ import { usePersistentState } from '@/lib/persist';
 import { fontFamily, space, type, useTheme } from '@/theme';
 
 import { nextCheckIn } from './checkIn';
-import { habitLook } from './display';
-import { HabitAvatar } from './HabitAvatar';
-import { useHabitMetaMap } from './habitMeta';
 import { computeHabitStrength } from './strength';
 
 type Fold = 'open' | 'closed';
@@ -30,15 +27,15 @@ function Mark({ ratio, settled }: { ratio: number; settled: boolean }) {
     <Svg width={SIZE} height={SIZE} viewBox="0 0 24 24">
       {settled ? (
         <>
-          <Circle cx={12} cy={12} r={10} fill={colors.success} />
-          <Path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+          <Circle cx={12} cy={12} r={10} fill={colors.accent} />
+          <Path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke={colors.onAccent} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
         </>
       ) : (
         <>
-          <Circle cx={12} cy={12} r={r} fill="none" stroke={colors.border} strokeWidth={2.4} />
+          <Circle cx={12} cy={12} r={r} fill="none" stroke={colors.control} strokeWidth={1.5} />
           {ratio > 0 ? (
             <Circle
-              cx={12} cy={12} r={r} fill="none" stroke={colors.success} strokeWidth={2.4} strokeLinecap="round"
+              cx={12} cy={12} r={r} fill="none" stroke={colors.accent} strokeWidth={2.4} strokeLinecap="round"
               strokeDasharray={`${length * Math.min(1, ratio)} ${length}`} transform="rotate(-90 12 12)" />
           ) : null}
         </>
@@ -50,6 +47,7 @@ function Mark({ ratio, settled }: { ratio: number; settled: boolean }) {
 /**
  * Today's habits inside the 오늘 tab, so the day is checked off in one place (as TickTick lists habits in
  * Today). One tap checks in exactly as the habit card does; habits already settled for today sink below.
+ * Name only: the emoji and colour a habit wears belong to the 습관 tab, so Today stays one quiet list.
  */
 export function TodayHabits() {
   const { colors } = useTheme();
@@ -57,7 +55,6 @@ export function TodayHabits() {
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
   const details = useHabitDetails(habits);
   const actions = useHabitActions();
-  const habitMeta = useHabitMetaMap();
   const [fold, setFold] = usePersistentState<Fold>('dayframe-today-habits', 'open', isFold);
 
   const rows = habits.map((habit, order) => {
@@ -70,7 +67,7 @@ export function TodayHabits() {
     // A weekly habit ticked today has nothing more to do today, even while the week's goal is open.
     const settled = progress >= habit.target_count || (weekly && todayCount > 0);
     const missedYesterday = !settled && computeHabitStrength(habit, logs, day).missedYesterday;
-    return { habit, look: habitLook(habit.name, habitMeta[habit.id]), order, date, todayCount, progress, weekly, settled, missedYesterday };
+    return { habit, order, date, todayCount, progress, weekly, settled, missedYesterday };
   }).sort((a, b) => Number(a.settled) - Number(b.settled) || Number(b.missedYesterday) - Number(a.missedYesterday) || a.order - b.order);
   if (!rows.length) return null;
   const settledCount = rows.filter((row) => row.settled).length;
@@ -79,11 +76,11 @@ export function TodayHabits() {
   return (
     <View>
       <FoldHeader
-        title="습관" detail={`${settledCount}/${rows.length}`} detailTone={settledCount === rows.length ? 'success' : 'muted'}
+        title="습관" detail={`${settledCount}/${rows.length}`}
         open={open} onToggle={() => setFold(open ? 'closed' : 'open')} label="오늘의 습관" />
       {open ? (
         <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(100)}>
-          {rows.map(({ habit, look, date, todayCount, progress, weekly, settled, missedYesterday }) => (
+          {rows.map(({ habit, date, todayCount, progress, weekly, settled, missedYesterday }) => (
         <Pressable
           key={habit.id} accessibilityRole="button" accessibilityLabel={habit.name + ' 자세히 보기'}
           onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
@@ -100,12 +97,11 @@ export function TodayHabits() {
             <Mark ratio={progress / habit.target_count} settled={settled} />
           </Pressable>
           <View style={[styles.body, { borderBottomColor: colors.border }]}>
-            <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={22} />
             <Text numberOfLines={1} style={[type.body as TextStyle, { flex: 1, color: settled ? colors.textFaint : colors.text }]}>{habit.name}</Text>
             {missedYesterday ? (
-              <Text style={[styles.count, { color: colors.warning, fontWeight: '600' }]}>어제 놓침</Text>
+              <Text style={[styles.count, { color: colors.text, fontWeight: '600' }]}>어제 놓침</Text>
             ) : null}
-            <Text style={[styles.count, { color: settled ? colors.success : colors.textMuted }]}>
+            <Text style={[styles.count, { color: settled ? colors.textFaint : colors.textMuted }]}>
               {weekly ? `이번 주 ${progress}/${habit.target_count}` : habit.target_count > 1 ? `${progress}/${habit.target_count}회` : settled ? '완료' : ''}
             </Text>
           </View>

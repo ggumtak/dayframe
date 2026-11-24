@@ -16,7 +16,8 @@ import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { parseTimeInput, timeInputText } from '@/features/tasks/timeInput';
 import { deviceTimeZone, formatDate, formatDurationMinutes, formatTime, instantFor, Temporal, today } from '@/lib/dates';
 import { showToast } from '@/lib/toast';
-import { fontFamily, priorityColor, radius, space, useTheme } from '@/theme';
+import { priorityMark } from '@/features/tasks/priority';
+import { fontFamily, radius, space, useTheme } from '@/theme';
 
 interface Draft extends OrganizedTask {
   key: number;
@@ -34,15 +35,15 @@ function DraftRow({ draft, now, onToggle, onEdit }: { draft: Draft; now: Tempora
   const date = when(draft, now);
   const meta = [date, draft.list ?? '미분류', draft.durationMinutes ? formatDurationMinutes(draft.durationMinutes) : null].filter(Boolean);
   return (
-    <View style={[styles.row, { borderColor: colors.border, backgroundColor: colors.surface, opacity: draft.include ? 1 : 0.55 }]}>
+    <View style={[styles.row, { borderBottomColor: colors.border, opacity: draft.include ? 1 : 0.55 }]}>
       <Toggle on={draft.include} onPress={onToggle} label={`${draft.title} 추가`} />
       <Pressable accessibilityRole="button" accessibilityLabel={`${draft.title} 고치기`} onPress={onEdit} style={{ flex: 1, gap: 4 }}>
         <Txt variant="bodyStrong">{draft.title}</Txt>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.sm, rowGap: 2 }}>
           {draft.priority < 4 ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-              <Icon name="flag" size={12} color={priorityColor(colors, draft.priority)} />
-              <Txt variant="caption" style={{ color: priorityColor(colors, draft.priority) }}>{PRIORITY_LABEL[draft.priority]}</Txt>
+              <Txt variant="caption" style={{ fontWeight: '700' }}>{priorityMark(draft.priority)}</Txt>
+              <Txt variant="caption" tone="muted">{PRIORITY_LABEL[draft.priority]}</Txt>
             </View>
           ) : null}
           <Txt variant="caption" tone="muted">{meta.join(' · ')}</Txt>
@@ -227,7 +228,7 @@ export default function Organize() {
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Pressable accessibilityRole="button" accessibilityLabel="붙여넣기" onPress={() => void paste()} hitSlop={6} style={styles.paste}>
-                <Icon name="clipboard" size={16} color={colors.accent} />
+                <Icon name="clipboard" size={16} color={colors.accentText} />
                 <Txt variant="smallStrong" tone="accent">붙여넣기</Txt>
               </Pressable>
               {memo ? (
@@ -250,7 +251,7 @@ export default function Organize() {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, padding: space.md, borderRadius: radius.lg, borderWidth: 1 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, paddingVertical: space.md, borderBottomWidth: StyleSheet.hairlineWidth },
   sub: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: 2 },
   subDot: { width: 10, height: 10, borderRadius: 3, borderWidth: 1.5 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

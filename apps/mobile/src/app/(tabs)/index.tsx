@@ -2,10 +2,9 @@ import { router } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, type ScrollViewInstance, Share, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AllDoneArt, backdropFor, DayBackdrop, EmptyToday, OfflineArt } from '@/components/art';
-import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
+import { EmptyToday, OfflineArt } from '@/components/art';
+import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { byPriority, bySchedule, useDoneToday, useProjects, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
@@ -25,7 +24,7 @@ import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { UpdateBanner } from '@/features/update/UpdateBanner';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, formatTime, instantFor, Temporal, today, weekdayName } from '@/lib/dates';
+import { deviceTimeZone, formatTime, instantFor, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { usePersistentState } from '@/lib/persist';
@@ -33,14 +32,10 @@ import type { Task, TaskPatch } from '@/lib/shared';
 import { bySmartRank } from '@/lib/smart';
 import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
-import { radius, space, useTheme } from '@/theme';
+import { space, useTheme } from '@/theme';
 
 type TodayView = 'list' | 'timeline' | 'matrix';
 
-/** The sky band behind the header (below the status bar): it covers the title row and fades out at the view switch. */
-const BACKDROP_HEIGHT = 120;
-/** The medal in the all-done card: small, so the card stays one compact row. */
-const ALL_DONE_ART = 48;
 type TodaySort = 'schedule' | 'smart' | 'priority';
 
 const sortLabels: Record<TodaySort, string> = {
@@ -83,10 +78,6 @@ export default function Today() {
   const timeZone = deviceTimeZone();
   const date = today(timeZone);
   useScreenDefaults({ dueToday: true });
-  // The sky behind the header follows the hour; a plain string, so the memoised backdrop re-renders only when the
-  // period of the day changes, not on every minute tick.
-  const backdrop = backdropFor(Temporal.Instant.fromEpochMilliseconds(minute * 60_000).toZonedDateTimeISO(timeZone).hour);
-  const insets = useSafeAreaInsets();
 
   // Only the smart order depends on the clock; the other two stay the same function all day.
   const smartNowMs = sort === 'smart' ? minute * 60_000 : 0;
@@ -110,12 +101,11 @@ export default function Today() {
   const grouped = grouping === 'project';
 
   const remaining = overdue.length + due.length;
-  const totalToday = remaining + done.length;
-  const progressRatio = totalToday > 0 ? done.length / totalToday : 0;
 
-  const summary = overdue.length && due.length
-    ? `지연 ${overdue.length}개 · 오늘 ${due.length}개`
-    : remaining ? `${remaining}개 남음` : done.length ? `${done.length}개 완료` : '남은 할 일 없음';
+  // The day's numbers live in the subtitle, once; there is no progress bar repeating them.
+  const summary = remaining || done.length
+    ? [remaining ? `남은 일 ${remaining}` : '', done.length ? `완료 ${done.length}` : ''].filter(Boolean).join(' · ')
+    : '남은 할 일 없음';
 
   const selectedTasks = useMemo(
     () => (selectedIds ? allVisibleToday.filter((t) => selectedIds.has(t.id)) : []),
@@ -219,27 +209,25 @@ export default function Today() {
 
   const showOnboarding = !isLoading && !isError && tasks.length === 0 && done.length === 0 && !onboardingDismissed;
 
+  // A plain line, not a coloured card: one accent check is the only celebration that stays on screen (the moment
+  // of completion already had its animation and haptic).
   const allDoneCard = (
-    <View style={[styles.allDoneCard, { backgroundColor: done.length ? colors.successSoft : colors.surfaceMuted }]}>
-      {done.length ? (
-        // The medal sits in the middle of a wide canvas; the negative margins let the confetti run into the padding.
-        <View style={styles.allDoneArt}><AllDoneArt size={ALL_DONE_ART} /></View>
-      ) : <Icon name="check-circle" size={20} color={colors.success} />}
+    <View style={styles.allDone}>
+      <Icon name="check-circle" size={20} color={done.length ? colors.accentText : colors.textMuted} />
       <View style={{ flex: 1 }}>
-        <Txt variant="bodyStrong" style={{ color: done.length ? colors.success : colors.text }}>
-          {done.length ? `오늘 예정된 ${done.length}개를 모두 마쳤습니다!` : '오늘 남은 할 일이 없습니다'}
+        <Txt variant="bodyStrong">
+          {done.length ? `오늘 예정된 ${done.length}개를 모두 마쳤습니다` : '오늘 남은 할 일이 없습니다'}
         </Txt>
-        {done.length ? <Txt variant="caption" tone="muted">수고하셨습니다. 남은 일정도 살펴볼까요?</Txt> : null}
+        {done.length ? <Txt variant="small" tone="muted">수고하셨습니다. 남은 일정도 살펴볼까요?</Txt> : null}
       </View>
-      <Pressable hitSlop={8} onPress={() => setPlanning(true)}>
-        <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>추천 보기</Txt>
+      <Pressable accessibilityRole="button" accessibilityLabel="추천 보기" hitSlop={8} onPress={() => setPlanning(true)}>
+        <Txt variant="smallStrong" tone="accent">추천 보기</Txt>
       </Pressable>
     </View>
   );
 
   return (
     <Screen>
-      <DayBackdrop variant={backdrop} height={insets.top + BACKDROP_HEIGHT} />
       <Header
         title="오늘" subtitle={`${date.month}월 ${date.day}일 (${weekdayName(date)}) · ${summary}`}
         right={(
@@ -250,7 +238,7 @@ export default function Today() {
                 haptic.tap();
                 setPlanning(true);
               }}
-              color={overdue.length > 0 ? colors.danger : colors.accent} />
+              color={colors.textMuted} />
             <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
             <IconButton
               name="more-vertical" label="보기 옵션"
@@ -258,11 +246,11 @@ export default function Today() {
                 haptic.tap();
                 setOptions('menu');
               }}
-              color={selectedIds ? colors.accent : colors.textMuted} />
+              color={selectedIds ? colors.accentText : colors.textMuted} />
           </View>
         )} />
       <UpdateBanner />
-      <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm, gap: 6 }}>
+      <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
         <Segmented<TodayView>
           value={view}
           onChange={(next) => {
@@ -274,16 +262,6 @@ export default function Today() {
             { value: 'timeline', label: '타임라인', icon: 'clock' },
             { value: 'matrix', label: '매트릭스', icon: 'grid' },
           ]} />
-        {totalToday > 0 && view === 'list' ? (
-          <View style={styles.progressLine}>
-            <View style={{ flex: 1 }}>
-              <ProgressBar value={progressRatio} color={progressRatio === 1 ? colors.success : colors.accent} height={5} />
-            </View>
-            <Txt variant="caption" tone={progressRatio === 1 ? 'success' : 'muted'} style={{ fontWeight: '700' }}>
-              {done.length}/{totalToday} ({Math.round(progressRatio * 100)}%)
-            </Txt>
-          </View>
-        ) : null}
       </View>
 
       {isLoading ? <Loading /> : view === 'timeline' ? (
@@ -306,8 +284,8 @@ export default function Today() {
             <View style={{ padding: space.lg, gap: space.md }}>
               <Card style={{ gap: space.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                  <View style={[styles.guideBadge, { backgroundColor: colors.accentSoft }]}>
-                    <Icon name="compass" size={18} color={colors.accent} />
+                  <View style={[styles.guideBadge, { backgroundColor: colors.surfaceMuted }]}>
+                    <Icon name="compass" size={18} color={colors.textMuted} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Txt variant="bodyStrong">Dayframe 시작 가이드</Txt>
@@ -358,7 +336,7 @@ export default function Today() {
                               setPlanning(true);
                             }}
                             style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-                            <Txt variant="smallStrong" tone="accent">나눠 잡기</Txt>
+                            <Txt variant="smallStrong">나눠 잡기</Txt>
                           </Pressable>
                         ) : null}
                         <Pressable
@@ -376,7 +354,7 @@ export default function Today() {
                 <>
                   <SectionTitle
                     title="오늘" count={due.length}
-                    action={sort !== 'schedule' ? <Txt variant="caption" tone="accent">{sortLabels[sort]}</Txt> : undefined} />
+                    action={sort !== 'schedule' ? <Txt variant="caption" tone="muted">{sortLabels[sort]}</Txt> : undefined} />
                   <TaskList
                     tasks={due} hideDate selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
                 </>
@@ -417,7 +395,7 @@ export default function Today() {
                 icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : 'flag'}
                 label={sortLabels[option]}
                 detail={option === 'smart' ? '긴급도 · 우선순위 · 진행률' : undefined}
-                trailing={sort === option ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+                trailing={sort === option ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
                 onPress={() => {
                   haptic.tap();
                   setSort(option);
@@ -479,11 +457,6 @@ export default function Today() {
 }
 
 const styles = StyleSheet.create({
-  progressLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   guideBadge: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  allDoneArt: { marginHorizontal: -14, marginVertical: -8 },
-  allDoneCard: {
-    flexDirection: 'row', alignItems: 'center', gap: space.md,
-    marginHorizontal: space.lg, marginTop: space.md, padding: space.md, borderRadius: radius.lg,
-  },
+  allDone: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.lg },
 });

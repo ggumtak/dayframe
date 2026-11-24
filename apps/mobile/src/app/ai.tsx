@@ -74,10 +74,10 @@ export default function AiConnections() {
         </Txt>
 
         {fresh ? (
-          <Card style={{ gap: space.md, borderColor: colors.accent }}>
+          <Card style={{ gap: space.md }}>
             <View style={{ gap: 2 }}>
               <Txt variant="bodyStrong">{fresh.label} 연결 주소</Txt>
-              <Txt variant="small" tone="danger">
+              <Txt variant="smallStrong">
                 이 주소는 지금 한 번만 보입니다. 주소를 아는 사람은 누구나 내 할 일을 읽고 고치고 지울 수 있으니 AI 설정 화면에만 붙여 넣어 주세요.
               </Txt>
             </View>
@@ -134,7 +134,7 @@ export default function AiConnections() {
               <Txt variant="bodyStrong">{guide.name}</Txt>
               {guide.steps.map((step, index) => (
                 <View key={step} style={{ flexDirection: 'row', gap: space.sm }}>
-                  <Txt variant="small" tone="accent">{index + 1}</Txt>
+                  <Txt variant="small" tone="faint">{index + 1}</Txt>
                   <Txt variant="small" tone="muted" style={{ flex: 1 }}>{step}</Txt>
                 </View>
               ))}

@@ -16,7 +16,8 @@ import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { deviceTimeZone, formatDurationMinutes, formatTime, instantFor, Temporal, today } from '@/lib/dates';
 import type { TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
-import { priorityColor, radius, space, useTheme } from '@/theme';
+import { priorityMark } from '@/features/tasks/priority';
+import { radius, space, useTheme } from '@/theme';
 
 const STEP = 30;
 
@@ -122,7 +123,7 @@ export default function Plan() {
         {plan.blocks.map((block) => {
           const on = !skipped.has(block.candidate.id);
           return (
-            <View key={block.candidate.id} style={[styles.block, { borderColor: colors.border, opacity: on ? 1 : 0.5 }]}>
+            <View key={block.candidate.id} style={[styles.block, { borderBottomColor: colors.border, opacity: on ? 1 : 0.5 }]}>
               <Toggle
                 on={on} label={`${block.candidate.title} 포함`}
                 onPress={() => setSkipped((current) => {
@@ -135,9 +136,11 @@ export default function Plan() {
                 <Txt variant="smallStrong">{formatTime(block.start)}</Txt>
                 <Txt variant="caption" tone="faint">{formatDurationMinutes(block.minutes)}</Txt>
               </View>
-              <View style={[styles.bar, { backgroundColor: priorityColor(colors, block.candidate.priority) }]} />
               <View style={{ flex: 1, gap: 2 }}>
-                <Txt variant="body" numberOfLines={2}>{block.candidate.title}</Txt>
+                <Txt variant="body" numberOfLines={2}>
+                  {block.candidate.priority < 4 ? <Txt style={styles.mark}>{priorityMark(block.candidate.priority) + ' '}</Txt> : null}
+                  {block.candidate.title}
+                </Txt>
                 {block.fixed ? <Txt variant="caption" tone="muted">이미 정한 시간</Txt>
                   : block.candidate.overdue ? <Txt variant="caption" tone="danger">지연</Txt> : null}
               </View>
@@ -179,8 +182,10 @@ export default function Plan() {
         <View style={{ gap: 6, marginTop: space.sm }}>
           {candidates.map((candidate) => (
             <View key={candidate.id} style={styles.candidate}>
-              <View style={[styles.dot, { backgroundColor: priorityColor(colors, candidate.priority) }]} />
-              <Txt variant="small" style={{ flex: 1 }} numberOfLines={1}>{candidate.title}</Txt>
+              <Txt variant="small" style={{ flex: 1 }} numberOfLines={1}>
+                {candidate.priority < 4 ? <Txt variant="small" style={styles.mark}>{priorityMark(candidate.priority) + ' '}</Txt> : null}
+                {candidate.title}
+              </Txt>
               <Txt variant="caption" tone={candidate.overdue ? 'danger' : 'faint'}>
                 {candidate.fixedMinutes !== null ? formatTime(candidate.fixedMinutes) : candidate.overdue ? '지연' : '오늘'}
               </Txt>
@@ -200,9 +205,8 @@ export default function Plan() {
 
 const styles = StyleSheet.create({
   stepper: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.md, paddingLeft: space.md, minHeight: 48 },
-  block: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.lg, borderWidth: 1 },
-  bar: { width: 3, alignSelf: 'stretch', borderRadius: 2 },
+  block: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, borderBottomWidth: StyleSheet.hairlineWidth },
+  mark: { fontWeight: '700' },
   left: { flexDirection: 'row', gap: space.sm, alignItems: 'flex-start', padding: space.md, borderRadius: radius.md },
   candidate: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 28 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
 });

@@ -100,7 +100,7 @@ export function ErrorDetail({ detail, align = 'center' }: { detail: string | nul
         <View style={[styles.detail, { backgroundColor: colors.surfaceMuted }]}>
           <Txt variant="caption" tone="muted" selectable style={{ flex: 1 }}>{detail}</Txt>
           <Pressable accessibilityRole="button" accessibilityLabel="자세한 내용 복사" hitSlop={8} onPress={() => void copy()} style={styles.detailCopy}>
-            <Icon name="copy" size={13} color={colors.accent} />
+            <Icon name="copy" size={13} color={colors.accentText} />
             <Txt variant="caption" tone="accent">복사</Txt>
           </Pressable>
         </View>
@@ -142,7 +142,7 @@ export function Toggle({ on, onPress, label }: { on: boolean; onPress: () => voi
   return (
     <Pressable
       accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label} hitSlop={8} onPress={onPress}
-      style={[styles.toggle, { borderColor: on ? colors.accent : colors.textFaint, backgroundColor: on ? colors.accent : 'transparent' }]}>
+      style={[styles.toggle, { borderColor: on ? colors.accent : colors.control, backgroundColor: on ? colors.accent : 'transparent' }]}>
       {on ? <Icon name="check" size={14} color={colors.onAccent} /> : null}
     </Pressable>
   );
@@ -152,8 +152,8 @@ export function Toggle({ on, onPress, label }: { on: boolean; onPress: () => voi
 export function NoteCard({ icon = 'message-circle', children }: { icon?: IconName; children: ReactNode }) {
   const { colors } = useTheme();
   return (
-    <View style={[styles.note, { backgroundColor: colors.accentSoft }]}>
-      <Icon name={icon} size={16} color={colors.accent} />
+    <View style={[styles.note, { backgroundColor: colors.surfaceMuted }]}>
+      <Icon name={icon} size={16} color={colors.textMuted} />
       <Txt variant="small" style={{ flex: 1 }}>{children}</Txt>
     </View>
   );

@@ -64,8 +64,8 @@ export function TemplatesSheet({
       key={tpl.id} accessibilityRole="button" accessibilityLabel={tpl.title + ' 템플릿 적용'}
       onPress={() => applyTemplate(tpl)}
       style={({ pressed }) => [styles.card, { borderColor: colors.border, backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.7 : 1 }]}>
-      <View style={[styles.iconBox, { backgroundColor: colors.accentSoft }]}>
-        <Icon name={tpl.icon} size={18} color={colors.accent} />
+      <View style={[styles.iconBox, { backgroundColor: colors.surface }]}>
+        <Icon name={tpl.icon} size={18} color={colors.textMuted} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Txt variant="bodyStrong" numberOfLines={1}>{tpl.title}</Txt>
@@ -82,7 +82,7 @@ export function TemplatesSheet({
           }}
           style={{ width: 32, height: 32 }} />
       ) : (
-        <Icon name="plus-circle" size={18} color={colors.accent} />
+        <Icon name="plus-circle" size={18} color={colors.textMuted} />
       )}
     </Pressable>
   );

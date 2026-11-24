@@ -5,7 +5,7 @@ import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, type 
 import Svg, { Circle } from 'react-native-svg';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Card, Chip, Header, Icon, IconButton, ProgressBar, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
+import { Button, Card, Chip, Header, Icon, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useDeleteFocus, useFocusActions, useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { bySchedule, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
@@ -22,7 +22,7 @@ import { haptic } from '@/lib/haptics';
 import type { FocusSession } from '@/lib/shared';
 import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
-import { priorityColor, radius, space, type, useTheme } from '@/theme';
+import { radius, space, type, useTheme } from '@/theme';
 
 const SIZE = 248;
 const STROKE = 10;
@@ -359,7 +359,8 @@ export default function Focus() {
     : onBreak ? Math.min(1, Math.max(0, 1 - breakRemaining / Math.max(1, rest!.seconds))) : 0;
   const r = (SIZE - STROKE) / 2;
   const circumference = 2 * Math.PI * r;
-  const ringColor = isPaused ? colors.warning : onBreak ? colors.success : colors.accent;
+  // One accent for the ring in every state; paused is the lighter step, and the label says which state it is.
+  const ringColor = isPaused ? colors.accentRamp[1] : colors.accent;
   const recent = (sessions ?? []).filter((session) => session.status !== 'running' && !isFalseStart(session)).slice(0, 5);
   const canConfigure = !running && !onBreak && prefs.mode !== 'stopwatch';
 
@@ -410,7 +411,7 @@ export default function Focus() {
                 strokeDasharray={`${circumference * ratio} ${circumference}`} transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`} />
             ) : null}
           </Svg>
-          <Txt variant="caption" tone={isPaused ? 'default' : 'muted'} style={[{ marginBottom: 4 }, isPaused && { color: colors.warning, fontWeight: '700' }]}>
+          <Txt variant="caption" tone={isPaused || onBreak ? 'default' : 'muted'} style={[{ marginBottom: 4 }, (isPaused || onBreak) && { fontWeight: '600' }]}>
             {isPaused ? '일시정지됨'
               : running ? (isRunningStopwatch ? '스톱워치 측정 중' : '집중 중')
                 : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중')
@@ -425,8 +426,8 @@ export default function Focus() {
             <Txt variant="small" tone="muted" numberOfLines={1} style={{ maxWidth: SIZE - 64, marginTop: 4 }}>{targetName}</Txt>
           ) : canConfigure ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
-              <Icon name="edit-2" size={11} color={colors.accent} />
-              <Txt variant="caption" tone="accent">눌러서 시간 설정</Txt>
+              <Icon name="edit-2" size={11} color={colors.textFaint} />
+              <Txt variant="caption" tone="muted">눌러서 시간 설정</Txt>
             </View>
           ) : null}
         </Pressable>
@@ -491,7 +492,7 @@ export default function Focus() {
             )}
 
             <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
-              <Chip icon="link" label={targetName ?? '할 일·습관 연결'} color={target ? colors.accent : undefined} onPress={() => setPicking(true)} style={{ maxWidth: 260 }} />
+              <Chip icon="link" label={targetName ?? '할 일·습관 연결'} tone={target ? 'set' : undefined} onPress={() => setPicking(true)} style={{ maxWidth: 260 }} />
               {target ? <Chip icon="x" label="해제" onPress={() => setTarget(null)} /> : null}
             </View>
             <View style={{ alignSelf: 'stretch', gap: space.sm }}>
@@ -507,7 +508,7 @@ export default function Focus() {
           <Card style={{ alignSelf: 'stretch', gap: space.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
               <Checkbox
-                checked={false} size={20} color={priorityColor(colors, linkedTask.priority)} tinted={linkedTask.priority < 4}
+                checked={false} size={20}
                 onPress={() => flow.complete(linkedTask)} label={linkedTask.title + ' 완료'} />
               <Pressable
                 onPress={() => router.push({ pathname: '/task/[id]', params: { id: linkedTask.id } })}
@@ -526,12 +527,11 @@ export default function Focus() {
             </View>
             {linkedTotalSubs > 0 ? (
               <>
-                <ProgressBar value={linkedDoneSubs.length / linkedTotalSubs} color={colors.success} height={4} />
                 <View style={{ gap: 2 }}>
                   {linkedOpenSubs.map((sub) => (
                     <View key={sub.id} style={styles.focusSubRow}>
                       <Checkbox
-                        checked={false} size={18} color={priorityColor(colors, sub.priority)}
+                        checked={false} size={18}
                         onPress={() => flow.complete(sub)} label={sub.title + ' 완료'} />
                       <Txt variant="small" numberOfLines={2} style={{ flex: 1 }}>{sub.title}</Txt>
                     </View>
@@ -539,7 +539,7 @@ export default function Focus() {
                   {linkedDoneSubs.map((sub) => (
                     <View key={sub.id} style={styles.focusSubRow}>
                       <Checkbox
-                        checked size={18} color={colors.success}
+                        checked done size={18}
                         onPress={() => flow.reopen(sub)} label={sub.title + ' 다시 열기'} />
                       <Text numberOfLines={1} style={[type.small as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
                         {sub.title}
@@ -556,7 +556,7 @@ export default function Focus() {
           <Card style={{ alignSelf: 'stretch', gap: space.md }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Txt variant="section" tone="muted">최근 7일 집중</Txt>
-              <Txt variant="smallStrong" tone="accent">
+              <Txt variant="smallStrong">
                 {formatMinutes(weekly.totalSeconds)} · {weekly.totalCount}회
               </Txt>
             </View>
@@ -565,7 +565,7 @@ export default function Focus() {
                 const height = bar.minutes > 0 ? Math.max(8, Math.round((bar.minutes / weekly.maxMinutes) * 64)) : 4;
                 return (
                   <View key={bar.date} style={styles.barCol}>
-                    <Txt variant="caption" tone={bar.isToday ? 'accent' : 'faint'} style={{ height: 14 }}>
+                    <Txt variant="caption" tone={bar.isToday ? 'default' : 'faint'} style={{ height: 14 }}>
                       {bar.minutes > 0 ? `${bar.minutes}m` : ''}
                     </Txt>
                     <View style={styles.barTrack}>
@@ -576,13 +576,11 @@ export default function Focus() {
                             height,
                             backgroundColor: bar.minutes === 0
                               ? colors.surfaceMuted
-                              : bar.isToday ? colors.accent : colors.accentSoft,
-                            borderColor: bar.minutes > 0 && !bar.isToday ? colors.accent : 'transparent',
-                            borderWidth: bar.minutes > 0 && !bar.isToday ? 1 : 0,
+                              : bar.isToday ? colors.accent : colors.accentRamp[1],
                           },
                         ]} />
                     </View>
-                    <Txt variant="caption" tone={bar.isToday ? 'accent' : 'muted'} style={{ fontWeight: bar.isToday ? '700' : '500' }}>
+                    <Txt variant="caption" tone={bar.isToday ? 'default' : 'muted'} style={{ fontWeight: bar.isToday ? '700' : '500' }}>
                       {bar.weekday}
                     </Txt>
                   </View>
@@ -606,7 +604,7 @@ export default function Focus() {
                   style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, opacity: pressed ? 0.6 : 1 })}>
                   <Icon
                     name={session.status === 'completed' ? 'check-circle' : 'x-circle'} size={18}
-                    color={session.status === 'completed' ? colors.success : colors.textFaint} />
+                    color={session.status === 'completed' ? colors.textMuted : colors.textFaint} />
                   <View style={{ flex: 1 }}>
                     <Txt numberOfLines={1}>{nameOf(session) ?? '자유 집중'}</Txt>
                     <Txt variant="small" tone="muted">

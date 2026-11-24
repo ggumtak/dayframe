@@ -232,16 +232,16 @@ export default function Search() {
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                   <Chip
                     icon="alert-circle" label={`지연됨${counts.overdue ? ' ' + counts.overdue : ''}`}
-                    color={counts.overdue ? colors.danger : undefined} onPress={() => setQuickFilter('overdue')} />
+                    tone={counts.overdue ? 'danger' : undefined} onPress={() => setQuickFilter('overdue')} />
                   <Chip
                     icon="sun" label={`오늘${counts.todayCount ? ' ' + counts.todayCount : ''}`}
-                    color={counts.todayCount ? colors.success : undefined} onPress={() => setQuickFilter('today')} />
+                    onPress={() => setQuickFilter('today')} />
                   <Chip
                     icon="calendar" label={`이번 주${counts.week ? ' ' + counts.week : ''}`}
                     onPress={() => setQuickFilter('week')} />
                   <Chip
-                    icon="flag" label={`가장 높음${counts.p1 ? ' ' + counts.p1 : ''}`}
-                    color={counts.p1 ? colors.danger : undefined} onPress={() => setQuickFilter('p1')} />
+                    label={`!!! 가장 높음${counts.p1 ? ' ' + counts.p1 : ''}`}
+                    onPress={() => setQuickFilter('p1')} />
                   <Chip
                     icon="repeat" label={`반복${counts.repeating ? ' ' + counts.repeating : ''}`}
                     onPress={() => setQuickFilter('repeating')} />
@@ -251,7 +251,7 @@ export default function Search() {
                   {counts.stale > 0 ? (
                     <Chip
                       icon="clock" label={`오래됨 ${counts.stale}`}
-                      color={colors.warning} onPress={() => setQuickFilter('stale')} />
+                      onPress={() => setQuickFilter('stale')} />
                   ) : null}
                   <Chip
                     icon="inbox" label={`날짜 없음${counts.unscheduled ? ' ' + counts.unscheduled : ''}`}
@@ -296,7 +296,7 @@ export default function Search() {
                           setManagingTag(tag);
                         }}
                         style={({ pressed }) => [styles.tagChip, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
-                        <Icon name="tag" size={13} color={colors.accent} />
+                        <Icon name="tag" size={13} color={colors.textFaint} />
                         <Txt variant="smallStrong">{tag.name}</Txt>
                       </Pressable>
                     ))}
@@ -307,7 +307,7 @@ export default function Search() {
               <Pressable
                 accessibilityRole="button" accessibilityLabel="완료한 일 보기" onPress={() => router.push('/completed')}
                 style={({ pressed }) => [styles.link, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
-                <Icon name="check-circle" size={18} color={colors.success} />
+                <Icon name="check-circle" size={18} color={colors.textMuted} />
                 <Txt style={{ flex: 1 }}>완료한 일 전체 보기</Txt>
                 <Icon name="chevron-right" size={18} color={colors.textFaint} />
               </Pressable>
@@ -331,7 +331,7 @@ export default function Search() {
                     return (
                       <View key={task.id} style={styles.completedRow}>
                         <Checkbox
-                          checked size={20} color={colors.success}
+                          checked done size={20}
                           onPress={() => {
                             haptic.tap();
                             taskActions.reopen(task);

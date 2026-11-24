@@ -98,7 +98,7 @@ export default function HabitDetail() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
             <IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />
             <Pressable accessibilityRole="button" accessibilityLabel="아이콘과 문구 바꾸기" onPress={openLook} hitSlop={4}>
-              <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={40} />
+              <HabitAvatar name={habit.name} emoji={look.emoji} size={40} />
             </Pressable>
           </View>
         )} />

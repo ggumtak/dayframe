@@ -31,8 +31,8 @@ export default function Settings() {
       <Header title="설정" left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl * 2 }}>
         <Card style={styles.account}>
-          <View style={[styles.avatar, { backgroundColor: colors.accentSoft }]}>
-            <Txt variant="heading" tone="accent">{email ? email[0].toUpperCase() : '?'}</Txt>
+          <View style={[styles.avatar, { backgroundColor: colors.surfaceMuted }]}>
+            <Txt variant="heading">{email ? email[0].toUpperCase() : '?'}</Txt>
           </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Txt variant="bodyStrong" numberOfLines={1} accessibilityLabel={`이메일 ${email}`}>{email}</Txt>

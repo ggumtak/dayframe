@@ -156,7 +156,7 @@ export const TaskRows = memo(function TaskRows({
       <View>
         <TaskRow
           task={task} hideDate={hideDate} projectName={projectId ? projectNames.get(projectId) : undefined}
-          projectColor={projMeta?.color} projectIcon={projMeta?.icon}
+          projectIcon={projMeta?.icon}
           tagNames={tagNames.get(task.id)} subtaskProgress={subProgress}
           subtasksExpanded={isExpanded} onToggleSubtasks={!nested && !selecting && hasAnySubtasks ? toggleSubtasks : undefined}
           selectable={selecting && !nested} selected={selecting ? selectedIds.has(task.id) : false}
@@ -177,7 +177,7 @@ export const TaskRows = memo(function TaskRows({
                   reopen(child);
                 }}
                 style={({ pressed }) => [styles.doneSubRow, { borderBottomColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
-                <Checkbox checked size={19} color={colors.success} onPress={() => reopen(child)} label={child.title + ' 완료 해제'} />
+                <Checkbox checked done size={19} onPress={() => reopen(child)} label={child.title + ' 완료 해제'} />
                 <Text numberOfLines={1} style={[type.small as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
                   {child.title}
                 </Text>

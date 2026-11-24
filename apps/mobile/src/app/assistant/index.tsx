@@ -7,7 +7,7 @@ import { useAiKeyStatus } from '@/features/ai/keyStore';
 import { AI_MODELS } from '@/features/ai/models';
 import { useAiPrefs } from '@/features/ai/prefs';
 import { AI_ROUTES } from '@/features/ai/routes';
-import { elevation, radius, space, useTheme } from '@/theme';
+import { radius, space, useTheme } from '@/theme';
 
 const FEATURES: { icon: IconName; name: string; description: string; route: string }[] = [
   { icon: 'edit-3', name: '메모 정리', description: '머릿속 메모를 바로 추가할 수 있는 할 일로 바꿉니다.', route: AI_ROUTES.organize },
@@ -16,6 +16,10 @@ const FEATURES: { icon: IconName; name: string; description: string; route: stri
   { icon: 'bar-chart-2', name: '주간 돌아보기', description: '지난 7일의 완료, 습관, 집중 기록을 돌아봅니다.', route: AI_ROUTES.review },
 ];
 
+/**
+ * One feature as a plain row (no card, no coloured icon tile): the name carries it. The key prompt, shown while no
+ * key is saved, is the one row with an accent mark, because it is the only thing to do first.
+ */
 function FeatureCard({ icon, name, description, onPress, highlight }: {
   icon: IconName; name: string; description: string; onPress: () => void; highlight?: boolean;
 }) {
@@ -24,13 +28,11 @@ function FeatureCard({ icon, name, description, onPress, highlight }: {
     <Pressable
       accessibilityRole="button" accessibilityLabel={name} accessibilityHint={description} onPress={onPress}
       style={({ pressed }) => [
-        styles.card,
-        { backgroundColor: highlight ? colors.accentSoft : colors.surface, borderColor: highlight ? colors.accentSoft : colors.border },
-        !highlight && elevation(colors), pressed && { opacity: 0.7 },
+        styles.row,
+        highlight ? { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, paddingHorizontal: space.md } : { borderBottomColor: colors.border },
+        !highlight && styles.divider, pressed && { opacity: 0.7 },
       ]}>
-      <View style={[styles.icon, { backgroundColor: highlight ? colors.accent : colors.accentSoft }]}>
-        <Icon name={icon} size={20} color={highlight ? colors.onAccent : colors.accent} />
-      </View>
+      <Icon name={icon} size={20} color={highlight ? colors.accentText : colors.textMuted} />
       <View style={{ flex: 1, gap: 2 }}>
         <Txt variant="bodyStrong">{name}</Txt>
         <Txt variant="small" tone="muted">{description}</Txt>
@@ -66,6 +68,6 @@ export default function AssistantHub() {
 }
 
 const styles = StyleSheet.create({
-  card: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg, borderRadius: radius.lg, borderWidth: 1 },
-  icon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth },
 });

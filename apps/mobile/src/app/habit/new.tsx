@@ -60,7 +60,7 @@ export default function NewHabit() {
             <Pressable
               accessibilityRole="button" accessibilityLabel="아이콘과 색 고르기" hitSlop={4} onPress={() => setPicking(true)}
               style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-              <HabitAvatar name={name || '습관'} emoji={look.emoji} color={look.color} size={52} />
+              <HabitAvatar name={name || '습관'} emoji={look.emoji} size={52} />
               <View style={{ position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="edit-2" size={10} color={colors.textMuted} />
               </View>

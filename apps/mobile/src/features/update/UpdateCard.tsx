@@ -31,7 +31,7 @@ export function UpdateCard() {
         </View>
         <Icon
           name={update.available ? 'download-cloud' : 'check-circle'} size={24}
-          color={update.available ? colors.accent : colors.success} />
+          color={colors.textMuted} />
       </View>
 
       {update.checkFailed && !update.isChecking ? (
@@ -46,7 +46,7 @@ export function UpdateCard() {
       ) : null}
 
       {update.required ? (
-        <Txt variant="small" style={{ color: colors.warning }}>이 버전은 더 이상 지원되지 않습니다. 계속 쓰려면 업데이트해 주세요.</Txt>
+        <Txt variant="smallStrong">이 버전은 더 이상 지원되지 않습니다. 계속 쓰려면 업데이트해 주세요.</Txt>
       ) : null}
 
       {phase.name === 'permission' ? (

@@ -8,7 +8,8 @@ import { BreakdownPanel } from '@/features/ai/Breakdown';
 import { AiScreen, KeyGate } from '@/features/ai/components';
 import { formatDue } from '@/lib/dates';
 import type { Task } from '@/lib/shared';
-import { priorityColor, radius, space, useTheme } from '@/theme';
+import { priorityMark } from '@/features/tasks/priority';
+import { space, useTheme } from '@/theme';
 
 function Picker({ tasks, subtasks }: { tasks: Task[]; subtasks: Map<string, Task[]> }) {
   const { colors } = useTheme();
@@ -25,10 +26,12 @@ function Picker({ tasks, subtasks }: { tasks: Task[]; subtasks: Map<string, Task
           <Pressable
             key={task.id} accessibilityRole="button" accessibilityLabel={`${task.title} 쪼개기`}
             onPress={() => router.setParams({ taskId: task.id })}
-            style={({ pressed }) => [styles.pick, { borderColor: colors.border, backgroundColor: colors.surface }, pressed && { opacity: 0.6 }]}>
-            <View style={[styles.dot, { backgroundColor: priorityColor(colors, task.priority) }]} />
+            style={({ pressed }) => [styles.pick, { borderBottomColor: colors.border }, pressed && { opacity: 0.6 }]}>
             <View style={{ flex: 1 }}>
-              <Txt variant="body" numberOfLines={2}>{task.title}</Txt>
+              <Txt variant="body" numberOfLines={2}>
+                {task.priority < 4 ? <Txt style={{ fontWeight: '700' }}>{priorityMark(task.priority) + ' '}</Txt> : null}
+                {task.title}
+              </Txt>
               {due || subs ? (
                 <Txt variant="caption" tone="muted">{[due, subs ? `하위 작업 ${subs}개` : null].filter(Boolean).join(' · ')}</Txt>
               ) : null}
@@ -61,6 +64,5 @@ export default function Breakdown() {
 }
 
 const styles = StyleSheet.create({
-  pick: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.lg, borderWidth: 1 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  pick: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, borderBottomWidth: StyleSheet.hairlineWidth },
 });

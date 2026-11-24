@@ -120,7 +120,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
         {names.map((name, idx) => (
           <Txt
             key={name} variant="caption"
-            style={[styles.cell, { color: idx === 6 ? colors.danger : idx === 5 ? colors.accent : colors.textFaint }]}>
+            style={[styles.cell, { color: colors.textFaint }]}>
             {name}
           </Txt>
         ))}
@@ -137,13 +137,15 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
                 const isToday = Temporal.PlainDate.compare(today, date) === 0;
                 const disabled = !onSelect || (!!min && Temporal.PlainDate.compare(date, min) < 0)
                   || (!!max && Temporal.PlainDate.compare(date, max) > 0);
-                const fill = isSelected ? colors.accent : mark === 'done' ? colors.success
-                  : mark === 'partial' ? colors.successSoft : mark === 'skipped' ? colors.surfaceMuted : 'transparent';
+                // Habit marks use the accent ramp (done, partial); today is a neutral ring and bold, not a colour.
+                const fill = isSelected ? colors.accent : mark === 'done' ? colors.accent
+                  : mark === 'partial' ? colors.accentRamp[1] : mark === 'skipped' ? colors.surfaceMuted : 'transparent';
                 const foreground = isSelected || mark === 'done' ? colors.onAccent
-                  : disabled && onSelect ? colors.textFaint : isToday ? colors.accent : colors.text;
+                  : disabled && onSelect ? colors.textFaint : colors.text;
                 const count = dotCounts ? (dotCounts.get(key) ?? 0) : (dots?.has(key) ? 1 : 0);
-                const dotNum = count >= 5 ? 3 : count >= 3 ? 2 : count >= 1 ? 1 : 0;
-                const dotColor = isSelected ? colors.accent : count >= 5 ? colors.danger : count >= 3 ? colors.warning : colors.textFaint;
+                // How busy a day is: one grey dot, two from three items. Neutral, so red still means only overdue.
+                const dotNum = count >= 3 ? 2 : count >= 1 ? 1 : 0;
+                const dotColor = colors.textMuted;
                 return (
                   <Pressable
                     key={column} disabled={disabled} accessibilityRole="button"
@@ -158,7 +160,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
                       onLongPress(date);
                     } : undefined}
                     style={styles.cell}>
-                    <View style={[styles.day, { backgroundColor: fill }, isToday && !isSelected && { borderWidth: 1.5, borderColor: colors.accent }]}>
+                    <View style={[styles.day, { backgroundColor: fill }, isToday && !isSelected && { borderWidth: 1.5, borderColor: colors.text }]}>
                       <Text style={[type.small as TextStyle, { color: foreground, fontWeight: isToday ? '700' : '400' }]}>{date.day}</Text>
                     </View>
                     {showDots ? (

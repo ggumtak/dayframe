@@ -12,7 +12,9 @@ import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import type { Priority, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
-import { elevation, priorityColor, radius, space, useTheme } from '@/theme';
+import { elevation, radius, space, useTheme } from '@/theme';
+
+import { priorityMark } from './priority';
 
 import { useTaskFlow } from './useTaskFlow';
 
@@ -24,7 +26,7 @@ function BatchButton({ icon, label, color, onPress }: { icon: IconName; label: s
     <Pressable
       accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
       style={({ pressed }) => [styles.btn, { opacity: pressed ? 0.6 : 1 }]}>
-      <Icon name={icon} size={18} color={color ?? colors.text} />
+      <Icon name={icon} size={18} color={color ?? colors.textMuted} />
       <Txt variant="caption" style={{ color: color ?? colors.text }}>{label}</Txt>
     </Pressable>
   );
@@ -121,7 +123,7 @@ export function BatchBar({
     <>
       <View style={[styles.wrap, { backgroundColor: colors.surface, borderColor: colors.border }, elevation(colors, 2)]}>
         <View style={styles.topRow}>
-          <Txt variant="smallStrong" tone="accent">{count}개 선택됨</Txt>
+          <Txt variant="smallStrong">{count}개 선택됨</Txt>
           <View style={{ flex: 1 }} />
           <Pressable hitSlop={8} onPress={onSelectAll}>
             <Txt variant="smallStrong" tone="muted">{count === totalCount ? '선택 해제' : '전체 선택'}</Txt>
@@ -131,7 +133,7 @@ export function BatchBar({
           </Pressable>
         </View>
         <View style={[styles.actions, { borderTopColor: colors.border, opacity: count ? 1 : 0.45 }]} pointerEvents={count ? 'auto' : 'none'}>
-          <BatchButton icon="check-circle" label="완료" color={colors.success} onPress={batchComplete} />
+          <BatchButton icon="check-circle" label="완료" onPress={batchComplete} />
           <BatchButton icon="calendar" label="일정" onPress={() => setSheet('schedule')} />
           <BatchButton icon="flag" label="우선순위" onPress={() => setSheet('priority')} />
           <BatchButton icon="folder" label="이동" onPress={() => setSheet('move')} />
@@ -155,7 +157,7 @@ export function BatchBar({
           <Row
             key={p} icon="flag"
             label={p === 1 ? '가장 높음' : p === 2 ? '높음' : p === 3 ? '보통' : '없음'}
-            trailing={<Icon name="chevron-right" size={16} color={priorityColor(colors, p)} />}
+            trailing={p < 4 ? <Txt style={{ fontWeight: '700' }}>{priorityMark(p)}</Txt> : undefined}
             onPress={() => batchPriority(p)} />
         ))}
       </Sheet>

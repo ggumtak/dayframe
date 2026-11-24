@@ -43,11 +43,11 @@ export function RemindersCard() {
         </View>
         <Switch
           accessibilityLabel="할 일 알림" value={settings.enabled} onValueChange={(enabled) => setReminderSettings({ enabled })}
-          trackColor={{ true: colors.accent, false: colors.border }} thumbColor="#FFFFFF" />
+          trackColor={{ true: colors.accent, false: colors.control }} thumbColor={colors.onAccent} />
       </View>
 
       {(settings.enabled || hasHabitAlerts) && permission !== 'granted' ? (
-        <View style={{ backgroundColor: colors.dangerSoft, borderRadius: radius.md, padding: space.md, gap: space.sm }}>
+        <View style={{ backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: space.md, gap: space.sm }}>
           <Txt variant="small" tone="danger">
             {permission === 'denied' ? '휴대폰 설정에서 Dayframe 알림이 꺼져 있어 알림이 울리지 않습니다.' : '알림을 허용해야 울립니다.'}
           </Txt>

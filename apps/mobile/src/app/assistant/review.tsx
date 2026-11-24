@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Button, Card, Icon, type IconName, Loading, Txt } from '@/components/ui';
+import { Button, Icon, type IconName, Loading, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabitDetails, useHabits } from '@/data/habits';
 import { nextPosition, useProjects, useTasks } from '@/data/tasks';
@@ -20,21 +20,23 @@ import { deviceTimeZone, formatMinutes, Temporal, today } from '@/lib/dates';
 import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
-function List({ icon, title, items, tone }: { icon: IconName; title: string; items: string[]; tone: string }) {
+/** One part of the review: a neutral heading (the words say good or missed, not a colour), then plain bullets. */
+function List({ icon, title, items }: { icon: IconName; title: string; items: string[] }) {
+  const { colors } = useTheme();
   if (!items.length) return null;
   return (
-    <Card style={{ gap: space.sm }}>
+    <View style={[styles.section, { borderTopColor: colors.border }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-        <Icon name={icon} size={16} color={tone} />
+        <Icon name={icon} size={16} color={colors.textMuted} />
         <Txt variant="section" accessibilityRole="header">{title}</Txt>
       </View>
       {items.map((item) => (
         <View key={item} style={{ flexDirection: 'row', gap: space.sm }}>
-          <View style={[styles.bullet, { backgroundColor: tone }]} />
+          <View style={[styles.bullet, { backgroundColor: colors.textFaint }]} />
           <Txt variant="body" style={{ flex: 1 }}>{item}</Txt>
         </View>
       ))}
-    </Card>
+    </View>
   );
 }
 
@@ -119,16 +121,14 @@ export default function Review() {
         <Txt variant="small" tone="muted">
           {dateLabel(shown.range.from)} ~ {dateLabel(shown.range.to)}{stale ? ' · 지난 돌아보기입니다' : ''}
         </Txt>
-        <View style={[styles.headline, { backgroundColor: colors.accentSoft }]}>
-          <Txt variant="heading">{review.headline}</Txt>
-        </View>
-        <List icon="award" title="잘한 점" items={review.wins} tone={colors.success} />
-        <List icon="alert-triangle" title="놓친 점" items={review.slipped} tone={colors.warning} />
-        <List icon="trending-up" title="보이는 흐름" items={review.patterns} tone={colors.accent} />
+        <Txt variant="heading" style={styles.headline}>{review.headline}</Txt>
+        <List icon="award" title="잘한 점" items={review.wins} />
+        <List icon="alert-triangle" title="놓친 점" items={review.slipped} />
+        <List icon="trending-up" title="보이는 흐름" items={review.patterns} />
         {review.suggestions.length ? (
-          <Card style={{ gap: space.md }}>
+          <View style={[styles.section, { borderTopColor: colors.border, gap: space.md }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-              <Icon name="compass" size={16} color={colors.accent} />
+              <Icon name="compass" size={16} color={colors.textMuted} />
               <Txt variant="section" accessibilityRole="header">다음 주 제안</Txt>
             </View>
             {review.suggestions.map((item) => (
@@ -142,7 +142,7 @@ export default function Review() {
                 ) : null}
               </View>
             ))}
-          </Card>
+          </View>
         ) : null}
         <UsageLine result={shown} />
       </>
@@ -187,7 +187,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  headline: { padding: space.lg, borderRadius: radius.lg },
+  headline: { paddingVertical: space.sm },
+  section: { gap: space.sm, paddingTop: space.lg, borderTopWidth: StyleSheet.hairlineWidth },
   bullet: { width: 6, height: 6, borderRadius: 3, marginTop: 8 },
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   stat: { flexGrow: 1, flexBasis: '45%', padding: space.md, borderRadius: radius.md, gap: 2 },

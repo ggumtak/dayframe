@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip, Icon, IconButton, type IconName, Txt } from '@/components/ui';
 import { useNewTaskDate } from '@/data/session';
 import { AI_ROUTES } from '@/features/ai/routes';
+import { priorityA11y, priorityLabel, priorityMark, priorityOption } from '@/features/tasks/priority';
 import { nextPosition, useProjects, useSections, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { describeRecurrence, deviceTimeZone, formatDue, formatDurationMinutes, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -16,7 +17,7 @@ import { josa } from '@/lib/josa';
 import { usePersistentState } from '@/lib/persist';
 import { analyzeTask, type Priority, type TaskAnalysis } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
-import { elevation, priorityColor, radius, space, type, useTheme } from '@/theme';
+import { elevation, radius, space, type, useTheme } from '@/theme';
 
 import { HighlightInput, type PillPalette } from './HighlightInput';
 import { parseErrorMessage } from './messages';
@@ -130,12 +131,9 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     return () => back.remove();
   }, [onClose]);
 
-  const palette: PillPalette = {
-    schedule: { background: colors.accentSoft, foreground: colors.accent },
-    project: { background: colors.accentSoft, foreground: colors.accent },
-    tag: { background: colors.accentSoft, foreground: colors.accent },
-    priority: { background: colors.warningSoft, foreground: colors.warning },
-  };
+  // Recognised words are marked one way, whatever they are: the chips below say what each one means.
+  const recognised = { background: colors.accentSoft, foreground: colors.accentText };
+  const palette: PillPalette = { schedule: recognised, project: recognised, tag: recognised, priority: recognised };
 
   const closeSheet = () => {
     Keyboard.dismiss();
@@ -360,7 +358,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
                 opacity: pressed ? 0.65 : 1,
               },
             ]}>
-            <Icon name="layers" size={12} color={keepOpen === 'on' ? colors.accent : colors.textMuted} />
+            <Icon name="layers" size={12} color={keepOpen === 'on' ? colors.accentText : colors.textMuted} />
             <Txt variant="caption" tone={keepOpen === 'on' ? 'accent' : 'muted'} style={{ fontWeight: '600' }}>연속</Txt>
           </Pressable>
           {parent ? null : (
@@ -394,7 +392,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
         ) : null}
         {plainText ? (
           <View style={[styles.plainHint, { backgroundColor: colors.surfaceMuted }]}>
-            <Icon name="type" size={13} color={colors.accent} />
+            <Icon name="type" size={13} color={colors.textMuted} />
             <Txt variant="caption" tone="muted" style={{ flex: 1 }}>원문 유지 켜짐 · 날짜나 태그를 읽지 않고 적은 그대로 저장합니다</Txt>
             <Pressable hitSlop={8} onPress={() => setPlainText(false)}>
               <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>해제</Txt>
@@ -402,8 +400,8 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
           </View>
         ) : null}
         {isMultiLine ? (
-          <View style={[styles.multiBox, { backgroundColor: colors.accentSoft }]}>
-            <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>
+          <View style={[styles.multiBox, { backgroundColor: colors.surfaceMuted }]}>
+            <Txt variant="caption" style={{ fontWeight: '700' }}>
               {multiLines.length}줄을 한 번에 추가할 수 있습니다
             </Txt>
             <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
@@ -425,9 +423,9 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
               <Pressable
                 key={name} accessibilityRole="button" accessibilityLabel={(mention.kind === 'project' ? '목록 ' : '태그 ') + name}
                 onPress={() => pickSuggestion(name)}
-                style={({ pressed }) => [styles.suggestion, { backgroundColor: colors.accentSoft, opacity: pressed ? 0.6 : 1 }]}>
-                <Icon name={mention.kind === 'project' ? 'hash' : 'tag'} size={12} color={colors.accent} />
-                <Txt variant="smallStrong" tone="accent">{name}</Txt>
+                style={({ pressed }) => [styles.suggestion, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 }]}>
+                <Icon name={mention.kind === 'project' ? 'hash' : 'tag'} size={12} color={colors.textMuted} />
+                <Txt variant="smallStrong">{name}</Txt>
               </Pressable>
             ))}
           </ScrollView>
@@ -436,17 +434,17 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
           <View style={{ flexDirection: 'row', gap: 6, marginTop: space.sm }}>
             {priorities.map((priority) => {
               const active = (draft?.priority ?? 4) === priority;
-              const tint = priorityColor(colors, priority);
               return (
                 <Pressable
-                  key={priority} accessibilityRole="button" accessibilityLabel={'우선순위 ' + priority}
+                  key={priority} accessibilityRole="button" accessibilityLabel={priorityA11y(priority)} accessibilityState={{ selected: active }}
                   onPress={() => pickPriority(priority)}
                   style={({ pressed }) => [styles.insert, {
-                    flex: 1, justifyContent: 'center', borderColor: active ? tint : colors.border,
-                    backgroundColor: active ? colors.surfaceMuted : 'transparent', opacity: pressed ? 0.6 : 1,
+                    flex: 1, justifyContent: 'center', borderColor: active ? colors.accent : colors.border,
+                    backgroundColor: active ? colors.accentSoft : 'transparent', opacity: pressed ? 0.6 : 1,
                   }]}>
-                  <Icon name="flag" size={13} color={tint} />
-                  <Txt variant="smallStrong" style={{ color: active ? colors.text : colors.textMuted }}>P{priority}</Txt>
+                  <Txt variant="smallStrong" numberOfLines={1} style={{ color: active ? colors.accentText : colors.textMuted }}>
+                    {priority < 4 ? priorityMark(priority) : priorityLabel(priority)}
+                  </Txt>
                 </Pressable>
               );
             })}
@@ -457,13 +455,13 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
             {due ? (
               <Animated.View entering={ZoomIn.duration(140)}>
                 <Chip
-                  icon="calendar" label={due + ' ×'} color={colors.schedule}
+                  icon="calendar" label={due + ' ×'} tone="set"
                   onPress={() => stripToken((token) => token.kind === 'date' || token.kind === 'time')} />
               </Animated.View>
             ) : defaultsToToday ? (
               <Chip
                 icon={undated ? 'slash' : 'calendar'} label={undated ? '날짜 없음' : '오늘 ×'}
-                color={undated ? undefined : colors.schedule}
+                tone={undated ? undefined : 'set'}
                 onPress={() => {
                   setUndated((current) => !current);
                   input.current?.focus();
@@ -471,32 +469,32 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
             ) : null}
             {durationLabel ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip icon="clock" label={durationLabel + ' ×'} color={colors.schedule} onPress={() => stripToken((token) => token.kind === 'duration')} />
+                <Chip icon="clock" label={durationLabel + ' ×'} tone="set" onPress={() => stripToken((token) => token.kind === 'duration')} />
               </Animated.View>
             ) : null}
             {repeat ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip icon="repeat" label={repeat + ' ×'} color={colors.schedule} onPress={() => stripToken((token) => token.kind === 'recurrence')} />
+                <Chip icon="repeat" label={repeat + ' ×'} tone="set" onPress={() => stripToken((token) => token.kind === 'recurrence')} />
               </Animated.View>
             ) : null}
             {draft?.project ? (
               <Animated.View entering={ZoomIn.duration(140)}>
                 <Chip
-                  icon="hash" label={draft.project + (isNewProject ? ' · 새 목록' : '') + ' ×'} color={colors.accent}
+                  icon="hash" label={draft.project + (isNewProject ? ' · 새 목록' : '') + ' ×'} tone="set"
                   onPress={() => stripToken((token) => token.kind === 'project')} />
               </Animated.View>
             ) : defaultProject ? <Chip icon="hash" label={defaultSection ? `${defaultProject} · ${defaultSection}` : defaultProject} /> : null}
             {draft?.tags.map((tag) => (
               <Animated.View key={tag} entering={ZoomIn.duration(140)}>
                 <Chip
-                  icon="tag" label={tag + ' ×'} color={colors.accent}
+                  label={'#' + tag + ' ×'} tone="set"
                   onPress={() => stripToken((token) => token.kind === 'tag' && token.text.replace(/^@"?|"?$/g, '').toLowerCase() === tag.toLowerCase())} />
               </Animated.View>
             ))}
             {draft && draft.priority < 4 ? (
               <Animated.View entering={ZoomIn.duration(140)}>
                 <Chip
-                  icon="flag" label={'P' + draft.priority + ' ×'} color={priorityColor(colors, draft.priority)}
+                  label={priorityOption(draft.priority) + ' ×'} tone="set"
                   onPress={() => stripToken((token) => token.kind === 'priority')} />
               </Animated.View>
             ) : null}
@@ -515,7 +513,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
                     borderColor: active ? colors.accent : colors.border,
                     backgroundColor: active ? colors.accentSoft : 'transparent', opacity: pressed ? 0.6 : 1,
                   }]}>
-                  <Icon name={item.icon} size={13} color={active ? colors.accent : colors.textMuted} />
+                  <Icon name={item.icon} size={13} color={active ? colors.accentText : colors.textFaint} />
                   <Txt variant="small" tone={active ? 'accent' : 'muted'}>{item.label}</Txt>
                 </Pressable>
               );
@@ -523,7 +521,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
           </ScrollView>
           {added > 0 ? (
             <Animated.View key={added} entering={ZoomIn.duration(160)} exiting={FadeOut.duration(400)}>
-              <Txt variant="small" tone="success">{added}개 추가됨</Txt>
+              <Txt variant="small" tone="muted">{added}개 추가됨</Txt>
             </Animated.View>
           ) : null}
           <Pressable
@@ -558,6 +556,9 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
   const showButton = segments[0] === '(tabs)' && !fabHidden;
   // On the habits tab the button makes a habit, as in TickTick; everywhere else it adds a task.
   const onHabits = showButton && segments[1] === 'habits';
+  // 집중 has its own filled button (집중 시작); one filled button per screen, so there the add button steps back to a
+  // neutral one. It still adds a task, exactly as elsewhere.
+  const quiet = showButton && segments[1] === 'focus';
 
   return (
     <QuickAddContext.Provider value={value}>
@@ -573,8 +574,11 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
               if (onHabits) router.push('/habit/new');
               else value.open();
             }}
-            style={({ pressed }) => [styles.fab, { backgroundColor: colors.accent, transform: [{ scale: pressed ? 0.94 : 1 }] }, elevation(colors, 2)]}>
-            <Icon name="plus" size={26} color={colors.onAccent} />
+            style={({ pressed }) => [
+              styles.fab, { backgroundColor: quiet ? colors.surface : colors.accent, transform: [{ scale: pressed ? 0.94 : 1 }] },
+              quiet && { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, elevation(colors, 2),
+            ]}>
+            <Icon name="plus" size={26} color={quiet ? colors.textMuted : colors.onAccent} />
           </Pressable>
         </Animated.View>
       ) : null}
