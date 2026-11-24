@@ -1,12 +1,12 @@
 import { router } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, RefreshControl, type ScrollViewInstance, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, type ScrollViewInstance, Share, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { Button, Card, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
-import { byPriority, bySchedule, useDoneToday, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
+import { byPriority, bySchedule, useDoneToday, useProjects, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
 import { TodayHabits } from '@/features/habits/TodayHabits';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
@@ -16,11 +16,13 @@ import { dismissOnboarding, STARTER_CHECKLIST, useOnboardingDismissed } from '@/
 import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
 import { TaskList } from '@/features/tasks/TaskList';
 import { Timeline } from '@/features/tasks/Timeline';
+import { OverdueStrip, TodayGroups } from '@/features/tasks/TodayGroups';
+import { buildShareText, createTodayReuser, deriveToday } from '@/features/tasks/todayList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { UpdateBanner } from '@/features/update/UpdateBanner';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, dueBucket, formatTime, instantFor, today, weekdayName } from '@/lib/dates';
+import { deviceTimeZone, formatTime, instantFor, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { usePersistentState } from '@/lib/persist';
 import type { Task, TaskPatch } from '@/lib/shared';
@@ -38,8 +40,12 @@ const sortLabels: Record<TodaySort, string> = {
   priority: '우선순위순',
 };
 
+type TodayGrouping = 'project' | 'none';
+type OptionsSheet = null | 'menu' | 'sort';
+
 const isTodayView = (value: string): value is TodayView => value === 'list' || value === 'timeline' || value === 'matrix';
 const isTodaySort = (value: string): value is TodaySort => value in sortLabels;
+const isTodayGrouping = (value: string): value is TodayGrouping => value === 'project' || value === 'none';
 
 export default function Today() {
   const { colors } = useTheme();
@@ -54,36 +60,41 @@ export default function Today() {
 
   const [view, setView] = usePersistentState<TodayView>('dayframe-today-view', 'list', isTodayView);
   const [sort, setSort] = usePersistentState<TodaySort>('dayframe-today-sort', 'schedule', isTodaySort);
-  const [pickingSort, setPickingSort] = useState(false);
+  const [grouping, setGrouping] = usePersistentState<TodayGrouping>('dayframe-today-group', 'project', isTodayGrouping);
+  const [options, setOptions] = useState<OptionsSheet>(null);
   const [planning, setPlanning] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const scrollRef = useRef<ScrollViewInstance>(null);
   useTabScrollTop('index', scrollRef);
+  const { data: projects } = useProjects();
 
-  useMinute();
+  // Re-renders this screen once a minute (and on return to the foreground) so the day rolls over.
+  const minute = useMinute();
   const timeZone = deviceTimeZone();
   const date = today(timeZone);
   useScreenDefaults({ dueToday: true });
 
-  const sortList = useCallback((list: Task[]) => {
-    const copy = [...list];
-    if (sort === 'smart') return copy.sort((a, b) => bySmartRank(a, b, { subtaskProgress }));
-    if (sort === 'priority') return copy.sort(byPriority);
-    return copy.sort(bySchedule);
-  }, [sort, subtaskProgress]);
+  // Only the smart order depends on the clock; the other two stay the same function all day.
+  const smartNowMs = sort === 'smart' ? minute * 60_000 : 0;
+  const compare = useMemo(() => {
+    if (sort === 'priority') return byPriority;
+    if (sort === 'schedule') return bySchedule;
+    const context = { subtaskProgress, nowMs: smartNowMs };
+    return (a: Task, b: Task) => bySmartRank(a, b, context);
+  }, [sort, subtaskProgress, smartNowMs]);
+  const projectIds = useMemo(() => (projects ?? []).map((project) => project.id), [projects]);
 
-  // Deduplicate subtasks whose parent is already shown in the Today/Overdue list.
-  const visibleDueIds = new Set(
-    tasks.filter((task) => ['overdue', 'today'].includes(dueBucket(task))).map((task) => task.id),
-  );
-  const overdue = sortList(
-    tasks.filter((task) => dueBucket(task) === 'overdue' && (!task.parent_task_id || !visibleDueIds.has(task.parent_task_id))),
-  );
-  const due = sortList(
-    tasks.filter((task) => dueBucket(task) === 'today' && (!task.parent_task_id || !visibleDueIds.has(task.parent_task_id))),
+  // Overdue / today / per-list groups, worked out once per input change (each task's bucket once). The
+  // minute tick re-derives so midnight rolls over, but the reuser hands back the previous lists when
+  // nothing moved, so memoised lists and rows see identical props and do not re-render.
+  const [reuseToday] = useState(createTodayReuser);
+  const { overdue, due, groups } = useMemo(
+    () => reuseToday(deriveToday(tasks, compare, projectIds, minute * 60_000)),
+    [reuseToday, tasks, compare, projectIds, minute],
   );
   const allVisibleToday = useMemo(() => [...overdue, ...due], [overdue, due]);
+  const grouped = grouping === 'project';
 
   const remaining = overdue.length + due.length;
   const totalToday = remaining + done.length;
@@ -122,6 +133,27 @@ export default function Today() {
     flow.rescheduleOverdue();
     showToast(`지연된 ${overdue.length}개를 오늘로 옮겼습니다.`);
   };
+
+  const openPlanning = () => {
+    haptic.tap();
+    setPlanning(true);
+  };
+
+  const shareToday = () => {
+    const names = new Map((projects ?? []).map((project) => [project.id, project.name]));
+    const message = buildShareText({
+      date, overdue, due,
+      doneTitles: done.map(({ completion }) => completion.task.title),
+      projectName: (id) => names.get(id),
+    });
+    if (!message) {
+      showToast('공유할 할 일이 없습니다.');
+      return;
+    }
+    Share.share({ message }).catch(() => showToast('공유하지 못했습니다.'));
+  };
+
+  const closeOptions = () => setOptions(null);
 
   const addAt = (minutes: number) => {
     const clock = String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
@@ -174,6 +206,21 @@ export default function Today() {
 
   const showOnboarding = !isLoading && !isError && tasks.length === 0 && done.length === 0 && !onboardingDismissed;
 
+  const allDoneCard = (
+    <View style={[styles.allDoneCard, { backgroundColor: done.length ? colors.successSoft : colors.surfaceMuted }]}>
+      <Icon name={done.length ? 'award' : 'check-circle'} size={20} color={colors.success} />
+      <View style={{ flex: 1 }}>
+        <Txt variant="bodyStrong" style={{ color: done.length ? colors.success : colors.text }}>
+          {done.length ? `오늘 예정된 ${done.length}개를 모두 마쳤습니다!` : '오늘 남은 할 일이 없습니다'}
+        </Txt>
+        {done.length ? <Txt variant="caption" tone="muted">수고하셨습니다. 남은 일정도 살펴볼까요?</Txt> : null}
+      </View>
+      <Pressable hitSlop={8} onPress={() => setPlanning(true)}>
+        <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>추천 보기</Txt>
+      </Pressable>
+    </View>
+  );
+
   return (
     <Screen>
       <Header
@@ -187,22 +234,14 @@ export default function Today() {
                 setPlanning(true);
               }}
               color={overdue.length > 0 ? colors.danger : colors.accent} />
-            {view === 'list' && allVisibleToday.length > 1 ? (
-              <IconButton
-                name="check-square" label="여러 개 선택"
-                onPress={() => {
-                  haptic.tap();
-                  setSelectedIds((prev) => (prev ? null : new Set()));
-                }}
-                color={selectedIds ? colors.accent : colors.textMuted} />
-            ) : null}
-            {view === 'list' ? (
-              <IconButton
-                name="sliders" label="정렬" onPress={() => setPickingSort(true)}
-                color={sort !== 'schedule' ? colors.accent : colors.textMuted} />
-            ) : null}
             <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
-            <IconButton name="settings" label="설정" onPress={() => router.push('/settings')} color={colors.textMuted} />
+            <IconButton
+              name="more-vertical" label="보기 옵션"
+              onPress={() => {
+                haptic.tap();
+                setOptions('menu');
+              }}
+              color={selectedIds ? colors.accent : colors.textMuted} />
           </View>
         )} />
       <UpdateBanner />
@@ -273,6 +312,19 @@ export default function Today() {
               icon="sun" title="오늘 할 일이 없습니다"
               message="아래 + 버튼으로 추가하거나 하루 계획에서 남은 일을 가져올 수 있습니다."
               action={<Button label="오늘 할 일 추천 보기" kind="secondary" icon="compass" onPress={() => setPlanning(true)} />} />
+          ) : grouped ? (
+            <>
+              {overdue.length ? (
+                <OverdueStrip count={overdue.length} onSpread={overdue.length >= 2 ? openPlanning : undefined} onMoveToday={moveOverdue} />
+              ) : null}
+              {groups.length ? (
+                <TodayGroups groups={groups} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+              ) : (
+                allDoneCard
+              )}
+              {!selectedIds ? <TodayHabits /> : null}
+              {!selectedIds ? <DoneToday items={done} /> : null}
+            </>
           ) : (
             <>
               {overdue.length ? (
@@ -314,18 +366,7 @@ export default function Today() {
               ) : overdue.length ? (
                 <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 일은 없습니다.</Txt>
               ) : (
-                <View style={[styles.allDoneCard, { backgroundColor: done.length ? colors.successSoft : colors.surfaceMuted }]}>
-                  <Icon name={done.length ? 'award' : 'check-circle'} size={20} color={colors.success} />
-                  <View style={{ flex: 1 }}>
-                    <Txt variant="bodyStrong" style={{ color: done.length ? colors.success : colors.text }}>
-                      {done.length ? `오늘 예정된 ${done.length}개를 모두 마쳤습니다!` : '오늘 남은 할 일이 없습니다'}
-                    </Txt>
-                    {done.length ? <Txt variant="caption" tone="muted">수고하셨습니다. 남은 일정도 살펴볼까요?</Txt> : null}
-                  </View>
-                  <Pressable hitSlop={8} onPress={() => setPlanning(true)}>
-                    <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>추천 보기</Txt>
-                  </Pressable>
-                </View>
+                allDoneCard
               )}
               {!selectedIds ? <TodayHabits /> : null}
               {!selectedIds ? <DoneToday items={done} /> : null}
@@ -349,21 +390,67 @@ export default function Today() {
         visible={planning} onClose={() => setPlanning(false)}
         overdue={overdue} allOpen={tasks} openRoots={roots} subtaskProgress={subtaskProgress} />
 
-      <Sheet visible={pickingSort} onClose={() => setPickingSort(false)} title="오늘 정렬 기준">
-        {(['schedule', 'smart', 'priority'] as TodaySort[]).map((option) => (
-          <Row
-            key={option}
-            icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : 'flag'}
-            label={sortLabels[option]}
-            detail={option === 'smart' ? '긴급도 · 우선순위 · 진행률 반영' : undefined}
-            trailing={sort === option ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
-            onPress={() => {
-              haptic.tap();
-              setSort(option);
-              setPickingSort(false);
-            }} />
-        ))}
-      </Sheet>
+      {/* Mounted only while open: a hidden Sheet still runs its gesture and animation hooks on every render. */}
+      {options ? (
+        <Sheet visible onClose={closeOptions} title={options === 'sort' ? '오늘 정렬 기준' : '보기 옵션'}>
+          {options === 'sort' ? (
+            (['schedule', 'smart', 'priority'] as TodaySort[]).map((option) => (
+              <Row
+                key={option}
+                icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : 'flag'}
+                label={sortLabels[option]}
+                detail={option === 'smart' ? '긴급도 · 우선순위 · 진행률 반영' : undefined}
+                trailing={sort === option ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+                onPress={() => {
+                  haptic.tap();
+                  setSort(option);
+                  closeOptions();
+                }} />
+            ))
+          ) : (
+            <>
+              {view === 'list' ? (
+                <>
+                  <Row
+                    icon="sliders" label="정렬" detail={sortLabels[sort]}
+                    trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
+                    onPress={() => {
+                      haptic.tap();
+                      setOptions('sort');
+                    }} />
+                  <Row
+                    icon="layers" label="묶기" detail={grouped ? '목록별' : '묶지 않기'}
+                    onPress={() => {
+                      haptic.tap();
+                      setGrouping(grouped ? 'none' : 'project');
+                    }} />
+                  {selectedIds || allVisibleToday.length > 1 ? (
+                    <Row
+                      icon="check-square" label={selectedIds ? '선택 끝내기' : '여러 개 선택'}
+                      onPress={() => {
+                        haptic.tap();
+                        closeOptions();
+                        setSelectedIds((prev) => (prev ? null : new Set()));
+                      }} />
+                  ) : null}
+                </>
+              ) : null}
+              <Row
+                icon="share-2" label="오늘 목록 공유"
+                onPress={() => {
+                  closeOptions();
+                  shareToday();
+                }} />
+              <Row
+                icon="settings" label="설정"
+                onPress={() => {
+                  closeOptions();
+                  router.push('/settings');
+                }} />
+            </>
+          )}
+        </Sheet>
+      ) : null}
     </Screen>
   );
 }

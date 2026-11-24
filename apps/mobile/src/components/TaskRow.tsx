@@ -38,6 +38,8 @@ export interface TaskRowProps {
   /** The list handles long presses itself (drag or menu), so releasing one must not count as a tap. */
   holdHandled?: boolean;
   swipeEnabled?: boolean;
+  /** The row sits on a card, so its resting background is `colors.surface` instead of the page's. */
+  onSurface?: boolean;
 }
 
 function SwipeAction({ icon, label, color, onPress }: { icon: 'clock' | 'trash-2'; label: string; color: string; onPress: () => void }) {
@@ -52,7 +54,7 @@ function SwipeAction({ icon, label, color, onPress }: { icon: 'clock' | 'trash-2
 export const TaskRow = memo(function TaskRow({
   task, projectName, projectColor, projectIcon, tagNames, subtaskProgress, subtasksExpanded, onToggleSubtasks, hideDate,
   selectable, selected, onToggleSelect,
-  onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true,
+  onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true, onSurface,
 }: TaskRowProps) {
   const { colors } = useTheme();
   const swipe = useRef<SwipeableMethods>(null);
@@ -118,7 +120,7 @@ export const TaskRow = memo(function TaskRow({
       delayLongPress={350}
       style={({ pressed }) => [
         styles.row,
-        { backgroundColor: selected ? colors.accentSoft : pressed ? colors.surfaceMuted : colors.background },
+        { backgroundColor: selected ? colors.accentSoft : pressed ? colors.surfaceMuted : onSurface ? colors.surface : colors.background },
       ]}>
       <View style={styles.check}>
         {selectable ? (
