@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { compareVersions, fromGithubRelease, isNewer, isRequired, isTrustedApkUrl, parseVersion, readableNotes, versionCodeOf } from './version.ts';
+import {
+  APK_CACHE_MAX_AGE_MS, compareVersions, fromGithubRelease, isNewer, isRequired, isStaleApk, isTrustedApkUrl, parseVersion,
+  readableNotes, updateDateLabel, versionCodeOf,
+} from './version.ts';
 
 test('versions parse and compare numerically', () => {
   assert.deepEqual(parseVersion('v1.2.3'), [1, 2, 3]);
@@ -76,4 +79,30 @@ test('release notes lose GitHub scaffolding and keep what was written', () => {
   assert.equal(readableNotes(generated), '• Sign in automatically');
   assert.equal(readableNotes('- 시간 인식 개선\n- **뽀모도로** 추가\n'), '• 시간 인식 개선\n• 뽀모도로 추가');
   assert.equal(readableNotes(''), '');
+});
+
+test('the running over-the-air update is labelled with its local date', () => {
+  const now = new Date(2026, 10, 24, 9, 0);
+  assert.equal(updateDateLabel(new Date(2026, 10, 24, 3, 0), now), '11월 24일 업데이트');
+  assert.equal(updateDateLabel(new Date(2025, 11, 31, 23, 0), now), '2025년 12월 31일 업데이트');
+  assert.equal(updateDateLabel(null, now), null);
+  assert.equal(updateDateLabel(new Date(Number.NaN), now), null);
+});
+
+test('a cached APK is deleted once installed, unreadable or abandoned, and kept while it may be installing', () => {
+  const now = Date.UTC(2026, 10, 24);
+  const fresh = now - 60_000;
+  // Installed (same build) or older than the installed build.
+  assert.equal(isStaleApk({ versionCode: 10900, modifiedAt: fresh }, 10900, now), true);
+  assert.equal(isStaleApk({ versionCode: 10800, modifiedAt: fresh }, 10900, now), true);
+  // Not a readable package.
+  assert.equal(isStaleApk({ versionCode: null, modifiedAt: fresh }, 10900, now), true);
+  // Newer and recent: the system installer may still be reading it.
+  assert.equal(isStaleApk({ versionCode: 11000, modifiedAt: fresh }, 10900, now), false);
+  // Newer but left for over a day: "update now" downloads afresh anyway.
+  assert.equal(isStaleApk({ versionCode: 11000, modifiedAt: now - APK_CACHE_MAX_AGE_MS - 1 }, 10900, now), true);
+  // A build that cannot inspect APKs decides by age alone.
+  assert.equal(isStaleApk({ versionCode: undefined, modifiedAt: fresh }, 10900, now), false);
+  assert.equal(isStaleApk({ versionCode: undefined, modifiedAt: now - APK_CACHE_MAX_AGE_MS - 1 }, 10900, now), true);
+  assert.equal(isStaleApk({ versionCode: 11000, modifiedAt: undefined }, null, now), false);
 });

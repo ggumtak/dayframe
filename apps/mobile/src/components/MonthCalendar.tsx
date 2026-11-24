@@ -68,7 +68,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
   const showDots = !!(dots || dotCounts);
 
   return (
-    <View>
+    <View style={styles.root}>
       <View style={styles.nav}>
         <IconButton name="chevron-left" label="이전 달" onPress={() => setMonth(month.subtract({ months: 1 }))} />
         <Pressable
@@ -181,7 +181,11 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
   );
 }
 
+/** Widest a day column grows: on a tablet the month stays a compact grid instead of spreading 36 dp dots apart. */
+const CELL_MAX = 76;
+
 const styles = StyleSheet.create({
+  root: { width: '100%', maxWidth: CELL_MAX * 7, alignSelf: 'center' },
   nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.xs },
   week: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', justifyContent: 'center', textAlign: 'center', paddingVertical: 3 },

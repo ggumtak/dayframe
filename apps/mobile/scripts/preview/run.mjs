@@ -111,6 +111,29 @@ async function runStep(page, step) {
     const target = (await byLabel.count()) ? byLabel.first() : visible(page.getByPlaceholder(label));
     return target.fill(value, { timeout: 5000 });
   }
+  if (step.drag) {
+    // Horizontal drag from the first visible match (text or accessibility label), e.g. a task row's swipe actions.
+    // The finger stays down unless `release` is set, so the shot shows the row mid-swipe.
+    const { text, label, dx, dy = 0, steps = 12, release = false } = step.drag;
+    const target = label !== undefined ? page.locator(`[aria-label="${label.replaceAll('"', '\\"')}"]`) : page.getByText(text);
+    const box = await visible(target).boundingBox({ timeout: 5000 });
+    if (!box) throw new Error('drag target has no box');
+    const width = page.viewportSize()?.width ?? VIEWPORT.width;
+    const x = Math.min(Math.max(box.x + box.width / 2, 40), width - 40);
+    const y = box.y + box.height / 2;
+    // A touch drag (CDP), as on a phone: a mouse release would also count as a tap on the row on web.
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, px, py) => cdp.send('Input.dispatchTouchEvent', {
+      type, touchPoints: type === 'touchEnd' ? [] : [{ x: px, y: py, id: 1, radiusX: 4, radiusY: 4, force: 1 }],
+    });
+    await touch('touchStart', x, y);
+    for (let i = 1; i <= steps; i += 1) {
+      await touch('touchMove', x + (dx * i) / steps, y + (dy * i) / steps);
+      await sleep(16);
+    }
+    if (release) await touch('touchEnd');
+    return;
+  }
   if (step.wait !== undefined) return sleep(step.wait);
   if (step.scroll !== undefined) {
     const scrolled = await page.evaluate((px) => {
@@ -137,7 +160,7 @@ async function takeShot(browser, baseUrl, shot, options) {
   const log = { consoleErrors: [], pageErrors: [], aborted: [], unknownRoutes: [], mockErrors: [], anthropic: [] };
   api.reset();
   const context = await browser.newContext({
-    viewport: shot.viewport ?? VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul',
+    viewport: shot.viewport ?? VIEWPORT, deviceScaleFactor: shot.deviceScaleFactor ?? 2, isMobile: true, hasTouch: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul',
     colorScheme: dark ? 'dark' : 'light',
   });
   try {
@@ -224,11 +247,13 @@ async function takeShot(browser, baseUrl, shot, options) {
     await settle(page, inflight);
     for (const [index, step] of (shot.steps ?? []).entries()) {
       try {
-        await runStep(page, step);
+        // `{ snap: 'a' }` saves `<name>-a.png` mid-shot; a step with `noSettle` is followed at once by the next.
+        if (step.snap !== undefined) await page.screenshot({ path: join(outDir, `${shot.name}-${step.snap}.png`) });
+        else await runStep(page, step);
       } catch (error) {
         throw new Error(`step ${index + 1} ${JSON.stringify(step)}: ${String(error.message ?? error).split('\n')[0]}`);
       }
-      await settle(page, inflight);
+      if (!step.noSettle && step.snap === undefined) await settle(page, inflight);
     }
 
     const file = join(outDir, shot.name + '.png');

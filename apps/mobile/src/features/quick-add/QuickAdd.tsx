@@ -1,7 +1,8 @@
 import { router, useSegments } from 'expo-router';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BackHandler, Keyboard, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, type TextInputInstance, View,
+  BackHandler, Keyboard, KeyboardAvoidingView, Pressable, ScrollView, type StyleProp, StyleSheet, TextInput, type TextInputInstance, View,
+  type ViewStyle,
 } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +15,7 @@ import { nextPosition, useProjects, useSections, useTags, useTaskActions, useTas
 import { describeRecurrence, deviceTimeZone, formatDue, formatDurationMinutes, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
+import { useLayout } from '@/lib/layoutContext';
 import { usePersistentState } from '@/lib/persist';
 import { analyzeTask, type Priority, type TaskAnalysis } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -70,7 +72,12 @@ const inserts: {
 ];
 const priorities: Priority[] = [1, 2, 3, 4];
 
-function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onClose: () => void }) {
+function QuickAddSheet({ defaults, frame, onClose }: {
+  defaults: QuickAddDefaults;
+  /** On a tablet, where the bar sits: under the centred column, or under Today's list pane. */
+  frame: StyleProp<ViewStyle>;
+  onClose: () => void;
+}) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const input = useRef<TextInputInstance>(null);
@@ -333,7 +340,10 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
       <View style={{ flex: 1 }} pointerEvents="none" />
       <Animated.View
         entering={FadeInDown.duration(180)}
-        style={[styles.bar, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, space.md) }, elevation(colors, 2)]}>
+        style={[
+          styles.bar, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, space.md) }, elevation(colors, 2),
+          frame,
+        ]}>
         <View style={styles.topRow}>
           <Txt variant="caption" tone="muted" numberOfLines={1} style={{ flex: 1 }}>
             {parent
@@ -539,6 +549,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
 export function QuickAddProvider({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { column, twoPane } = useLayout();
   const segments: string[] = useSegments();
   const [active, setActive] = useState<QuickAddDefaults | null>(null);
   const [fabHidden, setFabHidden] = useState(false);
@@ -559,6 +570,15 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
   // 집중 has its own filled button (집중 시작); one filled button per screen, so there the add button steps back to a
   // neutral one. It still adds a task, exactly as elsewhere.
   const quiet = showButton && segments[1] === 'focus';
+  // The button floats at the right edge of the centred column; on a landscape tablet's Today, of the list pane.
+  const onToday = segments[0] === '(tabs)' && (segments[1] === undefined || segments[1] === 'index');
+  const paneFrame = twoPane && onToday ? twoPane : null;
+  const fabRight = space.lg + (paneFrame ? paneFrame.inset + paneFrame.sideWidth : column.inset);
+  // The entry bar is as wide as what it adds to, and under it.
+  const barFrame = useMemo<StyleProp<ViewStyle>>(() => (
+    paneFrame ? { width: paneFrame.listWidth, marginLeft: paneFrame.inset, alignSelf: 'flex-start' }
+      : column.maxWidth === undefined ? null : { width: column.maxWidth, maxWidth: '100%', alignSelf: 'center' }
+  ), [paneFrame, column.maxWidth]);
 
   return (
     <QuickAddContext.Provider value={value}>
@@ -566,7 +586,7 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
       {showButton && !active ? (
         <Animated.View
           entering={ZoomIn.duration(160)} pointerEvents="box-none"
-          style={[styles.fabWrap, { bottom: insets.bottom + TAB_BAR_HEIGHT + space.lg }]}>
+          style={[styles.fabWrap, { bottom: insets.bottom + TAB_BAR_HEIGHT + space.lg, right: fabRight }]}>
           <Pressable
             accessibilityRole="button" accessibilityLabel={onHabits ? '습관 추가' : '할 일 빠른 추가'}
             onPress={() => {
@@ -582,7 +602,7 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
           </Pressable>
         </Animated.View>
       ) : null}
-      {active ? <QuickAddSheet defaults={active} onClose={close} /> : null}
+      {active ? <QuickAddSheet defaults={active} frame={barFrame} onClose={close} /> : null}
     </QuickAddContext.Provider>
   );
 }
@@ -617,6 +637,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.sm, paddingHorizontal: 10, height: 30,
   },
   send: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  fabWrap: { position: 'absolute', right: space.lg },
+  fabWrap: { position: 'absolute' },
   fab: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
 });

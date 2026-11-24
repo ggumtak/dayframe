@@ -4,10 +4,11 @@ import type {
   AppVersion, FocusSession, Habit, HabitLog, HabitStats, McpConnection, NewMcpConnection, Page, Project, RescheduleResult,
   Section, Tag, Task, TaskCompletion, TaskTag, User,
 } from "../../../packages/shared/types.ts";
-import { ApiProblem, onlyResult, queryInteger, readJson, requireChanges, Supabase, validate } from "./http.ts";
+import { ApiProblem, onlyResult, queryInteger, readJson, requireChanges, Supabase, type SupabaseConfig, validate } from "./http.ts";
 import { connectionUrl, hashToken, newToken } from "./mcp.ts";
 import { parseTask } from "./parser.ts";
 import { movedOccurrenceSlot, nextOccurrence, occurrenceFloor } from "./schedule.ts";
+import { type ManifestReply, manifestReply, readManifestRequest, type StoredUpdate } from "./updates.ts";
 import * as schema from "./validation.ts";
 
 type Resource = "projects" | "sections" | "tags" | "tasks" | "subtasks" | "habits" | "focus_sessions";
@@ -176,6 +177,21 @@ export async function version(db: Supabase): Promise<RouteResult> {
     releaseNotes: item.release_notes, apkDownloadUrl: item.apk_download_url, iosStoreOrTestFlightUrl: item.ios_store_or_test_flight_url,
   };
   return { data, cache: true };
+}
+
+/**
+ * Expo Updates manifest for the caller's platform and runtime. Anonymous like app/version; app_updates is
+ * readable only by the service role, so the lookup uses it and selects nothing but the served columns.
+ */
+export async function updateManifest(request: Request, params: URLSearchParams, config: SupabaseConfig): Promise<ManifestReply> {
+  const wanted = readManifestRequest(request.headers, params);
+  if (!config.serviceKey) throw new ApiProblem(503, "SERVICE_UNAVAILABLE", "Updates are not configured");
+  const service = new Supabase({ ...config, key: config.serviceKey }, config.serviceKey);
+  const rows = await service.rest<StoredUpdate[]>("app_updates", {
+    select: "id,manifest,signature", platform: "eq." + wanted.platform, runtime_version: "eq." + wanted.runtimeVersion,
+    order: "created_at.desc,id.desc", limit: "1",
+  });
+  return manifestReply(wanted, rows[0] ?? null, "dayframe-" + crypto.randomUUID());
 }
 
 const connectionColumns = "id,label,created_at,last_used_at";

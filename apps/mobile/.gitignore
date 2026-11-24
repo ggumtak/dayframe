@@ -29,6 +29,8 @@ yarn-error.*
 # macOS
 .DS_Store
 *.pem
+# ...except the public code signing certificate for over-the-air updates (scripts/updates/README.md)
+!/certs/certificate.pem
 
 # local env files
 .env*.local

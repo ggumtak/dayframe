@@ -10,7 +10,7 @@ import { elevation, radius, space, type, useTheme } from '@/theme';
 const DURATION = 4200;
 
 /** Renders the newest toast above the tab bar. A replaced or expired toast runs its `onDismiss`. */
-export function ToastHost({ bottomOffset = 0, rightInset = 0 }: { bottomOffset?: number; rightInset?: number }) {
+export function ToastHost({ bottomOffset = 0, rightInset = 0, leftInset = 0 }: { bottomOffset?: number; rightInset?: number; leftInset?: number }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const [toast, setToast] = useState<Toast | null>(null);
@@ -44,7 +44,7 @@ export function ToastHost({ bottomOffset = 0, rightInset = 0 }: { bottomOffset?:
   const background = isDark ? colors.surfaceMuted : colors.text;
   const foreground = isDark ? colors.text : colors.background;
   return (
-    <View pointerEvents="box-none" style={[styles.wrap, { bottom: insets.bottom + bottomOffset + space.lg, right: space.lg + rightInset }]}>
+    <View pointerEvents="box-none" style={[styles.wrap, { bottom: insets.bottom + bottomOffset + space.lg, left: space.lg + leftInset, right: space.lg + rightInset }]}>
       <Animated.View
         key={toast.id} entering={FadeInDown.duration(180)} exiting={FadeOutDown.duration(160)}
         accessibilityLiveRegion="polite" accessibilityRole="alert"

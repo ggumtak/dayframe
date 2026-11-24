@@ -2938,6 +2938,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /updates/manifest:
+    get:
+      operationId: getUpdateManifest
+      summary: Get the newest over-the-air update for an app build
+      tags:
+        - Releases
+      security: []
+      description: Expo Updates protocol version 1, as requested by the expo-updates client. Serves the newest published
+        update for the platform and runtime version, or 204 when there is none or the client already runs it.
+      parameters:
+        - name: expo-platform
+          in: header
+          required: true
+          schema:
+            type: string
+          description: android or ios. The query parameter platform also works.
+        - name: expo-runtime-version
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The build's native fingerprint. The query parameter runtime-version also works.
+        - name: expo-protocol-version
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Must be 1 when sent.
+        - name: expo-current-update-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: The running update; a match answers 204.
+        - name: expo-expect-signature
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Sent by builds with a code signing certificate; unsigned updates then answer 409.
+      responses:
+        "200":
+          description: A multipart/mixed body with one manifest part, signed in its expo-signature header when the update is
+            signed.
+          content:
+            multipart/mixed:
+              schema:
+                type: string
+        "204":
+          description: No update for this platform and runtime.
+        "400":
+          description: Missing or invalid protocol headers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The client requires signed updates and the newest one is unsigned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Upstream service temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   securitySchemes:
     SupabaseJwt:

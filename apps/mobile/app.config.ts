@@ -1,14 +1,36 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { ExpoConfig } from 'expo/config';
+
+import release from './release.config.json';
 
 // The release workflow injects these from the git tag (v1.2.3 -> 1.2.3 / 10203).
 const version = process.env.APP_VERSION ?? '1.0.0';
 const versionCode = Number(process.env.ANDROID_VERSION_CODE ?? 1);
 
+// Over-the-air updates, served by the project's own Supabase (scripts/updates/README.md). The runtime version is
+// the native fingerprint, so any change that needs a new APK yields a new runtime and the server never offers it
+// an update built for another. Committing certs/certificate.pem switches on code signing; until then updates are
+// accepted unsigned, still only over HTTPS from the project's Supabase.
+const updatesUrl = release.supabaseUrl.trim().replace(/\/+$/, '') + '/functions/v1/api/v1/updates/manifest';
+const signingCertificate = 'certs/certificate.pem';
+function codeSigning(): Pick<NonNullable<ExpoConfig['updates']>, 'codeSigningCertificate' | 'codeSigningMetadata'> {
+  const file = join(__dirname, signingCertificate);
+  if (!existsSync(file)) return {};
+  const body = /-----BEGIN CERTIFICATE-----([\s\S]+?)-----END/.exec(readFileSync(file, 'utf8'))?.[1];
+  if (!body) throw new Error(signingCertificate + ' is not a PEM certificate');
+  // Derived from the certificate, so replacing it also changes the fingerprint; publish.mjs signs with this key id.
+  const keyid = 'dayframe-' + createHash('sha256').update(Buffer.from(body.replace(/\s+/g, ''), 'base64')).digest('hex').slice(0, 12);
+  return { codeSigningCertificate: './' + signingCertificate, codeSigningMetadata: { keyid, alg: 'rsa-v1_5-sha256' } };
+}
+
 const config: ExpoConfig = {
   name: 'Dayframe',
   slug: 'dayframe',
   version,
-  orientation: 'portrait',
+  orientation: 'default',
   icon: './assets/images/icon.png',
   scheme: 'dayframe',
   userInterfaceStyle: 'automatic',
@@ -35,15 +57,36 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
   },
   web: { output: 'single', favicon: './assets/images/favicon.png' },
+  runtimeVersion: { policy: 'fingerprint' },
+  // Checks on every cold start without waiting; a downloaded update applies on the next cold start.
+  updates: { url: updatesUrl, enabled: true, checkAutomatically: 'ON_LOAD', fallbackToCacheTimeout: 0, ...codeSigning() },
   plugins: [
     'expo-router',
+    ['expo-build-properties', {
+      android: {
+        // Native libraries are stored compressed in the APK (about a third of their size) and unpacked once at
+        // install, which makes the download and the in-app update much smaller. They load the same way after.
+        useLegacyPackaging: true,
+        // The app shows no GIF or WebP through React Native's <Image> (widget previews and launcher icons are
+        // Android drawables, decoded by the system), so Fresco's GIF and WebP decoders are left out.
+        gifEnabled: false,
+        webpEnabled: false,
+        // Phonetic-matching tables of commons-codec (pulled in by expo-file-system). R8 already removes the
+        // encoder that reads them, so the 128 files (about 0.1 MB) would only sit unused in the APK.
+        packagingOptions: { exclude: ['/org/apache/commons/codec/language/bm/**'] },
+      },
+    }],
     ['expo-splash-screen', {
       backgroundColor: '#FFFFFF',
       image: './assets/images/splash-icon.png',
       imageWidth: 96,
-      dark: { backgroundColor: '#15171A', image: './assets/images/splash-icon.png' },
+      // No dark image: the logo is the same, and Android falls back to the light drawables at night
+      // instead of shipping a second copy at every density.
+      dark: { backgroundColor: '#15171A' },
     }],
-    'expo-localization',
+    // The UI is Korean only, so the APK keeps only Korean translations of library strings (AndroidX, Material,
+    // React Native) next to the default (English) ones: about 0.7 MB less resources.arsc than all 85 languages.
+    ['expo-localization', { supportedLocales: { android: ['ko'] } }],
     ['expo-font', {
       android: {
         fonts: [{
@@ -58,34 +101,35 @@ const config: ExpoConfig = {
         }],
       },
     }],
-    ['expo-notifications', { color: '#2B66E0' }],
+    // The status-bar icon is drawn from the PNG's alpha: a white mark on transparency (scripts/notification-icon.mjs).
+    ['expo-notifications', { icon: './assets/images/notification-icon.png', color: '#2B66E0' }],
     // Keeps the AI 비서 key (Android Keystore) out of Android Auto Backup, where it could not be decrypted anyway.
     'expo-secure-store',
     // previewImage is what the home screen's widget picker shows; redraw with scripts/widget-previews.mjs.
     ['react-native-android-widget', {
       widgets: [{
-        name: 'Today', previewImage: './assets/widgets/today.png', label: '오늘 할 일', description: '오늘 할 일과 지연된 할 일을 보고 바로 완료합니다.',
+        name: 'Today', previewImage: './assets/widgets/today.webp', label: '오늘 할 일', description: '오늘 할 일과 지연된 할 일을 보고 바로 완료합니다.',
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         // The app redraws the widget whenever tasks change; this only catches the day rolling over.
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Upcoming', previewImage: './assets/widgets/upcoming.png', label: '예정', description: '앞으로 7일의 할 일을 날짜별로 봅니다.',
+        name: 'Upcoming', previewImage: './assets/widgets/upcoming.webp', label: '예정', description: '앞으로 7일의 할 일을 날짜별로 봅니다.',
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Calendar', previewImage: './assets/widgets/calendar.png', label: '달력', description: '일정이 있는 날을 이번 달 달력에 표시합니다. 날짜를 누르면 그날을 엽니다.',
+        name: 'Calendar', previewImage: './assets/widgets/calendar.webp', label: '달력', description: '일정이 있는 날을 이번 달 달력에 표시합니다. 날짜를 누르면 그날을 엽니다.',
         minWidth: '250dp', minHeight: '250dp', targetCellWidth: 4, targetCellHeight: 4, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Habits', previewImage: './assets/widgets/habits.png', label: '습관', description: '오늘의 습관을 보고 누르면 바로 기록합니다.',
+        name: 'Habits', previewImage: './assets/widgets/habits.webp', label: '습관', description: '오늘의 습관을 보고 누르면 바로 기록합니다.',
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Focus', previewImage: './assets/widgets/focus.png', label: '집중', description: '25분·50분 뽀모도로를 홈 화면에서 시작합니다.',
+        name: 'Focus', previewImage: './assets/widgets/focus.webp', label: '집중', description: '25분·50분 뽀모도로를 홈 화면에서 시작합니다.',
         minWidth: '110dp', minHeight: '110dp', targetCellWidth: 2, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'QuickAdd', previewImage: './assets/widgets/quickadd.png', label: '빠른 추가', description: '눌러서 바로 할 일을 추가합니다.',
+        name: 'QuickAdd', previewImage: './assets/widgets/quickadd.webp', label: '빠른 추가', description: '눌러서 바로 할 일을 추가합니다.',
         minWidth: '180dp', minHeight: '40dp', targetCellWidth: 4, targetCellHeight: 1, resizeMode: 'horizontal',
       }],
     }],

@@ -42,8 +42,10 @@ function palette(colors: Colors): Palette {
  * A year at a glance: twelve small Monday-first months whose days are tinted by how many open tasks fall on them.
  * `counts` holds tasks per "YYYY-MM-DD" (repeats included); tapping a month hands it to `onPickMonth`.
  */
-export function YearCalendar({ year, today, counts, onYearChange, onPickMonth }: {
+export function YearCalendar({ year, today, counts, columns = 3, onYearChange, onPickMonth }: {
   year: number;
+  /** Months per row: 3 on a phone, more where the column is wider. */
+  columns?: number;
   today: PlainDate;
   counts: Map<string, number>;
   onYearChange: (year: number) => void;
@@ -53,6 +55,8 @@ export function YearCalendar({ year, today, counts, onYearChange, onPickMonth }:
   const months = useMemo(() => summarizeYear(counts, year), [counts, year]);
   const colours = useMemo(() => palette(colors), [colors]);
   const summary = useMemo(() => yearSummaryText(months), [months]);
+  // Three columns keep the phone's exact 31 %; more share the row with the same ~3 % gaps.
+  const monthWidth = useMemo(() => ({ width: columns === 3 ? '31%' : `${(100 - (columns - 1) * 3) / columns}%` } as const), [columns]);
 
   return (
     <View>
@@ -81,7 +85,7 @@ export function YearCalendar({ year, today, counts, onYearChange, onPickMonth }:
             todayDay={today.year === year && today.month === entry.month ? today.day : 0}
             current={today.year === year && today.month === entry.month}
             dimmed={year < today.year || (year === today.year && entry.month < today.month)}
-            colours={colours} onPick={onPickMonth} />
+            colours={colours} width={monthWidth} onPick={onPickMonth} />
         ))}
       </View>
       <View style={styles.legend} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
@@ -96,9 +100,9 @@ export function YearCalendar({ year, today, counts, onYearChange, onPickMonth }:
 }
 
 /** One mini month. Props are plain values (levels as a digit string), so memo skips months whose days did not change. */
-const MonthBlock = memo(function MonthBlock({ year, month, levels, total, todayDay, current, dimmed, colours, onPick }: {
+const MonthBlock = memo(function MonthBlock({ year, month, levels, total, todayDay, current, dimmed, colours, width, onPick }: {
   year: number; month: number; levels: string; total: number; todayDay: number; current: boolean; dimmed: boolean;
-  colours: Palette; onPick: (year: number, month: number) => void;
+  colours: Palette; width: ViewStyle; onPick: (year: number, month: number) => void;
 }) {
   const press = useCallback(() => {
     haptic.tap();
@@ -134,7 +138,7 @@ const MonthBlock = memo(function MonthBlock({ year, month, levels, total, todayD
       accessibilityRole="button"
       accessibilityLabel={`${year}년 ${month}월, ${total ? '할 일 ' + total + '개' : '할 일 없음'}, 눌러서 달력으로 보기`}
       onPress={press}
-      style={({ pressed }) => [styles.month, { opacity: pressed ? 0.6 : dimmed ? 0.55 : 1 }]}>
+      style={({ pressed }) => [width, { opacity: pressed ? 0.6 : dimmed ? 0.55 : 1 }]}>
       <Text maxFontSizeMultiplier={1.3} style={[styles.monthTitle, { color: current ? colours.titleCurrent : colours.title }]}>{month}월</Text>
       <View style={styles.row}>
         {names.map((name, idx) => (
@@ -152,7 +156,6 @@ const styles = StyleSheet.create({
   nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   summary: { textAlign: 'center', marginBottom: space.md },
   grid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: space.lg, justifyContent: 'space-between' },
-  month: { width: '31%' },
   monthTitle: { fontFamily, fontSize: 13, lineHeight: 18, fontWeight: '700', marginBottom: 2, paddingLeft: 2 },
   row: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: CELL, aspectRatio: 1 },

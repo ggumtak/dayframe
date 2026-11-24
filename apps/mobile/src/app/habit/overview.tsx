@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { memo, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { EmptyHabits } from '@/components/art';
 import { Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Screen, Segmented, Txt } from '@/components/ui';
@@ -8,6 +8,8 @@ import { useHabitDetails, useHabits } from '@/data/habits';
 import { type DayState, dayState, earliestStart, logsByDate, monthCells, outsideHabit, weekDates } from '@/features/habits/goal';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, type PlainDate, Temporal, today, weekdayName, weekStart } from '@/lib/dates';
+import { gridColumns } from '@/lib/layout';
+import { useLayout } from '@/lib/layoutContext';
 import type { Habit, HabitLog } from '@/lib/shared';
 import { type Colors, radius, space, useTheme } from '@/theme';
 
@@ -70,9 +72,9 @@ const WeekRow = memo(function WeekRow({ habit, logs, days, todayKey }: {
   );
 });
 
-/** One habit's month as a small grid, for the two-column monthly view. */
-const MiniMonth = memo(function MiniMonth({ habit, logs, cells, todayKey }: {
-  habit: Habit; logs: HabitLog[]; cells: (PlainDate | null)[]; todayKey: string;
+/** One habit's month as a small grid, for the monthly view (two columns on a phone, three or four on a tablet). */
+const MiniMonth = memo(function MiniMonth({ habit, logs, cells, todayKey, width }: {
+  habit: Habit; logs: HabitLog[]; cells: (PlainDate | null)[]; todayKey: string; width: ViewStyle;
 }) {
   const { colors } = useTheme();
   const byDate = useMemo(() => logsByDate(logs), [logs]);
@@ -101,7 +103,7 @@ const MiniMonth = memo(function MiniMonth({ habit, logs, cells, todayKey }: {
     <Pressable
       accessibilityRole="button" accessibilityLabel={`${habit.name}, 이달 ${met}일 달성, 자세히 보기`}
       onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
-      style={({ pressed }) => [styles.miniWrap, pressed && { opacity: 0.7 }]}>
+      style={({ pressed }) => [width, pressed && { opacity: 0.7 }]}>
       <Card style={styles.miniCard}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Txt variant="smallStrong" numberOfLines={1} style={{ flex: 1 }}>{habit.name}</Txt>
@@ -142,6 +144,11 @@ export default function HabitOverview() {
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
   const details = useHabitDetails(habits);
   const [mode, setMode] = useState<Mode>('week');
+  const { column, landscape } = useLayout();
+  // Two months a row on a phone (48.5 % each, as before); three in a tablet's column, four in landscape, where the
+  // screen is short and a denser grid keeps more habits in view.
+  const columns = column.maxWidth === undefined ? 2 : gridColumns(column.width - 2 * space.lg, landscape ? 150 : 200, 3, 4, space.sm);
+  const miniWidth = useMemo(() => ({ width: `${(100 - (columns - 1) * 3) / columns}%` } as const), [columns]);
 
   const todayKey = today(deviceTimeZone()).toString();
   const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
@@ -207,7 +214,12 @@ export default function HabitOverview() {
           <View style={styles.grid}>
             {habits.map((habit) => (
               <MiniMonth
-                key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} cells={cells} todayKey={todayKey} />
+                key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} cells={cells} todayKey={todayKey}
+                width={miniWidth} />
+            ))}
+            {/* Fills the last row, so its cards keep their columns instead of spreading apart. */}
+            {Array.from({ length: (columns - (habits.length % columns)) % columns }, (_, index) => (
+              <View key={'spacer' + index} style={miniWidth} />
             ))}
           </View>
           <Legend />
@@ -246,7 +258,6 @@ const styles = StyleSheet.create({
   weekHead: { flex: 1, maxWidth: 30, textAlign: 'center', fontSize: 10, lineHeight: 13 },
   miniHead: { flexDirection: 'row' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: space.sm },
-  miniWrap: { width: '48.5%' },
   miniCard: { padding: space.sm, gap: 6, borderRadius: radius.md },
   miniDay: { width: '14.28%', textAlign: 'center', fontSize: 9, lineHeight: 12 },
   miniGrid: { flexDirection: 'row', flexWrap: 'wrap' },

@@ -27,6 +27,8 @@ import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, formatTime, instantFor, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
+import { PANE_FRAME_MAX } from '@/lib/layout';
+import { useLayout } from '@/lib/layoutContext';
 import { usePersistentState } from '@/lib/persist';
 import type { Task, TaskPatch } from '@/lib/shared';
 import { bySmartRank } from '@/lib/smart';
@@ -63,6 +65,10 @@ export default function Today() {
   const quickAdd = useQuickAdd();
 
   const [view, setView] = usePersistentState<TodayView>('dayframe-today-view', 'list', isTodayView);
+  // A landscape tablet shows the timeline beside the list for good, so the main pane is the list or the matrix; the
+  // saved view is left alone and comes back in portrait.
+  const { twoPane } = useLayout();
+  const mainView: TodayView = twoPane && view === 'timeline' ? 'list' : view;
   const [sort, setSort] = usePersistentState<TodaySort>('dayframe-today-sort', 'schedule', isTodaySort);
   const [grouping, setGrouping] = usePersistentState<TodayGrouping>('dayframe-today-group', 'project', isTodayGrouping);
   const [options, setOptions] = useState<OptionsSheet>(null);
@@ -226,8 +232,16 @@ export default function Today() {
     </View>
   );
 
+  const timeline = (
+    <Timeline
+      // Beside the list, the list's own overdue line already says it: the timeline does not repeat it in red.
+      tasks={due} sessions={sessions ?? []} timeZone={timeZone} overdueCount={twoPane ? 0 : overdue.length}
+      onComplete={flow.complete} onAddAt={addAt} onRescheduleTime={rescheduleOnTimeline}
+      onPlanOverdue={() => setPlanning(true)} />
+  );
+
   return (
-    <Screen>
+    <Screen maxWidth={twoPane ? PANE_FRAME_MAX : undefined}>
       <Header
         title="오늘" subtitle={`${date.month}월 ${date.day}일 (${weekdayName(date)}) · ${summary}`}
         right={(
@@ -250,136 +264,144 @@ export default function Today() {
           </View>
         )} />
       <UpdateBanner />
-      <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
-        <Segmented<TodayView>
-          value={view}
-          onChange={(next) => {
-            setSelectedIds(null);
-            setView(next);
-          }}
-          options={[
-            { value: 'list', label: '목록', icon: 'list' },
-            { value: 'timeline', label: '타임라인', icon: 'clock' },
-            { value: 'matrix', label: '매트릭스', icon: 'grid' },
-          ]} />
-      </View>
+      {/* One structure in every size, so a rotation re-lays the panes out without remounting the list. */}
+      <View style={twoPane ? styles.panes : styles.single}>
+        <View style={twoPane ? { width: twoPane.listWidth } : styles.single}>
+          <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
+            <Segmented<TodayView>
+              value={mainView}
+              onChange={(next) => {
+                setSelectedIds(null);
+                setView(next);
+              }}
+              options={twoPane ? [
+                { value: 'list', label: '목록', icon: 'list' },
+                { value: 'matrix', label: '매트릭스', icon: 'grid' },
+              ] : [
+                { value: 'list', label: '목록', icon: 'list' },
+                { value: 'timeline', label: '타임라인', icon: 'clock' },
+                { value: 'matrix', label: '매트릭스', icon: 'grid' },
+              ]} />
+          </View>
 
-      {isLoading ? <Loading /> : view === 'timeline' ? (
-        <Timeline
-          tasks={due} sessions={sessions ?? []} timeZone={timeZone} overdueCount={overdue.length}
-          onComplete={flow.complete} onAddAt={addAt} onRescheduleTime={rescheduleOnTimeline}
-          onPlanOverdue={() => setPlanning(true)} />
-      ) : view === 'matrix' ? (
-        <EisenhowerView roots={roots} subtaskProgress={subtaskProgress} refreshing={refreshing} onRefresh={refresh} />
-      ) : (
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={{ paddingBottom: selectedIds ? 180 : 140, flexGrow: 1 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
-          {isError && tasks.length === 0 ? (
-            <EmptyState
-              icon="cloud-off" art={<OfflineArt size={EMPTY_ART} />} title="불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
-              action={<Button label="다시 시도" kind="secondary" onPress={refresh} />} />
-          ) : showOnboarding ? (
-            <View style={{ padding: space.lg, gap: space.md }}>
-              <Card style={{ gap: space.md }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                  <View style={[styles.guideBadge, { backgroundColor: colors.surfaceMuted }]}>
-                    <Icon name="compass" size={18} color={colors.textMuted} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Txt variant="bodyStrong">Dayframe 시작 가이드</Txt>
-                    <Txt variant="caption" tone="muted">체크리스트 · 타임라인 · 습관 · 집중을 한곳에서</Txt>
-                  </View>
-                </View>
-                <Txt variant="small" tone="muted">
-                  직접 따라 해 볼 수 있는 4단계 체험 체크리스트를 오늘 할 일에 넣어 드릴까요?
-                </Txt>
-                <View style={{ flexDirection: 'row', gap: space.sm }}>
-                  <Button label="체험 체크리스트 넣기" icon="check-square" onPress={createStarterChecklist} style={{ flex: 1, minHeight: 42 }} />
-                  <Button label="건너뛰기" kind="secondary" onPress={dismissOnboarding} style={{ minHeight: 42 }} />
-                </View>
-              </Card>
-              {hasHabits ? <TodayHabits /> : null}
-            </View>
-          ) : remaining === 0 && done.length === 0 && !hasHabits ? (
-            <EmptyState
-              icon="sun" art={<EmptyToday size={EMPTY_ART} />} title="오늘 할 일이 없습니다"
-              message="아래 + 버튼으로 추가하거나 하루 계획에서 남은 일을 가져올 수 있습니다."
-              action={<Button label="오늘 할 일 추천 보기" kind="secondary" icon="compass" onPress={() => setPlanning(true)} />} />
-          ) : grouped ? (
-            <>
-              {overdue.length ? (
-                <OverdueStrip count={overdue.length} onSpread={overdue.length >= 2 ? openPlanning : undefined} onMoveToday={moveOverdue} />
-              ) : null}
-              {groups.length ? (
-                <TodayGroups groups={groups} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
-              ) : (
-                allDoneCard
-              )}
-              {!selectedIds ? <TodayHabits /> : null}
-              {!selectedIds ? <DoneToday items={done} /> : null}
-            </>
+          {isLoading ? <Loading /> : mainView === 'timeline' ? timeline : mainView === 'matrix' ? (
+            <EisenhowerView roots={roots} subtaskProgress={subtaskProgress} refreshing={refreshing} onRefresh={refresh} />
           ) : (
-            <>
-              {overdue.length ? (
-                <>
-                  <SectionTitle
-                    title="지연됨" count={overdue.length} tone="danger"
-                    action={(
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-                        {overdue.length >= 2 ? (
-                          <Pressable
-                            accessibilityRole="button" accessibilityLabel="여러 날에 나눠 잡기" hitSlop={8}
-                            onPress={() => {
-                              haptic.tap();
-                              setPlanning(true);
-                            }}
-                            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-                            <Txt variant="smallStrong">나눠 잡기</Txt>
-                          </Pressable>
-                        ) : null}
-                        <Pressable
-                          accessibilityRole="button" accessibilityLabel="오늘로 옮기기" hitSlop={8} onPress={moveOverdue}
-                          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-                          <Txt variant="smallStrong" tone="muted">오늘로</Txt>
-                        </Pressable>
+            <ScrollView
+              ref={scrollRef}
+              contentContainerStyle={{ paddingBottom: selectedIds ? 180 : 140, flexGrow: 1 }}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
+              {isError && tasks.length === 0 ? (
+                <EmptyState
+                  icon="cloud-off" art={<OfflineArt size={EMPTY_ART} />} title="불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+                  action={<Button label="다시 시도" kind="secondary" onPress={refresh} />} />
+              ) : showOnboarding ? (
+                <View style={{ padding: space.lg, gap: space.md }}>
+                  <Card style={{ gap: space.md }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                      <View style={[styles.guideBadge, { backgroundColor: colors.surfaceMuted }]}>
+                        <Icon name="compass" size={18} color={colors.textMuted} />
                       </View>
-                    )} />
-                  <TaskList
-                    tasks={overdue} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
-                </>
-              ) : null}
-              {due.length ? (
+                      <View style={{ flex: 1 }}>
+                        <Txt variant="bodyStrong">Dayframe 시작 가이드</Txt>
+                        <Txt variant="caption" tone="muted">체크리스트 · 타임라인 · 습관 · 집중을 한곳에서</Txt>
+                      </View>
+                    </View>
+                    <Txt variant="small" tone="muted">
+                      직접 따라 해 볼 수 있는 4단계 체험 체크리스트를 오늘 할 일에 넣어 드릴까요?
+                    </Txt>
+                    <View style={{ flexDirection: 'row', gap: space.sm }}>
+                      <Button label="체험 체크리스트 넣기" icon="check-square" onPress={createStarterChecklist} style={{ flex: 1, minHeight: 42 }} />
+                      <Button label="건너뛰기" kind="secondary" onPress={dismissOnboarding} style={{ minHeight: 42 }} />
+                    </View>
+                  </Card>
+                  {hasHabits ? <TodayHabits /> : null}
+                </View>
+              ) : remaining === 0 && done.length === 0 && !hasHabits ? (
+                <EmptyState
+                  icon="sun" art={<EmptyToday size={EMPTY_ART} />} title="오늘 할 일이 없습니다"
+                  message="아래 + 버튼으로 추가하거나 하루 계획에서 남은 일을 가져올 수 있습니다."
+                  action={<Button label="오늘 할 일 추천 보기" kind="secondary" icon="compass" onPress={() => setPlanning(true)} />} />
+              ) : grouped ? (
                 <>
-                  <SectionTitle
-                    title="오늘" count={due.length}
-                    action={sort !== 'schedule' ? <Txt variant="caption" tone="muted">{sortLabels[sort]}</Txt> : undefined} />
-                  <TaskList
-                    tasks={due} hideDate selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                  {overdue.length ? (
+                    <OverdueStrip count={overdue.length} onSpread={overdue.length >= 2 ? openPlanning : undefined} onMoveToday={moveOverdue} />
+                  ) : null}
+                  {groups.length ? (
+                    <TodayGroups groups={groups} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                  ) : (
+                    allDoneCard
+                  )}
+                  {!selectedIds ? <TodayHabits /> : null}
+                  {!selectedIds ? <DoneToday items={done} /> : null}
                 </>
-              ) : overdue.length ? (
-                <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 일은 없습니다.</Txt>
               ) : (
-                allDoneCard
+                <>
+                  {overdue.length ? (
+                    <>
+                      <SectionTitle
+                        title="지연됨" count={overdue.length} tone="danger"
+                        action={(
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                            {overdue.length >= 2 ? (
+                              <Pressable
+                                accessibilityRole="button" accessibilityLabel="여러 날에 나눠 잡기" hitSlop={8}
+                                onPress={() => {
+                                  haptic.tap();
+                                  setPlanning(true);
+                                }}
+                                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                                <Txt variant="smallStrong">나눠 잡기</Txt>
+                              </Pressable>
+                            ) : null}
+                            <Pressable
+                              accessibilityRole="button" accessibilityLabel="오늘로 옮기기" hitSlop={8} onPress={moveOverdue}
+                              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                              <Txt variant="smallStrong" tone="muted">오늘로</Txt>
+                            </Pressable>
+                          </View>
+                        )} />
+                      <TaskList
+                        tasks={overdue} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                    </>
+                  ) : null}
+                  {due.length ? (
+                    <>
+                      <SectionTitle
+                        title="오늘" count={due.length}
+                        action={sort !== 'schedule' ? <Txt variant="caption" tone="muted">{sortLabels[sort]}</Txt> : undefined} />
+                      <TaskList
+                        tasks={due} hideDate selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                    </>
+                  ) : overdue.length ? (
+                    <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 일은 없습니다.</Txt>
+                  ) : (
+                    allDoneCard
+                  )}
+                  {!selectedIds ? <TodayHabits /> : null}
+                  {!selectedIds ? <DoneToday items={done} /> : null}
+                </>
               )}
-              {!selectedIds ? <TodayHabits /> : null}
-              {!selectedIds ? <DoneToday items={done} /> : null}
-            </>
+            </ScrollView>
           )}
-        </ScrollView>
-      )}
 
-      {selectedIds ? (
-        <BatchBar
-          selected={selectedTasks}
-          totalCount={allVisibleToday.length}
-          onSelectAll={() => {
-            haptic.tap();
-            setSelectedIds((prev) => (prev && prev.size === allVisibleToday.length ? new Set() : new Set(allVisibleToday.map((t) => t.id))));
-          }}
-          onCancel={() => setSelectedIds(null)} />
-      ) : null}
+          {selectedIds ? (
+            <BatchBar
+              selected={selectedTasks}
+              totalCount={allVisibleToday.length}
+              onSelectAll={() => {
+                haptic.tap();
+                setSelectedIds((prev) => (prev && prev.size === allVisibleToday.length ? new Set() : new Set(allVisibleToday.map((t) => t.id))));
+              }}
+              onCancel={() => setSelectedIds(null)} />
+          ) : null}
+        </View>
+        {twoPane ? (
+          <View style={[styles.side, { borderLeftColor: colors.border }]}>
+            {isLoading ? null : timeline}
+          </View>
+        ) : null}
+      </View>
 
       <PlanDaySheet
         visible={planning} onClose={() => setPlanning(false)}
@@ -404,7 +426,7 @@ export default function Today() {
             ))
           ) : (
             <>
-              {view === 'list' ? (
+              {mainView === 'list' ? (
                 <>
                   <Row
                     icon="sliders" label="정렬" detail={sortLabels[sort]}
@@ -457,6 +479,9 @@ export default function Today() {
 }
 
 const styles = StyleSheet.create({
+  single: { flex: 1 },
+  panes: { flex: 1, flexDirection: 'row' },
+  side: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth },
   guideBadge: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   allDone: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.lg },
 });

@@ -21,10 +21,13 @@ import { QuickAddProvider, TAB_BAR_HEIGHT, useQuickAdd } from '@/features/quick-
 import { BackgroundSync } from '@/features/reminders/BackgroundSync';
 import { UpdateProvider } from '@/features/update/useUpdate';
 import { isConfigured } from '@/lib/env';
+import { LayoutProvider, useLayout } from '@/lib/layoutContext';
+import { keepPhonesPortrait } from '@/lib/orientation';
 import { runSelfCheck } from '@/lib/selfCheck';
 import { ThemeProvider, useTheme } from '@/theme';
 
 void SplashScreen.preventAutoHideAsync();
+keepPhonesPortrait();
 if (process.env.EXPO_PUBLIC_SELF_CHECK === '1') runSelfCheck();
 
 function Routes({ signedIn }: { signedIn: boolean }) {
@@ -61,8 +64,13 @@ function Routes({ signedIn }: { signedIn: boolean }) {
 
 function SignedInToast() {
   const { fabHidden } = useQuickAdd();
-  // Lifts above BatchBar when multi-select hides the FAB, and leaves room for the FAB otherwise.
-  return <ToastHost bottomOffset={fabHidden ? TAB_BAR_HEIGHT + 92 : TAB_BAR_HEIGHT} rightInset={fabHidden ? 0 : 70} />;
+  const { column } = useLayout();
+  // Lifts above BatchBar when multi-select hides the FAB, and leaves room for the FAB otherwise; on a tablet it
+  // stays inside the centred column.
+  return (
+    <ToastHost
+      bottomOffset={fabHidden ? TAB_BAR_HEIGHT + 92 : TAB_BAR_HEIGHT} rightInset={column.inset + (fabHidden ? 0 : 70)} leftInset={column.inset} />
+  );
 }
 
 function App() {
@@ -112,15 +120,17 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <PersistQueryClientProvider
-            client={queryClient} persistOptions={persistOptions}
-            onSuccess={() => void resumeWrites()}>
-            <SessionProvider>
-              <App />
-            </SessionProvider>
-          </PersistQueryClientProvider>
-        </ThemeProvider>
+        <LayoutProvider>
+          <ThemeProvider>
+            <PersistQueryClientProvider
+              client={queryClient} persistOptions={persistOptions}
+              onSuccess={() => void resumeWrites()}>
+              <SessionProvider>
+                <App />
+              </SessionProvider>
+            </PersistQueryClientProvider>
+          </ThemeProvider>
+        </LayoutProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

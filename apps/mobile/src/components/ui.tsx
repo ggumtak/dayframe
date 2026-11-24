@@ -9,6 +9,7 @@ import Animated, { FadeIn, SlideInDown, useAnimatedStyle, useDerivedValue, useSh
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptic } from '@/lib/haptics';
+import { useLayout } from '@/lib/layoutContext';
 import { elevation, radius, space, type, useTheme } from '@/theme';
 
 export type IconName = ComponentProps<typeof Feather>['name'];
@@ -30,11 +31,21 @@ export function Icon({ name, size = 20, color }: { name: IconName; size?: number
   return <Feather name={name} size={size} color={color ?? colors.text} />;
 }
 
-/** The page frame: themed background with the status bar inset applied. */
-export function Screen({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+/**
+ * The page frame: themed background with the status bar inset applied. On a tablet everything inside (header,
+ * lists, bottom bars) sits in a centred column, `READING_MAX` wide unless `maxWidth` asks for more; on a phone the
+ * column is the whole width, as before.
+ */
+export function Screen({ children, style, maxWidth }: { children: ReactNode; style?: StyleProp<ViewStyle>; maxWidth?: number }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  return <View style={[{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }, style]}>{children}</View>;
+  const { column } = useLayout();
+  const columnMax = column.maxWidth === undefined ? undefined : maxWidth ?? column.maxWidth;
+  return (
+    <View style={[{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }, style]}>
+      <View style={[styles.column, columnMax === undefined ? null : { maxWidth: columnMax }]}>{children}</View>
+    </View>
+  );
 }
 
 export function Header({ title, subtitle, left, right }: { title: string; subtitle?: string; left?: ReactNode; right?: ReactNode }) {
@@ -247,10 +258,15 @@ export function ProgressBar({ value, color, height = 6 }: { value: number; color
   );
 }
 
-/** A bottom sheet that slides up smoothly and dismisses by dragging its handle down or tapping the backdrop. */
+/**
+ * A bottom sheet that slides up smoothly and dismisses by dragging its handle down or tapping the backdrop. It never
+ * grows past the window (with the keyboard up, its scroll view shrinks instead) and, on a tablet, is at most
+ * `SHEET_MAX` wide and centred.
+ */
 export function Sheet({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title?: string; children: ReactNode }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { sheet } = useLayout();
   const translateY = useSharedValue(0);
 
   const drag = Gesture.Pan()
@@ -281,7 +297,10 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
           </Animated.View>
           <Animated.View
             entering={SlideInDown.duration(220)}
-            style={[styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + space.lg }, sheetMotion]}>
+            style={[
+              styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + space.lg, maxHeight: sheet.maxHeight },
+              sheet.maxWidth === undefined ? null : { maxWidth: sheet.maxWidth, width: '100%', alignSelf: 'center' }, sheetMotion,
+            ]}>
             <GestureDetector gesture={drag}>
               <View style={styles.handleArea}>
                 <View style={[styles.grabber, { backgroundColor: colors.border }]} />
@@ -315,6 +334,7 @@ export function Row({ icon, label, detail, onPress, tone = 'default', trailing }
 }
 
 const styles = StyleSheet.create({
+  column: { flex: 1, width: '100%', alignSelf: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.md, paddingBottom: space.sm },
   iconButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.6 },
@@ -337,7 +357,9 @@ const styles = StyleSheet.create({
     flex: 1, minHeight: 32, borderRadius: radius.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     paddingHorizontal: space.md,
   },
-  sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: space.lg, paddingTop: space.sm },
+  sheet: {
+    borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: space.lg, paddingTop: space.sm, flexShrink: 1,
+  },
   handleArea: { paddingTop: 2 },
   grabber: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, marginBottom: space.md },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 52 },
