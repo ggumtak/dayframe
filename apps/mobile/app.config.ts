@@ -58,7 +58,8 @@ const config: ExpoConfig = {
         }],
       },
     }],
-    ['expo-notifications', { color: '#2B66E0' }],
+    // The status-bar icon is drawn from the PNG's alpha: a white mark on transparency (scripts/notification-icon.mjs).
+    ['expo-notifications', { icon: './assets/images/notification-icon.png', color: '#2B66E0' }],
     // Keeps the AI 비서 key (Android Keystore) out of Android Auto Backup, where it could not be decrypted anyway.
     'expo-secure-store',
     // previewImage is what the home screen's widget picker shows; redraw with scripts/widget-previews.mjs.
