@@ -116,7 +116,7 @@ function TaskMenuContent({
             <Chip
               key={mins === null ? 'none' : String(mins)}
               icon={mins === null ? 'slash' : 'clock'}
-              label={mins === null ? '시간 없음' : formatDurationMinutes(mins)}
+              label={mins === null ? '없음' : formatDurationMinutes(mins)}
               selected={active}
               onPress={() => run(() => {
                 actions.update(task.id, { duration_minutes: mins });
