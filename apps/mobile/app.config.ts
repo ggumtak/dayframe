@@ -37,6 +37,17 @@ const config: ExpoConfig = {
   web: { output: 'single', favicon: './assets/images/favicon.png' },
   plugins: [
     'expo-router',
+    ['expo-build-properties', {
+      android: {
+        // Native libraries are stored compressed in the APK (about a third of their size) and unpacked once at
+        // install, which makes the download and the in-app update much smaller. They load the same way after.
+        useLegacyPackaging: true,
+        // The app shows no GIF or WebP through React Native's <Image> (widget previews and launcher icons are
+        // Android drawables, decoded by the system), so Fresco's GIF and WebP decoders are left out.
+        gifEnabled: false,
+        webpEnabled: false,
+      },
+    }],
     ['expo-splash-screen', {
       backgroundColor: '#FFFFFF',
       image: './assets/images/splash-icon.png',
