@@ -56,7 +56,17 @@ Edit `shots.mjs`. Each entry is `{ name, path, steps? }`:
 { name: 'esc', path: '/', steps: [{ press: 'Escape' }] },      // Playwright key names
 { name: 'menu', path: '/inbox', steps: [{ hold: { text: '휴대폰 사진 백업' } }] }, // long press (ms: 900 by default)
 { name: 'small', path: '/', viewport: { width: 360, height: 760 } }, // this shot's viewport instead of 412×915
+{ name: 'swipe', path: '/inbox', steps: [{ drag: { text: '휴대폰 사진 백업', dx: 150 } }] }, // touch drag; finger stays down
+{ name: 'swiped', path: '/inbox', steps: [
+  { drag: { text: '휴대폰 사진 백업', dx: 200, release: true }, noSettle: true }, // lift the finger; go on at once
+  { wait: 60, noSettle: true }, { snap: 'a' },                 // saves swiped-a.png mid-animation
+] },
 ```
+
+`drag` (`text` or `label`, `dx`, optional `dy`, `steps`, `release`) is a touch drag sent through CDP, so releasing it
+does not also count as a tap the way a mouse release does on web. After every step the harness waits for the network
+and entrance animations unless the step has `noSettle`; `snap` saves `<name>-<snap>.png` there and then.
+`swipe-shots.mjs` uses these for the task-row swipe states and tab changes.
 
 Prefer a `path` (deep link) over clicking through the UI, and accessibility labels over visible text:
 screens change often. Use `ids` from `fixtures.mjs` to link to a specific entity, e.g. `'/task/' + ids.detailTask`.
