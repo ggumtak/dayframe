@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LayoutAnimationConfig } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { FoldHeader } from '@/components/ui';
@@ -78,7 +78,9 @@ export function TodayHabits() {
       <FoldHeader
         title="습관" detail={`${settledCount}/${rows.length}`}
         open={open} onToggle={() => setFold(open ? 'closed' : 'open')} label="오늘의 습관" />
-      {open ? (
+      {/* Fades in when unfolded, not when the screen mounts already unfolded. */}
+      <LayoutAnimationConfig skipEntering>
+        {open ? (
         <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(100)}>
           {rows.map(({ habit, date, todayCount, progress, weekly, settled, missedYesterday }) => (
         <Pressable
@@ -108,7 +110,8 @@ export function TodayHabits() {
         </Pressable>
           ))}
         </Animated.View>
-      ) : null}
+        ) : null}
+      </LayoutAnimationConfig>
     </View>
   );
 }

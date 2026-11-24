@@ -1,7 +1,8 @@
 import Feather from '@expo/vector-icons/Feather';
-import { type ComponentProps, memo, useRef, useState } from 'react';
+import { type ComponentProps, memo, type ReactNode, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import Swipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
 
 import { describeRecurrence, dueBucket, dueMinutes, formatDue, formatDurationMinutes, formatTime, isPastDue } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -53,6 +54,21 @@ function SwipeAction({ icon, label, color, foreground, onPress }: {
   );
 }
 
+/**
+ * One side's swipe actions. Swipeable keeps both sides rendered behind the row at all times, so each side is drawn
+ * only while the row is moved off it: the complete panel while `translation` > 0, 일정/삭제 while it is < 0. Otherwise
+ * they show through whenever the row is translucent (screen transitions, a row fading out) and, the complete panel
+ * being as wide as the row, the side that is not being swiped shows next to it. Runs on the UI thread only.
+ */
+function SwipeSide({ translation, side, style, children }: {
+  translation: SharedValue<number>; side: 'left' | 'right'; style: ComponentProps<typeof Animated.View>['style']; children: ReactNode;
+}) {
+  const shown = useAnimatedStyle(() => ({
+    opacity: (side === 'left' ? translation.value > 0 : translation.value < 0) ? 1 : 0,
+  }), [side, translation]);
+  return <Animated.View style={[style, shown]}>{children}</Animated.View>;
+}
+
 export const TaskRow = memo(function TaskRow({
   task, projectName, projectIcon, tagNames, subtaskProgress, subtasksExpanded, onToggleSubtasks, hideDate,
   selectable, selected, onToggleSelect,
@@ -61,6 +77,8 @@ export const TaskRow = memo(function TaskRow({
   const { colors } = useTheme();
   const swipe = useRef<SwipeableMethods>(null);
   const [checked, setChecked] = useState(false);
+  // Guards a swipe and a tap (or two swipe callbacks) from completing the same row twice before `checked` re-renders.
+  const finishing = useRef(false);
   const due = formatDue(task);
   const repeat = describeRecurrence(task.recurrence_rule, task.recurrence_mode);
   const late = isPastDue(task);
@@ -73,13 +91,17 @@ export const TaskRow = memo(function TaskRow({
   const hasProgress = (subtaskProgress?.completed ?? 0) > 0;
 
   const finish = () => {
-    if (checked) return;
+    if (checked || finishing.current) return;
+    finishing.current = true;
     setChecked(true);
     // Let the check land before the row leaves the list.
     setTimeout(() => {
       onComplete(task);
       // A repeating task stays in the list with its next date, so show it unchecked again.
-      if (task.recurrence_rule) setChecked(false);
+      if (task.recurrence_rule) {
+        finishing.current = false;
+        setChecked(false);
+      }
     }, 240);
   };
 
@@ -206,14 +228,14 @@ export const TaskRow = memo(function TaskRow({
   return (
     <Swipeable
       ref={swipe} friction={1.6} overshootFriction={8} leftThreshold={72} rightThreshold={40}
-      renderLeftActions={() => (
-        <View style={[styles.complete, { backgroundColor: colors.accent }]}>
+      renderLeftActions={(_progress, translation) => (
+        <SwipeSide translation={translation} side="left" style={[styles.complete, { backgroundColor: colors.accent }]}>
           <Feather name="check" size={22} color={colors.onAccent} />
           <Text style={[styles.actionLabel, { color: colors.onAccent }]}>완료</Text>
-        </View>
+        </SwipeSide>
       )}
-      renderRightActions={() => (
-        <View style={styles.actions}>
+      renderRightActions={(_progress, translation) => (
+        <SwipeSide translation={translation} side="right" style={styles.actions}>
           {onSchedule ? (
             <SwipeAction
               icon="clock" label="일정" color={colors.textMuted} foreground={colors.background}
@@ -231,11 +253,15 @@ export const TaskRow = memo(function TaskRow({
                 onDelete(task);
               }} />
           ) : null}
-        </View>
+        </SwipeSide>
       )}
-      onSwipeableOpen={(direction) => {
+      // Past the threshold the swipe completes on release: the row springs straight back with its check landing
+      // (only the complete panel behind it), then leaves the list. Waiting for onSwipeableOpen instead slid the
+      // row the whole width first, where 일정/삭제 showed beside 완료.
+      onSwipeableWillOpen={(direction) => {
         if (direction !== 'right') return;
         swipe.current?.close();
+        if (checked || finishing.current) return;
         haptic.success();
         finish();
       }}>

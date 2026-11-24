@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LayoutAnimationConfig } from 'react-native-reanimated';
 
 import { Checkbox } from '@/components/Checkbox';
 import { FoldHeader, Icon, Txt } from '@/components/ui';
@@ -29,7 +29,9 @@ export function DoneToday({ items }: { items: Done[] }) {
   return (
     <View>
       <FoldHeader title="완료됨" count={items.length} open={open} onToggle={() => setFold(open ? 'closed' : 'open')} label="오늘 완료한 일" />
-      {open ? (
+      {/* Fades in when unfolded, not when the screen mounts already unfolded. */}
+      <LayoutAnimationConfig skipEntering>
+        {open ? (
         <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(100)}>
           {items.map(({ completion, undoable }) => {
         const { task } = completion;
@@ -59,7 +61,8 @@ export function DoneToday({ items }: { items: Done[] }) {
             <Icon name="chevron-right" size={14} color={colors.accentText} />
           </Pressable>
         </Animated.View>
-      ) : null}
+        ) : null}
+      </LayoutAnimationConfig>
     </View>
   );
 }

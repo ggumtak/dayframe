@@ -341,7 +341,7 @@ export default function Inbox() {
             <>
               {unsectionedTasks.length > 0 ? (
                 <TaskList
-                  tasks={unsectionedTasks} sortable={canSortManually}
+                  key={effectiveScope} tasks={unsectionedTasks} sortable={canSortManually}
                   selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
               ) : null}
               {projectSections.map((section) => {
@@ -393,8 +393,9 @@ export default function Inbox() {
             </>
           ) : tasks.length ? (
             <>
+              {/* Keyed by list, so switching lists swaps the rows at once instead of fading one set out over the other. */}
               <TaskList
-                tasks={tasks} sortable={canSortManually}
+                key={effectiveScope} tasks={tasks} sortable={canSortManually}
                 selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
               {selected ? (
                 <Pressable
