@@ -1,8 +1,30 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { ExpoConfig } from 'expo/config';
+
+import release from './release.config.json';
 
 // The release workflow injects these from the git tag (v1.2.3 -> 1.2.3 / 10203).
 const version = process.env.APP_VERSION ?? '1.0.0';
 const versionCode = Number(process.env.ANDROID_VERSION_CODE ?? 1);
+
+// Over-the-air updates, served by the project's own Supabase (scripts/updates/README.md). The runtime version is
+// the native fingerprint, so any change that needs a new APK yields a new runtime and the server never offers it
+// an update built for another. Committing certs/certificate.pem switches on code signing; until then updates are
+// accepted unsigned, still only over HTTPS from the project's Supabase.
+const updatesUrl = release.supabaseUrl.trim().replace(/\/+$/, '') + '/functions/v1/api/v1/updates/manifest';
+const signingCertificate = 'certs/certificate.pem';
+function codeSigning(): Pick<NonNullable<ExpoConfig['updates']>, 'codeSigningCertificate' | 'codeSigningMetadata'> {
+  const file = join(__dirname, signingCertificate);
+  if (!existsSync(file)) return {};
+  const body = /-----BEGIN CERTIFICATE-----([\s\S]+?)-----END/.exec(readFileSync(file, 'utf8'))?.[1];
+  if (!body) throw new Error(signingCertificate + ' is not a PEM certificate');
+  // Derived from the certificate, so replacing it also changes the fingerprint; publish.mjs signs with this key id.
+  const keyid = 'dayframe-' + createHash('sha256').update(Buffer.from(body.replace(/\s+/g, ''), 'base64')).digest('hex').slice(0, 12);
+  return { codeSigningCertificate: './' + signingCertificate, codeSigningMetadata: { keyid, alg: 'rsa-v1_5-sha256' } };
+}
 
 const config: ExpoConfig = {
   name: 'Dayframe',
@@ -35,6 +57,9 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
   },
   web: { output: 'single', favicon: './assets/images/favicon.png' },
+  runtimeVersion: { policy: 'fingerprint' },
+  // Checks on every cold start without waiting; a downloaded update applies on the next cold start.
+  updates: { url: updatesUrl, enabled: true, checkAutomatically: 'ON_LOAD', fallbackToCacheTimeout: 0, ...codeSigning() },
   plugins: [
     'expo-router',
     ['expo-splash-screen', {

@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 import { env } from '@/lib/env';
 
 import ApkInstaller from '../../../modules/apk-installer';
-import { isTrustedApkUrl, type ReleaseInfo, UpdateError } from './version';
+import { isStaleApk, isTrustedApkUrl, type ReleaseInfo, UpdateError } from './version';
 
 export { UpdateError };
 
@@ -24,12 +24,31 @@ export function openInstallPermissionSettings(): void {
     { data: 'package:' + Application.applicationId });
 }
 
+const cachedApk = () => new File(Paths.cache, 'dayframe-update.apk');
+
+/**
+ * Deletes the APK an earlier update left in the cache (about 57 MB) once it is installed, unreadable or
+ * abandoned. Runs once per launch, after start-up has settled.
+ */
+export function cleanUpDownloadedApk(): void {
+  if (!canSelfUpdate) return;
+  try {
+    const file = cachedApk();
+    if (!file.exists) return;
+    const installed = Number(Application.nativeBuildVersion);
+    const cached = { versionCode: ApkInstaller ? ApkInstaller.inspect(file.uri)?.versionCode ?? null : undefined, modifiedAt: file.modificationTime };
+    if (isStaleApk(cached, Number.isInteger(installed) ? installed : null, Date.now())) file.delete();
+  } catch {
+    // Housekeeping only: the next launch tries again.
+  }
+}
+
 /** Downloads the release APK into the cache, reporting progress from 0 to 1 (or null when the size is unknown). */
 export async function downloadApk(
   release: ReleaseInfo, onProgress: (fraction: number | null) => void, signal: AbortSignal,
 ): Promise<File> {
   if (!isTrustedApkUrl(release.apkUrl, env.githubRepo)) throw new UpdateError('untrusted', 'Release has no trusted APK link');
-  const target = new File(Paths.cache, 'dayframe-update.apk');
+  const target = cachedApk();
   try {
     if (target.exists) target.delete();
     return await File.downloadFileAsync(release.apkUrl, target, {

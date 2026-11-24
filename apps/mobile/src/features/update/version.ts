@@ -78,7 +78,31 @@ export function fromGithubRelease(payload: unknown, repo: string): ReleaseInfo |
   };
 }
 
-export type UpdateFailure = 'untrusted' | 'download' | 'wrong-app' | 'wrong-signer' | 'not-newer' | 'unreadable' | 'cancelled';
+/** "11월 24일 업데이트" for the over-the-air update that is running; the year is added once it is not this year's. */
+export function updateDateLabel(createdAt: Date | null | undefined, now: Date): string | null {
+  if (!createdAt || Number.isNaN(createdAt.getTime())) return null;
+  const day = `${createdAt.getMonth() + 1}월 ${createdAt.getDate()}일`;
+  return (createdAt.getFullYear() === now.getFullYear() ? day : `${createdAt.getFullYear()}년 ${day}`) + ' 업데이트';
+}
+
+/** A downloaded APK left in the cache this long is abandoned: "update now" always downloads afresh. */
+export const APK_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether the APK an earlier update left in the cache can go. It stays only while it may still be on its way
+ * through Android's installer: readable, newer than this build and recent. `versionCode` is null when the file
+ * is not a readable package and undefined when this build cannot inspect APKs.
+ */
+export function isStaleApk(
+  cached: { versionCode: number | null | undefined; modifiedAt: number | null | undefined },
+  installedBuild: number | null, now: number,
+): boolean {
+  if (cached.versionCode === null) return true;
+  if (cached.versionCode !== undefined && installedBuild !== null && cached.versionCode <= installedBuild) return true;
+  return typeof cached.modifiedAt === 'number' && now - cached.modifiedAt > APK_CACHE_MAX_AGE_MS;
+}
+
+export type UpdateFailure = 'untrusted' | 'download' | 'wrong-app' | 'wrong-signer' | 'not-newer' | 'unreadable' | 'cancelled' | 'restart';
 
 export class UpdateError extends Error {
   readonly reason: UpdateFailure;
