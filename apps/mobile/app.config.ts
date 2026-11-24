@@ -46,6 +46,9 @@ const config: ExpoConfig = {
         // Android drawables, decoded by the system), so Fresco's GIF and WebP decoders are left out.
         gifEnabled: false,
         webpEnabled: false,
+        // Phonetic-matching tables of commons-codec (pulled in by expo-file-system). R8 already removes the
+        // encoder that reads them, so the 128 files (about 0.1 MB) would only sit unused in the APK.
+        packagingOptions: { exclude: ['/org/apache/commons/codec/language/bm/**'] },
       },
     }],
     ['expo-splash-screen', {
