@@ -217,6 +217,10 @@ export default function HabitOverview() {
                 key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} cells={cells} todayKey={todayKey}
                 width={miniWidth} />
             ))}
+            {/* Fills the last row, so its cards keep their columns instead of spreading apart. */}
+            {Array.from({ length: (columns - (habits.length % columns)) % columns }, (_, index) => (
+              <View key={'spacer' + index} style={miniWidth} />
+            ))}
           </View>
           <Legend />
         </ScrollView>
