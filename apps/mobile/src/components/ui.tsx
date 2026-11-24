@@ -14,13 +14,13 @@ import { elevation, radius, space, type, useTheme } from '@/theme';
 export type IconName = ComponentProps<typeof Feather>['name'];
 
 type Variant = keyof typeof type;
-type Tone = 'default' | 'muted' | 'faint' | 'accent' | 'danger' | 'success' | 'onAccent';
+type Tone = 'default' | 'muted' | 'faint' | 'accent' | 'danger' | 'onAccent';
 
 export function Txt({ variant = 'body', tone = 'default', style, ...props }: TextProps & { variant?: Variant; tone?: Tone }) {
   const { colors } = useTheme();
   const color = {
-    default: colors.text, muted: colors.textMuted, faint: colors.textFaint, accent: colors.accent,
-    danger: colors.danger, success: colors.success, onAccent: colors.onAccent,
+    default: colors.text, muted: colors.textMuted, faint: colors.textFaint, accent: colors.accentText,
+    danger: colors.danger, onAccent: colors.onAccent,
   }[tone];
   return <Text {...props} style={[type[variant] as TextStyle, { color }, style]} />;
 }
@@ -62,16 +62,20 @@ export function IconButton({ name, label, onPress, color, size = 22, style }: {
   );
 }
 
+/**
+ * Buttons by weight. `primary` is the one filled accent button a screen may have (DESIGN.md); every other action is
+ * `secondary` (neutral fill), `ghost` (no fill, accent label) or `danger` (neutral fill, red label).
+ */
 export function Button({ label, onPress, kind = 'primary', icon, loading, disabled, style, ...props }: Omit<PressableProps, 'style'> & {
   label: string; kind?: 'primary' | 'secondary' | 'ghost' | 'danger'; icon?: IconName; loading?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
   const palette = {
-    primary: { background: colors.accent, foreground: colors.onAccent },
-    secondary: { background: colors.surfaceMuted, foreground: colors.text },
-    ghost: { background: 'transparent', foreground: colors.accent },
-    danger: { background: colors.dangerSoft, foreground: colors.danger },
+    primary: { background: colors.accent, foreground: colors.onAccent, icon: colors.onAccent },
+    secondary: { background: colors.surfaceMuted, foreground: colors.text, icon: colors.textMuted },
+    ghost: { background: 'transparent', foreground: colors.accentText, icon: colors.accentText },
+    danger: { background: colors.surfaceMuted, foreground: colors.danger, icon: colors.danger },
   }[kind];
   const inactive = disabled || loading;
   return (
@@ -86,24 +90,30 @@ export function Button({ label, onPress, kind = 'primary', icon, loading, disabl
         styles.button, { backgroundColor: palette.background, opacity: inactive ? 0.5 : pressed ? 0.8 : 1 }, style,
       ]}>
       {loading ? <ActivityIndicator size="small" color={palette.foreground} />
-        : icon ? <Icon name={icon} size={18} color={palette.foreground} /> : null}
+        : icon ? <Icon name={icon} size={18} color={palette.icon} /> : null}
       <Text style={[type.bodyStrong as TextStyle, { color: palette.foreground }]}>{label}</Text>
     </Pressable>
   );
 }
 
-export function Chip({ label, icon, selected, color, onPress, style }: {
-  label: string; icon?: IconName; selected?: boolean; color?: string; onPress?: () => void; style?: StyleProp<ViewStyle>;
+export function Chip({ label, icon, selected, tone, color, onPress, style }: {
+  label: string; icon?: IconName; selected?: boolean;
+  /** `set`: the chip shows a value (a date, a tag) in full-strength text; `danger`: that value is overdue. */
+  tone?: 'set' | 'danger';
+  color?: string; onPress?: () => void; style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
-  const foreground = selected ? colors.accent : color ?? colors.textMuted;
+  // Neutral unless selected; a selected chip is the accent outline and label on accentSoft. `color` tints only
+  // the icon (a list's own mark in a list picker). The border stays neutral even when the label is red.
+  const foreground = selected ? colors.accentText : tone === 'danger' ? colors.danger : tone === 'set' ? colors.text : colors.textMuted;
+  const iconColor = color ?? (selected ? colors.accentText : tone === 'danger' ? colors.danger : tone === 'set' ? colors.textMuted : colors.textFaint);
   const content = (
     <>
-      {icon ? <Icon name={icon} size={13} color={foreground} /> : null}
+      {icon ? <Icon name={icon} size={13} color={iconColor} /> : null}
       <Text style={[type.smallStrong as TextStyle, { color: foreground }]} numberOfLines={1}>{label}</Text>
     </>
   );
-  const base = [styles.chip, { backgroundColor: selected ? colors.accentSoft : 'transparent', borderColor: selected ? colors.accentSoft : colors.border }, style];
+  const base = [styles.chip, { backgroundColor: selected ? colors.accentSoft : 'transparent', borderColor: selected ? colors.accent : colors.border }, style];
   if (!onPress) return <View style={base}>{content}</View>;
   return (
     <Pressable
@@ -133,8 +143,8 @@ export function SectionTitle({ title, count, action, tone }: { title: string; co
  * A section heading that folds its section: the whole line is the button, it shows the press, and the
  * arrow turns as the section opens.
  */
-export function FoldHeader({ title, count, detail, detailTone = 'muted', open, onToggle, label }: {
-  title: string; count?: number; detail?: string; detailTone?: Tone; open: boolean; onToggle: () => void;
+export function FoldHeader({ title, titleTone, count, detail, detailTone = 'muted', open, onToggle, label }: {
+  title: string; titleTone?: Tone; count?: number; detail?: string; detailTone?: Tone; open: boolean; onToggle: () => void;
   /** What the section holds, for screen readers: "오늘 완료한 일". */
   label: string;
 }) {
@@ -150,7 +160,7 @@ export function FoldHeader({ title, count, detail, detailTone = 'muted', open, o
         onToggle();
       }}
       style={({ pressed }) => [styles.fold, { backgroundColor: pressed ? colors.surfaceMuted : 'transparent' }]}>
-      <Txt variant="section" accessibilityRole="header">{title}</Txt>
+      <Txt variant="section" tone={titleTone} accessibilityRole="header">{title}</Txt>
       {count ? <Txt variant="small" tone="faint">{count}</Txt> : null}
       <View style={{ flex: 1 }} />
       {detail ? <Txt variant="small" tone={detailTone}>{detail}</Txt> : null}
@@ -169,7 +179,7 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
 }
 
 /** Width of an empty-state illustration: keeps the art, text and action above the fold on a 360×760 screen. */
-export const EMPTY_ART = 140;
+export const EMPTY_ART = 120;
 
 /**
  * A centred message for an empty or failed screen. `art` (an illustration from `@/components/art`) replaces the
@@ -184,8 +194,8 @@ export function EmptyState({ icon, art, title, message, action }: {
       {art ? (
         <View style={styles.emptyArt}>{art}</View>
       ) : (
-        <View style={[styles.emptyIcon, { backgroundColor: colors.accentSoft }]}>
-          <Icon name={icon} size={26} color={colors.accent} />
+        <View style={[styles.emptyIcon, { backgroundColor: colors.surfaceMuted }]}>
+          <Icon name={icon} size={26} color={colors.textMuted} />
         </View>
       )}
       <Txt variant="bodyStrong" style={{ textAlign: 'center' }}>{title}</Txt>

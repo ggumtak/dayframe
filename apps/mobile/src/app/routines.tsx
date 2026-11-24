@@ -20,7 +20,7 @@ const PresetCard = memo(function PresetCard({ routine, added, onOpen }: { routin
       style={({ pressed }) => [styles.card, {
         backgroundColor: colors.surface, borderColor: added ? colors.accentSoft : colors.border, opacity: pressed ? 0.7 : 1,
       }]}>
-      <HabitAvatar name={routine.name} emoji={routine.emoji} color={routine.color} size={44} />
+      <HabitAvatar name={routine.name} emoji={routine.emoji} size={44} />
       <View style={{ flex: 1, gap: 2 }}>
         <Txt variant="bodyStrong" numberOfLines={1}>{routine.name}</Txt>
         <Txt variant="small" tone="muted" numberOfLines={1}>{routine.quote}</Txt>
@@ -28,9 +28,9 @@ const PresetCard = memo(function PresetCard({ routine, added, onOpen }: { routin
       <View style={{ alignItems: 'flex-end', gap: 4 }}>
         <Txt variant="caption" tone="faint">{routineLabel(routine)}</Txt>
         {added ? (
-          <View style={[styles.badge, { backgroundColor: colors.accentSoft }]}>
-            <Icon name="check" size={11} color={colors.accent} />
-            <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>추가됨</Txt>
+          <View style={styles.badge}>
+            <Icon name="check" size={11} color={colors.textFaint} />
+            <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>추가됨</Txt>
           </View>
         ) : <Icon name="chevron-right" size={16} color={colors.textFaint} />}
       </View>

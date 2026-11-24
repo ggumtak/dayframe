@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/Checkbox';
 import { SortableList } from '@/components/SortableList';
 import { TaskRow } from '@/components/TaskRow';
 import { useProjects, useSubtaskProgress, useTagNames, useTaskIndex } from '@/data/tasks';
+import { AiBreakdownSheet } from '@/features/ai';
 import { haptic } from '@/lib/haptics';
 import type { Task } from '@/lib/shared';
 import type { SubtaskProgress } from '@/lib/smart';
@@ -102,13 +103,15 @@ export function useTaskListModel(): { model: TaskListModel; sheets: TaskListShee
   return { model, sheets };
 }
 
-/** The date sheet and long-press menu for lists driven by `useTaskListModel`; renders nothing while both are closed. */
+/** The date sheet, long-press menu and AI로 쪼개기 for lists driven by `useTaskListModel`; renders nothing while all are closed. */
 export function TaskListSheets({ sheets, onStartSelect }: { sheets: TaskListSheetState; onStartSelect?: (task: Task) => void }) {
   const { scheduling, menu, setScheduling, setMenu, reschedule } = sheets;
+  const [breakdown, setBreakdown] = useState<Task | null>(null);
   return (
     <>
       <ScheduleSheet task={scheduling} onClose={() => setScheduling(null)} onPick={reschedule} />
-      <TaskMenu task={menu} onClose={() => setMenu(null)} onSchedule={setScheduling} onStartSelect={onStartSelect} />
+      <TaskMenu task={menu} onClose={() => setMenu(null)} onSchedule={setScheduling} onStartSelect={onStartSelect} onBreakdown={setBreakdown} />
+      {breakdown ? <AiBreakdownSheet task={breakdown} visible onClose={() => setBreakdown(null)} /> : null}
     </>
   );
 }
@@ -153,7 +156,7 @@ export const TaskRows = memo(function TaskRows({
       <View>
         <TaskRow
           task={task} hideDate={hideDate} projectName={projectId ? projectNames.get(projectId) : undefined}
-          projectColor={projMeta?.color} projectIcon={projMeta?.icon}
+          projectIcon={projMeta?.icon}
           tagNames={tagNames.get(task.id)} subtaskProgress={subProgress}
           subtasksExpanded={isExpanded} onToggleSubtasks={!nested && !selecting && hasAnySubtasks ? toggleSubtasks : undefined}
           selectable={selecting && !nested} selected={selecting ? selectedIds.has(task.id) : false}
@@ -174,7 +177,7 @@ export const TaskRows = memo(function TaskRows({
                   reopen(child);
                 }}
                 style={({ pressed }) => [styles.doneSubRow, { borderBottomColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
-                <Checkbox checked size={19} color={colors.success} onPress={() => reopen(child)} label={child.title + ' 완료 해제'} />
+                <Checkbox checked done size={19} onPress={() => reopen(child)} label={child.title + ' 완료 해제'} />
                 <Text numberOfLines={1} style={[type.small as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
                   {child.title}
                 </Text>

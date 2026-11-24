@@ -4,28 +4,29 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, TextInput, type TextInputInstance, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Chip, EmptyState, Icon, IconButton, Loading, ProgressBar, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { Button, Chip, EmptyState, Icon, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import {
   attachTagByName, nextDueAfterComplete, nextPosition, useProjects, useSections, useSubtaskProgress, useTags, useTaskIndex, useTaskTags,
 } from '@/data/tasks';
+import { AiBreakdownSheet } from '@/features/ai';
 import { reminderSummary } from '@/features/reminders/lead';
 import { TaskReminderPicker } from '@/features/reminders/ReminderChips';
 import { useReminderOverrides } from '@/features/reminders/overrides';
 import { useReminderSettings } from '@/features/reminders/settings';
 import { useProjectMetaMap } from '@/features/tasks/projectMeta';
-import { priorityA11y, priorityLabel } from '@/features/tasks/priority';
+import { priorityA11y, priorityLabel, priorityMark } from '@/features/tasks/priority';
 import { RepeatSheet, repeatPatch } from '@/features/tasks/RepeatSheet';
 import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
 import { saveCustomTemplate } from '@/features/tasks/templates';
 import { toMarkdownChecklist, useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { errorMessage } from '@/lib/api';
-import { describeRecurrence, deviceTimeZone, dueBucket, formatDue, formatDurationMinutes, isPastDue, Temporal } from '@/lib/dates';
+import { describeRecurrence, deviceTimeZone, formatDue, formatDurationMinutes, isPastDue, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { analyzeTask, type Priority, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
-import { priorityColor, radius, space, type, useTheme } from '@/theme';
+import { radius, space, type, useTheme } from '@/theme';
 
 const priorities: { value: Priority; label: string }[] = ([1, 2, 3, 4] as Priority[]).map((value) => ({ value, label: priorityLabel(value) }));
 
@@ -52,7 +53,7 @@ export default function TaskDetail() {
   return <TaskEditor key={task.id} task={task} />;
 }
 
-type ModalKind = null | 'schedule' | 'duration' | 'repeat' | 'reminder' | 'priority' | 'project' | 'tags' | 'more';
+type ModalKind = null | 'schedule' | 'duration' | 'repeat' | 'reminder' | 'priority' | 'project' | 'tags' | 'more' | 'breakdown';
 
 const durationPresets = [15, 30, 45, 60, 90, 120, 180] as const;
 
@@ -90,7 +91,6 @@ function TaskEditor({ task }: { task: Task }) {
   const subtasks = children.get(task.id) ?? [];
   const completedSubtasks = completedChildren.get(task.id) ?? [];
   const totalSubtasks = subtasks.length + completedSubtasks.length;
-  const subRatio = totalSubtasks > 0 ? completedSubtasks.length / totalSubtasks : 0;
 
   const attachedIds = new Set((links ?? []).filter((link) => link.task_id === task.id).map((link) => link.tag_id));
   const attachedTags = (tags ?? []).filter((tag) => attachedIds.has(tag.id));
@@ -241,8 +241,6 @@ function TaskEditor({ task }: { task: Task }) {
       .catch(() => {});
   };
 
-  const pColor = priorityColor(colors, task.priority);
-
   return (
     <Screen>
       <View style={styles.bar}>
@@ -260,8 +258,8 @@ function TaskEditor({ task }: { task: Task }) {
             accessibilityRole="button" accessibilityLabel="목록·섹션 바꾸기"
             onPress={() => setSheet('project')}
             style={({ pressed }) => [styles.crumb, { opacity: pressed ? 0.6 : 1 }]}>
-            <Icon name={projectName ? (projMeta?.icon ?? 'hash') : 'inbox'} size={14} color={projMeta?.color ?? colors.textMuted} />
-            <Txt variant="smallStrong" style={{ color: projMeta?.color ?? colors.textMuted }} numberOfLines={1}>
+            <Icon name={projectName ? (projMeta?.icon ?? 'hash') : 'inbox'} size={14} color={colors.textFaint} />
+            <Txt variant="smallStrong" tone="muted" numberOfLines={1}>
               {projectName ? (sectionName ? `${projectName} · ${sectionName}` : projectName) : '미분류'}
             </Txt>
             <Icon name="chevron-down" size={13} color={colors.textFaint} />
@@ -272,8 +270,12 @@ function TaskEditor({ task }: { task: Task }) {
           accessibilityRole="button" accessibilityLabel={priorityA11y(task.priority)}
           onPress={() => setSheet('priority')} hitSlop={8}
           style={({ pressed }) => [styles.priorityBtn, { opacity: pressed ? 0.6 : 1 }]}>
-          <Icon name="flag" size={17} color={pColor} />
-          {task.priority < 4 ? <Txt variant="caption" style={{ color: pColor, fontWeight: '700' }}>{priorityLabel(task.priority)}</Txt> : null}
+          {task.priority < 4 ? (
+            <>
+              <Txt variant="bodyStrong" style={{ fontWeight: '700' }}>{priorityMark(task.priority)}</Txt>
+              <Txt variant="caption" tone="muted">{priorityLabel(task.priority)}</Txt>
+            </>
+          ) : <Icon name="flag" size={17} color={colors.textMuted} />}
         </Pressable>
         <IconButton
           name="clock" label="이 할 일로 집중 시작" color={colors.textMuted}
@@ -292,8 +294,7 @@ function TaskEditor({ task }: { task: Task }) {
           <View style={styles.hero}>
             <View style={styles.titleRow}>
               <View style={{ paddingTop: 4 }}>
-                <Checkbox
-                  checked={done} size={24} color={pColor} tinted={task.priority < 4} onPress={complete} label="완료" />
+                <Checkbox checked={done} size={24} onPress={complete} label="완료" />
               </View>
               <TextInput
                 value={title} onChangeText={setTitle} onBlur={saveTitle} multiline submitBehavior="blurAndSubmit" maxLength={500}
@@ -309,16 +310,15 @@ function TaskEditor({ task }: { task: Task }) {
           <View style={[styles.pills, { borderBottomColor: colors.border }]}>
             <Chip
               icon="calendar" label={due ?? '일정'}
-              color={!due ? undefined : isPastDue(task) ? colors.danger : dueBucket(task) === 'today' ? colors.success : colors.accent}
+              tone={!due ? undefined : isPastDue(task) ? 'danger' : 'set'}
               onPress={() => setSheet('schedule')} />
             <Chip
               icon="clock" label={durationLabel ?? '소요 시간'}
-              selected={!!durationLabel} color={durationLabel ? colors.accent : undefined}
+              tone={durationLabel ? 'set' : undefined}
               onPress={() => setSheet('duration')} />
             {repeat || due ? (
               <Chip
-                icon="repeat" label={repeat ?? '반복'} color={repeat ? colors.info : undefined}
-                selected={!!repeat} onPress={() => setSheet('repeat')} />
+                icon="repeat" label={repeat ?? '반복'} tone={repeat ? 'set' : undefined} onPress={() => setSheet('repeat')} />
             ) : null}
             {Platform.OS === 'android' && task.due_at ? (
               <Chip
@@ -326,7 +326,7 @@ function TaskEditor({ task }: { task: Task }) {
                 onPress={() => setSheet('reminder')} />
             ) : null}
             {attachedTags.map((tag) => (
-              <Chip key={tag.id} icon="tag" label={tag.name} selected onPress={() => setSheet('tags')} />
+              <Chip key={tag.id} label={'#' + tag.name} tone="set" onPress={() => setSheet('tags')} />
             ))}
             <Chip icon="tag" label={attachedTags.length ? '+' : '태그'} onPress={() => setSheet('tags')} />
             {nextRepeatPreview ? (
@@ -342,7 +342,7 @@ function TaskEditor({ task }: { task: Task }) {
           <View style={styles.subtaskHeader}>
             <Txt variant="section" tone="muted">체크리스트 · 하위 작업</Txt>
             {totalSubtasks ? (
-              <Txt variant="smallStrong" tone={completedSubtasks.length === totalSubtasks ? 'success' : 'faint'}>
+              <Txt variant="smallStrong" tone="faint">
                 {completedSubtasks.length}/{totalSubtasks}
               </Txt>
             ) : null}
@@ -355,7 +355,7 @@ function TaskEditor({ task }: { task: Task }) {
                   flow.resetChecklist(completedSubtasks);
                 }}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: pressed ? 0.6 : 1 })}>
-                <Icon name="rotate-ccw" size={12} color={colors.accent} />
+                <Icon name="rotate-ccw" size={12} color={colors.accentText} />
                 <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>모두 초기화</Txt>
               </Pressable>
             ) : subtasks.length > 1 ? (
@@ -363,16 +363,10 @@ function TaskEditor({ task }: { task: Task }) {
             ) : null}
           </View>
 
-          {totalSubtasks > 0 ? (
-            <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
-              <ProgressBar value={subRatio} color={subRatio === 1 ? colors.success : colors.accent} height={5} />
-            </View>
-          ) : null}
-
           {subtasks.length ? <TaskList tasks={subtasks} sortable /> : null}
 
           <View style={[styles.inlineAdd, { borderBottomColor: colors.border }]}>
-            <Icon name="plus" size={18} color={colors.accent} />
+            <Icon name="plus" size={18} color={colors.textMuted} />
             <TextInput
               ref={subtaskInput} value={subtaskText}
               onChangeText={(next) => {
@@ -393,7 +387,7 @@ function TaskEditor({ task }: { task: Task }) {
           </View>
           {subtaskPreview ? (
             <View style={[styles.subPreview, { backgroundColor: colors.surfaceMuted }]}>
-              <Txt variant="caption" tone="accent" numberOfLines={1} style={{ flex: 1 }}>
+              <Txt variant="caption" numberOfLines={1} style={{ flex: 1 }}>
                 자동 인식: {subtaskPreview.summary}
               </Txt>
               <Pressable hitSlop={8} onPress={() => setSubtaskPlain(true)}>
@@ -418,7 +412,7 @@ function TaskEditor({ task }: { task: Task }) {
               {showCompletedSubs ? completedSubtasks.map((sub) => (
                 <View key={sub.id} style={styles.completedSubRow}>
                   <Checkbox
-                    checked size={20} color={colors.success}
+                    checked done size={20}
                     onPress={() => {
                       haptic.tap();
                       flow.reopen(sub);
@@ -498,7 +492,6 @@ function TaskEditor({ task }: { task: Task }) {
       <Sheet visible={sheet === 'priority'} onClose={() => setSheet(null)} title="우선순위">
         {priorities.map((item) => {
           const active = task.priority === item.value;
-          const tint = priorityColor(colors, item.value);
           return (
             <Pressable
               key={item.value} accessibilityRole="button" accessibilityLabel={item.label}
@@ -508,9 +501,9 @@ function TaskEditor({ task }: { task: Task }) {
                 setSheet(null);
               }}
               style={({ pressed }) => [styles.sheetRow, { opacity: pressed ? 0.6 : 1 }]}>
-              <Icon name="flag" size={18} color={tint} />
+              <Txt style={styles.markCell}>{priorityMark(item.value)}</Txt>
               <Txt style={{ flex: 1 }}>{item.label}</Txt>
-              {active ? <Icon name="check" size={18} color={colors.accent} /> : null}
+              {active ? <Icon name="check" size={18} color={colors.accentText} /> : null}
             </Pressable>
           );
         })}
@@ -520,7 +513,7 @@ function TaskEditor({ task }: { task: Task }) {
         <ScrollView style={{ maxHeight: 380 }}>
           <Row
             icon="inbox" label="미분류"
-            trailing={!task.project_id ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+            trailing={!task.project_id ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
             onPress={() => {
               flow.update(task.id, { project_id: null, section_id: null });
               setSheet(null);
@@ -532,7 +525,7 @@ function TaskEditor({ task }: { task: Task }) {
               <View key={project.id}>
                 <Row
                   icon={meta?.icon ?? 'hash'} label={project.name}
-                  trailing={task.project_id === project.id && !task.section_id ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+                  trailing={task.project_id === project.id && !task.section_id ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
                   onPress={() => {
                     flow.update(task.id, { project_id: project.id, section_id: null });
                     setSheet(null);
@@ -541,7 +534,7 @@ function TaskEditor({ task }: { task: Task }) {
                   <View key={section.id} style={{ paddingLeft: space.xl }}>
                     <Row
                       icon="bookmark" label={section.name}
-                      trailing={task.section_id === section.id ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+                      trailing={task.section_id === section.id ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
                       onPress={() => {
                         flow.update(task.id, { project_id: project.id, section_id: section.id });
                         setSheet(null);
@@ -585,6 +578,10 @@ function TaskEditor({ task }: { task: Task }) {
             setSheet(null);
             flow.duplicate(task, { openSubtasks: subtasks, completedSubtasks, tagNames: attachedTags.map((t) => t.name) });
           }} />
+        {task.parent_task_id ? null : (
+          // Swapping `sheet` closes 더 보기 as AI로 쪼개기 opens, so the two never stack.
+          <Row icon="layers" label="AI로 쪼개기" onPress={() => setSheet('breakdown')} />
+        )}
         <Row icon="clipboard" label="체크리스트 복사" onPress={copyMarkdown} />
         <Row
           icon="bookmark" label="체크리스트 템플릿으로 저장" detail="다음에 다시 쓰기"
@@ -606,6 +603,7 @@ function TaskEditor({ task }: { task: Task }) {
             router.back();
           }} />
       </Sheet>
+      {sheet === 'breakdown' ? <AiBreakdownSheet task={task} visible onClose={() => setSheet(null)} /> : null}
     </Screen>
   );
 }
@@ -613,7 +611,8 @@ function TaskEditor({ task }: { task: Task }) {
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.sm, minHeight: 48, gap: 2 },
   crumb: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: space.sm, paddingVertical: 6, maxWidth: 200 },
-  priorityBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 40, paddingHorizontal: 8 },
+  priorityBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 40, paddingHorizontal: 8 },
+  markCell: { width: 28, fontWeight: '700' },
   hero: { paddingHorizontal: space.lg, paddingTop: space.xs, gap: 6 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
   notes: { paddingLeft: 36, paddingVertical: 2, minHeight: 28, textAlignVertical: 'top' },

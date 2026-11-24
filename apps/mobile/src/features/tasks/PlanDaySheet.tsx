@@ -1,7 +1,9 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Chip, Icon, Segmented, Sheet, Txt } from '@/components/ui';
+import { AI_ROUTES } from '@/features/ai/routes';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, formatDate, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -9,7 +11,9 @@ import { josa } from '@/lib/josa';
 import { nextOccurrence, type Task } from '@/lib/shared';
 import { planBalancedReschedule, type SubtaskProgress, suggestForToday } from '@/lib/smart';
 import { showToast } from '@/lib/toast';
-import { priorityColor, radius, space, useTheme } from '@/theme';
+import { radius, space, useTheme } from '@/theme';
+
+import { priorityMark } from './priority';
 
 import { useTaskFlow } from './useTaskFlow';
 
@@ -81,10 +85,10 @@ export function PlanDaySheet({
       <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ gap: space.md, paddingBottom: space.sm }}>
         {activeTab === 'overdue' ? (
           <>
-            <View style={[styles.banner, { backgroundColor: colors.accentSoft }]}>
+            <View style={[styles.banner, { backgroundColor: colors.surfaceMuted }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Icon name="zap" size={15} color={colors.accent} />
-                <Txt variant="smallStrong" tone="accent">여러 날에 나눠 잡기</Txt>
+                <Icon name="zap" size={15} color={colors.textMuted} />
+                <Txt variant="smallStrong">여러 날에 나눠 잡기</Txt>
               </View>
               <Txt variant="caption" tone="muted">
                 앞으로 7일 동안의 일정과 우선순위를 보고, 하루에 몰리지 않게 나눠 보았습니다.
@@ -96,11 +100,12 @@ export function PlanDaySheet({
             </View>
 
             {proposals.map(({ task, targetDate, reason }) => (
-              <View key={task.id} style={[styles.itemCard, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+              <View key={task.id} style={[styles.item, { borderBottomColor: colors.border }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                  <View style={[styles.pDot, { backgroundColor: priorityColor(colors, task.priority) }]} />
-                  <Txt variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{task.title}</Txt>
-                  <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>
+                  <Txt variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>
+                    {task.priority < 4 ? priorityMark(task.priority) + ' ' : ''}{task.title}
+                  </Txt>
+                  <Txt variant="caption" style={{ fontWeight: '700' }}>
                     → {formatDate(targetDate, now)}
                   </Txt>
                 </View>
@@ -125,7 +130,7 @@ export function PlanDaySheet({
                       flow.reschedule(task, nextMonday);
                     }} />
                   <Chip
-                    icon="check" label="완료" color={colors.success}
+                    icon="check" label="완료"
                     onPress={() => {
                       haptic.success();
                       flow.complete(task);
@@ -143,7 +148,7 @@ export function PlanDaySheet({
               <View key={task.id} style={[styles.suggestRow, { borderColor: colors.border }]}>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Txt variant="bodyStrong" numberOfLines={1}>{task.title}</Txt>
-                  <Txt variant="caption" tone="accent">{reason}</Txt>
+                  <Txt variant="caption" tone="muted">{reason}</Txt>
                 </View>
                 <Pressable
                   accessibilityRole="button" accessibilityLabel={task.title + ' 오늘로 옮기기'}
@@ -152,29 +157,34 @@ export function PlanDaySheet({
                     flow.reschedule(task, now);
                     showToast(`‘${task.title}’${josa(task.title, '을/를')} 오늘로 옮겼습니다.`);
                   }}
-                  style={({ pressed }) => [styles.addPill, { backgroundColor: colors.accentSoft, opacity: pressed ? 0.6 : 1 }]}>
-                  <Icon name="plus" size={14} color={colors.accent} />
-                  <Txt variant="smallStrong" tone="accent">오늘</Txt>
+                  style={({ pressed }) => [styles.addPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 }]}>
+                  <Icon name="plus" size={14} color={colors.textMuted} />
+                  <Txt variant="smallStrong">오늘</Txt>
                 </Pressable>
               </View>
             ))}
           </>
         ) : (
           <View style={{ paddingVertical: space.xl, alignItems: 'center', gap: space.sm }}>
-            <Icon name="check-circle" size={28} color={colors.success} />
+            <Icon name="check-circle" size={28} color={colors.textMuted} />
             <Txt variant="bodyStrong">오늘로 가져올 만한 할 일이 없습니다</Txt>
             <Txt variant="small" tone="muted">지금 잡혀 있는 일정에 집중해 보세요.</Txt>
           </View>
         )}
       </ScrollView>
+      <Button
+        label="AI로 계획" icon="zap" kind="secondary" style={{ marginTop: space.sm }}
+        onPress={() => {
+          onClose();
+          router.push(AI_ROUTES.plan);
+        }} />
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
   banner: { borderRadius: radius.md, padding: space.md, gap: 6 },
-  itemCard: { borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, padding: space.md, gap: 4 },
-  pDot: { width: 8, height: 8, borderRadius: 4 },
+  item: { borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: space.md, gap: 4 },
   suggestRow: {
     flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,

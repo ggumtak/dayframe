@@ -11,7 +11,9 @@ import { dueMinutes, formatDurationMinutes, formatTime, Temporal } from '@/lib/d
 import { haptic } from '@/lib/haptics';
 import type { FocusSession, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
-import { elevation, priorityColor, radius, space, type, useTheme } from '@/theme';
+import { elevation, radius, space, type, useTheme } from '@/theme';
+
+import { priorityMark } from './priority';
 
 const HOUR = 76;
 const GUTTER = 62;
@@ -78,7 +80,7 @@ function DraggableBlock({
 }) {
   const { colors } = useTheme();
   const { task, start, duration, column, columns } = item;
-  const tint = priorityColor(colors, task.priority);
+  const mark = priorityMark(task.priority);
   const blockHeight = Math.max(30, (duration / 60) * HOUR - 2);
   const tall = blockHeight >= 52;
 
@@ -156,21 +158,25 @@ function DraggableBlock({
           onPress={() => router.push({ pathname: '/task/[id]', params: { id: task.id } })}
           style={[
             styles.blockInner,
-            { backgroundColor: colors.surface, borderColor: previewMinutes !== null ? colors.accent : colors.border, borderLeftColor: tint },
+            { backgroundColor: colors.surface, borderColor: previewMinutes !== null ? colors.accent : colors.border },
             tall && styles.blockInnerTall,
             previewMinutes !== null && elevation(colors, 2),
           ]}>
-          <Checkbox checked={false} size={18} color={tint} onPress={() => onComplete(task)} label={task.title + ' 완료'} />
+          <Checkbox checked={false} size={18} onPress={() => onComplete(task)} label={task.title + ' 완료'} />
           {tall ? (
             <View style={{ flex: 1, gap: 2 }}>
-              <Text numberOfLines={2} style={[type.smallStrong as TextStyle, { color: colors.text }]}>{task.title}</Text>
+              <Text numberOfLines={2} style={[type.smallStrong as TextStyle, { color: colors.text }]}>
+                {mark ? <Text style={styles.mark}>{mark + ' '}</Text> : null}{task.title}
+              </Text>
               <Txt variant="caption" tone={previewMinutes !== null ? 'accent' : start < nowMinutes ? 'danger' : 'muted'} numberOfLines={1}>
                 {rangeLabel}
               </Txt>
             </View>
           ) : (
             <>
-              <Text numberOfLines={1} style={[type.small as TextStyle, { color: colors.text, flex: 1 }]}>{task.title}</Text>
+              <Text numberOfLines={1} style={[type.small as TextStyle, { color: colors.text, flex: 1 }]}>
+                {mark ? <Text style={styles.mark}>{mark + ' '}</Text> : null}{task.title}
+              </Text>
               {columns === 1 ? (
                 <Txt variant="caption" tone={previewMinutes !== null ? 'accent' : start < nowMinutes ? 'danger' : 'muted'}>
                   {previewMinutes !== null ? formatTime(previewMinutes) : task.duration_minutes ? formatDurationMinutes(task.duration_minutes) : formatTime(start)}
@@ -244,17 +250,17 @@ export function Timeline({
         <Pressable
           accessibilityRole="button" accessibilityLabel={`지연된 할 일 ${overdueCount}개 정리하기`}
           onPress={onPlanOverdue}
-          style={({ pressed }) => [styles.overdueBar, { backgroundColor: colors.dangerSoft, borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 }]}>
+          style={({ pressed }) => [styles.overdueBar, { backgroundColor: colors.surfaceMuted, borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 }]}>
           <Icon name="alert-circle" size={14} color={colors.danger} />
           <Txt variant="caption" style={{ color: colors.danger, fontWeight: '700', flex: 1 }}>
             지연된 할 일 {overdueCount}개가 타임라인 밖에 있습니다
           </Txt>
-          <Txt variant="caption" style={{ color: colors.danger, fontWeight: '700' }}>정리하기 →</Txt>
+          <Txt variant="caption" style={{ fontWeight: '700' }}>정리하기 →</Txt>
         </Pressable>
       ) : null}
 
       <View style={[styles.budgetBar, { backgroundColor: colors.surfaceMuted, borderBottomColor: colors.border }]}>
-        <Icon name="clock" size={13} color={colors.accent} />
+        <Icon name="clock" size={13} color={colors.textFaint} />
         <Txt variant="caption" tone="muted" style={{ flex: 1 }} numberOfLines={1}>
           {plannedTotalMinutes > 0 || focusTotalMinutes > 0
             ? [
@@ -277,14 +283,14 @@ export function Timeline({
                 key={task.id} accessibilityRole="button" accessibilityLabel={task.title}
                 onPress={() => router.push({ pathname: '/task/[id]', params: { id: task.id } })}
                 style={[styles.allDayItem, { backgroundColor: colors.surfaceMuted }]}>
-                <Checkbox checked={false} size={18} color={priorityColor(colors, task.priority)} onPress={() => onComplete(task)} label={task.title + ' 완료'} />
+                <Checkbox checked={false} size={18} onPress={() => onComplete(task)} label={task.title + ' 완료'} />
                 <Text numberOfLines={1} style={[type.small as TextStyle, { color: colors.text, flex: 1 }]}>{task.title}</Text>
                 {task.duration_minutes ? (
                   <Txt variant="caption" tone="faint">{formatDurationMinutes(task.duration_minutes)}</Txt>
                 ) : null}
                 {onRescheduleTime ? (
                   <IconButton
-                    name="clock" label={task.title + ' 빈 시간에 자동 배치'} size={14} color={colors.accent}
+                    name="clock" label={task.title + ' 빈 시간에 자동 배치'} size={14} color={colors.textMuted}
                     onPress={() => {
                       const slot = findNextFreeSlot(placed, nowMinutes, task.duration_minutes ?? DEFAULT_BLOCK_MINUTES);
                       haptic.success();
@@ -302,8 +308,8 @@ export function Timeline({
                   setAllDayExpanded((open) => !open);
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2 }}>
-                <Icon name={allDayExpanded ? 'chevron-up' : 'chevron-down'} size={13} color={colors.accent} />
-                <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>
+                <Icon name={allDayExpanded ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textFaint} />
+                <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>
                   {allDayExpanded ? '종일 할 일 접기' : `종일 할 일 ${hiddenAllDay}개 더 보기`}
                 </Txt>
               </Pressable>
@@ -338,7 +344,7 @@ export function Timeline({
             <Pressable
               key={block.id} accessibilityRole="button" accessibilityLabel={`집중 기록 ${formatTime(block.start)}, ${block.spent}분`}
               onPress={() => setPicked(block)}
-              style={[styles.focus, { top: (block.start / 60) * HOUR, height: (block.minutes / 60) * HOUR, backgroundColor: colors.accentSoft, borderLeftColor: colors.accent }]} />
+              style={[styles.focus, { top: (block.start / 60) * HOUR, height: (block.minutes / 60) * HOUR, backgroundColor: colors.surfaceMuted, borderLeftColor: colors.textFaint }]} />
           ))}
 
           <View pointerEvents="box-none" style={styles.lane}>
@@ -350,10 +356,11 @@ export function Timeline({
           </View>
 
           <View pointerEvents="none" style={[styles.now, { top: (nowMinutes / 60) * HOUR - 9 }]}>
-            <View style={[styles.nowPill, { backgroundColor: colors.danger }]}>
-              <Text style={styles.nowPillText}>{nowClock}</Text>
+            {/* Now is a neutral ink line: red stays for what is overdue. */}
+            <View style={[styles.nowPill, { backgroundColor: colors.text }]}>
+              <Text style={[styles.nowPillText, { color: colors.background }]}>{nowClock}</Text>
             </View>
-            <View style={{ flex: 1, height: 1.5, backgroundColor: colors.danger }} />
+            <View style={{ flex: 1, height: 1.5, backgroundColor: colors.text }} />
           </View>
         </View>
       </ScrollView>
@@ -397,7 +404,7 @@ const styles = StyleSheet.create({
   block: { position: 'absolute', paddingRight: 4 },
   blockInner: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.sm, borderWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: 3, paddingHorizontal: space.sm,
+    paddingHorizontal: space.sm,
   },
   blockInnerTall: { alignItems: 'flex-start', paddingVertical: 6 },
   focus: { position: 'absolute', left: GUTTER + 4, right: space.lg, borderRadius: radius.sm, borderLeftWidth: 3, opacity: 0.7 },
@@ -405,5 +412,6 @@ const styles = StyleSheet.create({
   nowPill: {
     width: GUTTER - space.xs - 2, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', marginRight: 2,
   },
-  nowPillText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  nowPillText: { fontSize: 10, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  mark: { fontWeight: '700' },
 });

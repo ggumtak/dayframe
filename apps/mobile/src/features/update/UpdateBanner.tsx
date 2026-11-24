@@ -19,17 +19,17 @@ export function UpdateBanner() {
       <Pressable
         accessibilityRole="button" accessibilityLabel={`새 버전 ${release.version} 업데이트`}
         onPress={() => router.push('/settings')}
-        style={({ pressed }) => [styles.banner, { backgroundColor: required ? colors.warningSoft : colors.accentSoft, opacity: pressed ? 0.8 : 1 }]}>
-        <Icon name="download" size={16} color={required ? colors.warning : colors.accent} />
+        style={({ pressed }) => [styles.banner, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.8 : 1 }]}>
+        <Icon name="download" size={16} color={colors.textMuted} />
         <View style={{ flex: 1 }}>
-          <Txt variant="smallStrong" style={{ color: required ? colors.warning : colors.accent }}>
+          <Txt variant="smallStrong">
             {required ? '업데이트가 필요합니다' : `새 버전 ${release.version} 사용 가능`}
           </Txt>
         </View>
-        <Txt variant="smallStrong" style={{ color: required ? colors.warning : colors.accent }}>업데이트</Txt>
+        <Txt variant="smallStrong" tone="accent">업데이트</Txt>
         {required ? null : (
           <IconButton
-            name="x" label="업데이트 알림 닫기" size={16} color={colors.accent} style={{ width: 28, height: 28 }}
+            name="x" label="업데이트 알림 닫기" size={16} color={colors.textMuted} style={{ width: 28, height: 28 }}
             onPress={() => setDismissed(release.version)} />
         )}
       </Pressable>

@@ -16,8 +16,6 @@ export interface ArtColors {
   textFaint: string;
   accent: string;
   accentSoft: string;
-  warning: string;
-  warningSoft: string;
   onAccent: string;
 }
 
@@ -114,11 +112,13 @@ export function artPalette(c: ArtColors): ArtPalette {
     ground: dark ? mix(c.background, c.surfaceMuted, 0.7) : c.surfaceMuted,
     faint: c.border,
     line: mix(c.border, c.textFaint, 0.55),
+    // Monochrome by design (DESIGN.md): the accent is kept for the one shape that matters; its echoes and the old
+    // warm touches (sparkles, sun, moon) are drawn in the same neutrals as the rest of the piece.
     accent: c.accent,
-    accentSoft: c.accentSoft,
-    accentMid: mix(c.accentSoft, c.accent, 0.45),
-    warm: c.warning,
-    warmSoft: c.warningSoft,
+    accentSoft: dark ? mix(c.background, c.border, 0.8) : mix(c.surfaceMuted, c.border, 0.6),
+    accentMid: mix(c.border, c.textFaint, 0.35),
+    warm: mix(c.border, c.textFaint, 0.55),
+    warmSoft: dark ? mix(c.background, c.surfaceMuted, 0.7) : c.surfaceMuted,
     onAccent: c.onAccent,
     glow: dark ? mix(c.background, '#FFFFFF', 0.1) : c.background,
   };

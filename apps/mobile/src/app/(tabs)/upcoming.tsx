@@ -236,8 +236,9 @@ export default function Upcoming() {
                 const isToday = date.equals(now);
                 const entry = weekMap.get(key);
                 const count = (entry?.real.length ?? 0) + (entry?.previews.length ?? 0);
-                const dotNum = count >= 5 ? 3 : count >= 3 ? 2 : count >= 1 ? 1 : 0;
-                const dotColor = active ? colors.accent : count >= 5 ? colors.danger : count >= 3 ? colors.warning : colors.textFaint;
+                // Busy days get one or two grey dots: red is kept for overdue, and weekends are not coloured.
+                const dotNum = count >= 3 ? 2 : count >= 1 ? 1 : 0;
+                const dotColor = colors.textMuted;
                 return (
                   <Pressable
                     key={key} accessibilityRole="button" accessibilityState={{ selected: active }}
@@ -247,14 +248,14 @@ export default function Upcoming() {
                       setPicked(active ? null : key);
                     }}
                     style={styles.day}>
-                    <Txt variant="caption" style={{ color: date.dayOfWeek === 7 ? colors.danger : date.dayOfWeek === 6 ? colors.accent : colors.textMuted }}>{weekdayName(date)}</Txt>
+                    <Txt variant="caption" tone="muted">{weekdayName(date)}</Txt>
                     <View
                       style={[
                         styles.dayNumber,
                         active && { backgroundColor: colors.accent },
-                        isToday && !active && { borderWidth: 1.5, borderColor: colors.accent },
+                        isToday && !active && { borderWidth: 1.5, borderColor: colors.text },
                       ]}>
-                      <Txt variant="bodyStrong" style={{ color: active ? colors.onAccent : isToday ? colors.accent : colors.text }}>{date.day}</Txt>
+                      <Txt variant="bodyStrong" style={{ color: active ? colors.onAccent : colors.text }}>{date.day}</Txt>
                     </View>
                     <View style={styles.dotRow}>
                       {dotNum > 0 ? Array.from({ length: dotNum }, (_, i) => (
@@ -275,7 +276,7 @@ export default function Upcoming() {
               {weekOffset === 0 && !selected && overdue.length > 0 ? (
                 <View>
                   <FoldHeader
-                    title="지연됨" count={overdue.length} detail={overdueOpen ? '접기' : '펼치기'} detailTone="danger"
+                    title="지연됨" titleTone="danger" count={overdue.length} detail={overdueOpen ? '접기' : '펼치기'}
                     open={overdueOpen} onToggle={() => setOverdueOpen((open) => !open)} label="지연된 할 일" />
                   {overdueOpen ? <TaskList tasks={overdue} /> : null}
                 </View>
@@ -288,7 +289,7 @@ export default function Upcoming() {
                 if (total === 0) {
                   return (
                     <View key={day.key} style={[styles.freeDay, { borderBottomColor: colors.border }]}>
-                      <Txt variant="small" tone={date.equals(now) ? 'accent' : 'faint'} style={{ flex: 1 }}>{title}</Txt>
+                      <Txt variant={date.equals(now) ? 'smallStrong' : 'small'} tone={date.equals(now) ? 'default' : 'faint'} style={{ flex: 1 }}>{title}</Txt>
                       <AddButton label={title} onPress={() => addOn(date)} />
                     </View>
                   );
@@ -296,7 +297,7 @@ export default function Upcoming() {
                 return (
                   <View key={day.key}>
                     <SectionTitle
-                      title={title} count={total} tone={date.equals(now) ? 'accent' : undefined}
+                      title={title} count={total}
                       action={<AddButton label={title} onPress={() => addOn(date)} />} />
                     {day.real.length ? <TaskList tasks={day.real} hideDate /> : null}
                     {day.previews.map((task) => <Preview key={task.id + '-' + day.key} task={task} date={date} />)}
@@ -325,8 +326,8 @@ function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
     <Pressable
       accessibilityRole="button" accessibilityLabel={label + '에 추가'} hitSlop={10} onPress={onPress}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 2, opacity: pressed ? 0.6 : 1 })}>
-      <Icon name="plus" size={16} color={colors.accent} />
-      <Txt variant="smallStrong" tone="accent">추가</Txt>
+      <Icon name="plus" size={16} color={colors.textFaint} />
+      <Txt variant="smallStrong" tone="muted">추가</Txt>
     </Pressable>
   );
 }

@@ -11,19 +11,22 @@ import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import type { Priority, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
-import { priorityColor, radius, space, useTheme } from '@/theme';
+import { radius, space, useTheme } from '@/theme';
 
-import { priorityA11y, priorityLabel } from './priority';
+import { listColor } from './listColors';
+import { priorityA11y, priorityOption } from './priority';
+import { useProjectMetaMap } from './projectMeta';
 import { toMarkdownChecklist, useTaskFlow } from './useTaskFlow';
 
-function Action({ icon, label, onPress, color }: { icon: IconName; label: string; onPress: () => void; color?: string }) {
+/** A neutral quick action: no action here outranks the others, so none takes a colour. */
+function Action({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   const { colors } = useTheme();
   return (
     <Pressable
       accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
       style={({ pressed }) => [styles.action, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 }]}>
-      <Icon name={icon} size={20} color={color ?? colors.text} />
-      <Txt variant="caption" style={{ color: color ?? colors.text }}>{label}</Txt>
+      <Icon name={icon} size={20} color={colors.textMuted} />
+      <Txt variant="caption">{label}</Txt>
     </Pressable>
   );
 }
@@ -33,20 +36,27 @@ function Action({ icon, label, onPress, color }: { icon: IconName; label: string
  * `onSchedule` opens the full date picker the list already has.
  */
 export function TaskMenu({
-  task, onClose, onSchedule, onStartSelect,
+  task, onClose, onSchedule, onStartSelect, onBreakdown,
 }: {
   task: Task | null; onClose: () => void; onSchedule: (task: Task) => void; onStartSelect?: (task: Task) => void;
+  /** Opens AI로 쪼개기 from the host after this sheet has closed, so two sheets never stack. */
+  onBreakdown?: (task: Task) => void;
 }) {
   if (!task) return null;
-  return <TaskMenuContent key={task.id} task={task} onClose={onClose} onSchedule={onSchedule} onStartSelect={onStartSelect} />;
+  return (
+    <TaskMenuContent
+      key={task.id} task={task} onClose={onClose} onSchedule={onSchedule} onStartSelect={onStartSelect} onBreakdown={onBreakdown} />
+  );
 }
 
 function TaskMenuContent({
-  task, onClose, onSchedule, onStartSelect,
+  task, onClose, onSchedule, onStartSelect, onBreakdown,
 }: {
   task: Task; onClose: () => void; onSchedule: (task: Task) => void; onStartSelect?: (task: Task) => void;
+  onBreakdown?: (task: Task) => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const projectMeta = useProjectMetaMap();
   const flow = useTaskFlow();
   const actions = useTaskActions();
   const { children } = useTaskIndex();
@@ -80,7 +90,7 @@ function TaskMenuContent({
       </View>
 
       <View style={styles.actions}>
-        <Action icon="check" label="완료" color={colors.success} onPress={() => run(() => flow.complete(task))} />
+        <Action icon="check" label="완료" onPress={() => run(() => flow.complete(task))} />
         <Action icon="sun" label="오늘" onPress={() => run(() => flow.reschedule(task, now))} />
         <Action icon="sunrise" label="내일" onPress={() => run(() => flow.reschedule(task, now.add({ days: 1 })))} />
         <Action icon="calendar" label="날짜·시간" onPress={() => run(() => onSchedule(task))} />
@@ -89,7 +99,6 @@ function TaskMenuContent({
       <View style={styles.priorities}>
         {([1, 2, 3, 4] as Priority[]).map((priority) => {
           const active = task.priority === priority;
-          const tint = priorityColor(colors, priority);
           return (
             <Pressable
               key={priority} accessibilityRole="button" accessibilityLabel={priorityA11y(priority)} accessibilityState={{ selected: active }}
@@ -97,12 +106,11 @@ function TaskMenuContent({
                 haptic.tap();
                 run(() => actions.update(task.id, { priority }));
               }}
-              style={[styles.priority, { borderColor: active ? tint : colors.border }]}>
-              <Icon name="flag" size={12} color={tint} />
+              style={[styles.priority, { borderColor: active ? colors.accent : colors.border, backgroundColor: active ? colors.accentSoft : 'transparent' }]}>
               <Txt
                 variant="caption" numberOfLines={1} maxFontSizeMultiplier={1.3}
-                style={{ color: active ? colors.text : colors.textMuted, fontWeight: active ? '700' : '600', flexShrink: 1 }}>
-                {priorityLabel(priority)}
+                style={{ color: active ? colors.accentText : colors.textMuted, fontWeight: active ? '700' : '600', flexShrink: 1 }}>
+                {priorityOption(priority)}
               </Txt>
             </Pressable>
           );
@@ -146,7 +154,8 @@ function TaskMenuContent({
                   })} />
                 {projects.map((project) => (
                   <Chip
-                    key={project.id} icon="hash" label={project.name} selected={task.project_id === project.id}
+                    key={project.id} icon={projectMeta[project.id]?.icon ?? 'hash'} color={listColor(projectMeta[project.id]?.color, isDark)}
+                    label={project.name} selected={task.project_id === project.id}
                     onPress={() => run(() => {
                       actions.update(task.id, { project_id: project.id, section_id: null });
                       showToast(`#${project.name} 목록으로 옮겼습니다.`);
@@ -180,6 +189,9 @@ function TaskMenuContent({
         {task.parent_task_id ? null : (
           <Row icon="corner-down-right" label="하위 작업 추가" onPress={() => run(() => quickAdd.open({ parentTaskId: task.id }))} />
         )}
+        {onBreakdown && !task.parent_task_id ? (
+          <Row icon="layers" label="AI로 쪼개기" onPress={() => run(() => onBreakdown(task))} />
+        ) : null}
         {doneSubs.length > 0 ? (
           <Row
             icon="rotate-ccw" label="하위 작업 체크 초기화" detail={`${doneSubs.length}개 다시 열기`}

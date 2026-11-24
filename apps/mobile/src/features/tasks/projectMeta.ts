@@ -3,21 +3,15 @@ import { useSyncExternalStore } from 'react';
 
 import type { IconName } from '@/components/ui';
 
+import { LIST_COLORS } from './listColors';
+
 export interface ProjectMeta {
   color: string;
   icon: IconName;
 }
 
-export const PROJECT_COLORS = [
-  '#3574F0', // 파랑
-  '#1F9D63', // 초록
-  '#E5870B', // 주황
-  '#DC4C3E', // 빨강
-  '#7C5CFF', // 보라
-  '#0EA5A4', // 청록
-  '#D9468F', // 분홍
-  '#64748B', // 슬레이트
-] as const;
+/** The values a list's colour is stored as (see listColors.ts for how they are drawn). */
+export const PROJECT_COLORS = LIST_COLORS.map((color) => color.stored);
 
 export const PROJECT_ICONS: IconName[] = [
   'hash', 'briefcase', 'home', 'heart', 'book', 'shopping-bag', 'code', 'compass', 'star', 'zap',

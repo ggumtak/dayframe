@@ -23,17 +23,18 @@ interface Palette {
 }
 
 function palette(colors: Colors): Palette {
-  // Tints of the accent that deepen with workload; the deepest one carries light text in both themes.
-  const fills = ['transparent', colors.accent + '2E', colors.accent + '6B', colors.accent + 'D9'];
+  // The accent ramp, deepening with workload; the deepest step carries onAccent text in both themes.
+  const fills = ['transparent', ...colors.accentRamp];
   const inks = [colors.textMuted, colors.text, colors.text, colors.onAccent];
   return {
     fills,
     inkStyles: inks.map((color) => ({ color })),
     fillStyles: fills.map((backgroundColor) => ({ backgroundColor })),
     ringStyle: { borderWidth: 1.5, borderColor: colors.text },
-    weekday: names.map((_, idx) => (idx === 6 ? colors.danger : idx === 5 ? colors.accent : colors.textFaint)),
-    title: colors.text,
-    titleCurrent: colors.accent,
+    // Weekends are not coloured: red means overdue, and accent means something to tap.
+    weekday: names.map(() => colors.textFaint),
+    title: colors.textMuted,
+    titleCurrent: colors.text,
   };
 }
 

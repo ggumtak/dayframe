@@ -25,7 +25,7 @@ export function Heatmap({ habit, logs, today }: { habit: Habit; logs: HabitLog[]
     const outside = Temporal.PlainDate.compare(date, today) > 0 || Temporal.PlainDate.compare(date, first) < 0;
     const color = outside ? 'transparent'
       : !log || log.count === 0 ? colors.surfaceMuted
-        : log.count >= perDay ? colors.success : colors.successSoft;
+        : log.count >= perDay ? colors.accent : colors.accentRamp[1];
     return { key: date.toString(), color, outside };
   }));
 

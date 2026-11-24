@@ -121,7 +121,7 @@ export default function Completed() {
                   const parentTitle = parentTitles.get(task.id);
                   return (
                     <View key={task.id} style={styles.row}>
-                      <Checkbox checked color={colors.success} onPress={() => reopen(task)} label={task.title + ' 다시 열기'} />
+                      <Checkbox checked done onPress={() => reopen(task)} label={task.title + ' 다시 열기'} />
                       <View style={[styles.body, { borderBottomColor: colors.border }]}>
                         <View style={{ flex: 1, gap: 2 }}>
                           <Txt tone="muted" numberOfLines={2}>{task.title}</Txt>

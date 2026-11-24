@@ -41,6 +41,12 @@ function Routes({ signedIn }: { signedIn: boolean }) {
         <Stack.Screen name="appearance" />
         <Stack.Screen name="tab-bar" />
         <Stack.Screen name="ai" />
+        <Stack.Screen name="ai-key" />
+        <Stack.Screen name="assistant/index" />
+        <Stack.Screen name="assistant/organize" />
+        <Stack.Screen name="assistant/plan" />
+        <Stack.Screen name="assistant/breakdown" />
+        <Stack.Screen name="assistant/review" />
         <Stack.Screen name="add" options={{ animation: 'none' }} />
         <Stack.Screen name="search" options={{ animation: 'fade' }} />
         <Stack.Screen name="completed" />

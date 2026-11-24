@@ -38,7 +38,7 @@ export function DoneToday({ items }: { items: Done[] }) {
           <View key={task.id + completion.completed_at} style={styles.row}>
             <View style={{ opacity: undoable ? 1 : 0.5 }}>
               <Checkbox
-                checked color={colors.success} label={task.title + ' 완료 취소'}
+                checked done label={task.title + ' 완료 취소'}
                 onPress={() => {
                   if (undoable) flow.uncomplete(task, completion.occurrence_due_at);
                 }} />
@@ -56,7 +56,7 @@ export function DoneToday({ items }: { items: Done[] }) {
             onPress={() => router.push('/completed')}
             style={({ pressed }) => [styles.allLink, { opacity: pressed ? 0.6 : 1 }]}>
             <Txt variant="smallStrong" tone="accent">완료 기록 전체 보기</Txt>
-            <Icon name="chevron-right" size={14} color={colors.accent} />
+            <Icon name="chevron-right" size={14} color={colors.accentText} />
           </Pressable>
         </Animated.View>
       ) : null}

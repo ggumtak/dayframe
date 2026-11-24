@@ -43,7 +43,7 @@ export default function TabBarSettings() {
                       setTabBarConfig(setTabHidden(config, tab, !hidden));
                     }}
                     style={({ pressed }) => [styles.toggle, pressed && { opacity: 0.6 }]}>
-                    <Icon name={hidden ? 'circle' : 'check-circle'} size={22} color={hidden ? colors.textFaint : colors.accent} />
+                    <Icon name={hidden ? 'circle' : 'check-circle'} size={22} color={hidden ? colors.textFaint : colors.accentText} />
                     <Icon name={TAB_ICONS[tab]} size={20} color={hidden ? colors.textFaint : colors.textMuted} />
                     <Txt tone={hidden ? 'faint' : 'default'} style={{ flex: 1 }}>{label}</Txt>
                     {hidden ? <Txt variant="small" tone="faint">숨김</Txt> : null}
@@ -92,7 +92,7 @@ function BarPreview() {
       accessible accessibilityLabel={`탭 바 미리보기: ${tabs.map((tab) => TAB_LABELS[tab]).join(', ')}`}
       style={[styles.preview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       {tabs.map((tab, index) => {
-        const color = index === 0 ? colors.accent : colors.textFaint;
+        const color = index === 0 ? colors.accentText : colors.textMuted;
         return (
           <View key={tab} style={styles.previewTab}>
             <Icon name={TAB_ICONS[tab]} size={20} color={color} />

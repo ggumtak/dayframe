@@ -27,8 +27,9 @@ All take `size?: number` (width in logical px, default 160; height is `size × 0
 | `AllDoneArt`    | Accent check medal in a burst of confetti                 | Finished everything today             |
 
 Shared language: 160×120 canvas, a soft `surfaceMuted` disc behind the subject, "paper" objects with a 2.5 outline, radius 8
-(4 for small parts), the accent for the one thing that matters, `accentSoft`/a mid accent tint for echoes, and one warm touch
-from `warning`.
+(4 for small parts), the accent for the one thing that matters, and everything else in neutrals: since the calm colour
+system (DESIGN.md) `artPalette()` draws the `accentSoft`/`accentMid` echoes and the `warm` touches in greys, so a piece adds
+at most one hue to a screen. Screens use 120 px (`EMPTY_ART`). `DayBackdrop` is no longer shown on Today; it stays here, unused.
 
 ## `DayBackdrop`
 

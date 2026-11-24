@@ -10,7 +10,7 @@ import { Temporal, weekdayName, weekStart } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Habit, HabitLog, HabitStats } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
-import { radius, space, useTheme } from '@/theme';
+import { space, useTheme } from '@/theme';
 
 import { nextCheckIn } from './checkIn';
 import { dayState, logsByDate, outsideHabit, periodProgress, weekDates } from './goal';
@@ -42,16 +42,16 @@ function CheckIn({ progress, target, done, onPress, onLongPress, label }: {
       }}>
       <Animated.View style={[{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }, style]}>
         <Svg width={SIZE} height={SIZE} style={StyleSheet.absoluteFill}>
-          <Circle cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={colors.surfaceMuted} strokeWidth={STROKE} fill={done ? colors.success : 'none'} />
+          <Circle cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={done ? colors.accent : colors.border} strokeWidth={STROKE} fill={done ? colors.accent : 'none'} />
           {done || ratio === 0 ? null : (
             <Circle
-              cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={colors.success} strokeWidth={STROKE} fill="none" strokeLinecap="round"
+              cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={colors.accent} strokeWidth={STROKE} fill="none" strokeLinecap="round"
               strokeDasharray={`${circumference * ratio} ${circumference}`} transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`} />
           )}
         </Svg>
         {done ? <Icon name="check" size={24} color={colors.onAccent} />
           : target > 1 ? <Txt variant="smallStrong" tone="muted">{progress}/{target}</Txt>
-            : <Icon name="plus" size={20} color={colors.textFaint} />}
+            : <Icon name="plus" size={20} color={colors.textMuted} />}
       </Animated.View>
     </Pressable>
   );
@@ -101,17 +101,18 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
         <Card style={styles.card}>
           <View style={{ flex: 1, gap: space.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-              <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={24} />
+              <HabitAvatar name={habit.name} emoji={look.emoji} size={24} />
               <Txt variant="bodyStrong" numberOfLines={1} style={{ flexShrink: 1 }}>{habit.name}</Txt>
-              {streak > 0 ? (
-                <View style={[styles.streak, { backgroundColor: colors.warningSoft }]} accessibilityLabel={`${streak}${weekly ? '주' : '일'} 연속`}>
-                  <Icon name="zap" size={11} color={colors.warning} />
-                  <Txt variant="caption" style={{ color: colors.warning, fontWeight: '700' }}>{streak}{weekly ? '주' : '일'}</Txt>
-                </View>
-              ) : null}
-              {strength.score > 0 ? (
-                <View style={[styles.streak, { backgroundColor: colors.successSoft }]} accessibilityLabel={`습관 강도 ${strength.score}%`}>
-                  <Txt variant="caption" style={{ color: colors.success, fontWeight: '700' }}>{strength.score}%</Txt>
+              {/* Streak and strength as one quiet line of text, not two coloured badges. */}
+              {streak > 0 || strength.score > 0 ? (
+                <View
+                  style={styles.stats} accessible
+                  accessibilityLabel={[streak > 0 ? `${streak}${weekly ? '주' : '일'} 연속` : '', strength.score > 0 ? `습관 강도 ${strength.score}%` : '']
+                    .filter(Boolean).join(', ')}>
+                  {streak > 0 ? <Icon name="zap" size={11} color={colors.textFaint} /> : null}
+                  <Txt variant="caption" tone="muted">
+                    {[streak > 0 ? `${streak}${weekly ? '주' : '일'}` : '', strength.score > 0 ? `강도 ${strength.score}%` : ''].filter(Boolean).join(' · ')}
+                  </Txt>
                 </View>
               ) : null}
             </View>
@@ -122,7 +123,8 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
                 // A day short of a daily goal (2 of 4) is lighter than a day that met it.
                 const state = dayState(habit, log);
                 const met = state === 'met';
-                const fill = met ? colors.success : state === 'partial' ? colors.successSoft : log ? colors.border : colors.surfaceMuted;
+                // One accent ramp: met is the full accent, partial a lighter step; skipped and resting days stay grey.
+                const fill = met ? colors.accent : state === 'partial' ? colors.accentRamp[1] : log ? colors.border : colors.surfaceMuted;
                 // Tapping a day sets or clears its record, so a forgotten yesterday is fixed right here.
                 return (
                   <Pressable
@@ -148,12 +150,14 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
                       {log?.status === 'frozen' ? <Icon name="pause" size={10} color={colors.textMuted} /> : null}
                       {log?.status === 'skipped' ? <Icon name="minus" size={10} color={colors.textMuted} /> : null}
                     </View>
-                    <Txt variant="caption" tone={item.equals(day) ? 'accent' : 'faint'}>{weekdayName(item)}</Txt>
+                    <Txt variant="caption" tone={item.equals(day) ? 'default' : 'faint'} style={item.equals(day) ? styles.todayLabel : undefined}>
+                      {weekdayName(item)}
+                    </Txt>
                   </Pressable>
                 );
               })}
             </View>
-            <Txt variant="small" tone={strength.missedYesterday ? 'default' : 'muted'} style={strength.missedYesterday ? { color: colors.warning } : undefined}>
+            <Txt variant={strength.missedYesterday ? 'smallStrong' : 'small'} tone={strength.missedYesterday ? 'default' : 'muted'}>
               {strength.missedYesterday
                 ? '어제 놓침 · 이틀 연속 빠지지 않게 오늘은 꼭'
                 : (weekly ? `이번 주 ${progress}/${habit.target_count}회` : habit.target_count > 1 ? `오늘 ${progress}/${habit.target_count}회` : done ? '오늘 완료' : '오늘 아직')
@@ -176,6 +180,7 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
 
 const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
-  streak: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: radius.pill, paddingHorizontal: 7, height: 20 },
+  stats: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 'auto', paddingLeft: space.xs },
+  todayLabel: { fontWeight: '700' },
   dot: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 });

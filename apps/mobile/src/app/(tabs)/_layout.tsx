@@ -31,8 +31,9 @@ const TodayBadge = memo(function TodayBadge() {
   );
   if (dueNow === 0) return null;
   return (
-    <View style={[styles.badge, { backgroundColor: colors.accent, borderColor: colors.surface }]}>
-      <Text style={[styles.badgeText, { color: colors.onAccent }]}>{dueNow > 99 ? '99+' : dueNow}</Text>
+    // A count, not an action: neutral ink, so the selected tab stays the bar's only accent.
+    <View style={[styles.badge, { backgroundColor: colors.textMuted, borderColor: colors.surface }]}>
+      <Text style={[styles.badgeText, { color: colors.surface }]}>{dueNow > 99 ? '99+' : dueNow}</Text>
     </View>
   );
 });
@@ -52,16 +53,16 @@ function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProp
   return (
     <View style={{ backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }}>
       {online ? null : (
-        <View style={[styles.offline, { backgroundColor: colors.warningSoft }]} accessibilityLiveRegion="polite">
-          <Icon name="wifi-off" size={13} color={colors.warning} />
-          <Txt variant="caption" style={{ color: colors.warning }}>오프라인 · 변경한 내용은 연결되면 저장됩니다</Txt>
+        <View style={[styles.offline, { backgroundColor: colors.surfaceMuted }]} accessibilityLiveRegion="polite">
+          <Icon name="wifi-off" size={13} color={colors.textFaint} />
+          <Txt variant="caption" tone="muted">오프라인 · 변경한 내용은 연결되면 저장됩니다</Txt>
         </View>
       )}
       <View style={[styles.bar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]} accessibilityRole="tablist">
         {routes.map((route) => {
           const focused = route.key === focusedKey;
           const label = descriptors[route.key]?.options.title ?? route.name;
-          const color = focused ? colors.accent : colors.textFaint;
+          const color = focused ? colors.accentText : colors.textMuted;
           return (
             <Pressable
               key={route.key} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: focused }}
@@ -77,7 +78,7 @@ function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProp
                 }
               }}>
               <View>
-                <Icon name={TAB_ICONS[route.name as TabName] ?? 'circle'} size={22} color={color} />
+                <Icon name={TAB_ICONS[route.name as TabName] ?? 'circle'} size={22} color={focused ? color : colors.textFaint} />
                 {route.name === 'index' ? <TodayBadge /> : null}
               </View>
               <Text style={[styles.label, { color, fontWeight: focused ? '700' : '500' }]}>{label}</Text>

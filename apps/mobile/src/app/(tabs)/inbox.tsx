@@ -12,6 +12,7 @@ import {
 } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
+import { LIST_COLORS, listColor, listColorEntry } from '@/features/tasks/listColors';
 import { deleteProjectMeta, PROJECT_COLORS, PROJECT_ICONS, setProjectMeta, useProjectMetaMap } from '@/features/tasks/projectMeta';
 import { TaskList } from '@/features/tasks/TaskList';
 import { TemplatesSheet } from '@/features/tasks/TemplatesSheet';
@@ -51,7 +52,7 @@ const isScope = (value: string): value is Scope => value.length > 0;
 const isSortMode = (value: string): value is SortMode => value in sortLabels;
 
 export default function Inbox() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { roots, isLoading, refetch } = useTaskIndex();
   const { data: projects } = useProjects();
   const projectMeta = useProjectMetaMap();
@@ -277,12 +278,12 @@ export default function Inbox() {
                   haptic.tap();
                   setSelectedIds((prev) => (prev ? null : new Set()));
                 }}
-                color={selectedIds ? colors.accent : colors.textMuted} />
+                color={selectedIds ? colors.accentText : colors.textMuted} />
             ) : null}
             <IconButton name="bookmark" label="체크리스트 템플릿" onPress={() => setShowTemplates(true)} color={colors.textMuted} />
             <IconButton
               name="sliders" label="정렬" onPress={() => setPickingSort(true)}
-              color={sort !== 'manual' ? colors.accent : colors.textMuted} />
+              color={sort !== 'manual' ? colors.accentText : colors.textMuted} />
             <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
             {selected ? (
               <IconButton name="more-horizontal" label="목록 관리" onPress={() => setProjectMenu(true)} color={colors.textMuted} />
@@ -313,7 +314,7 @@ export default function Inbox() {
               <Chip
                 key={project.id}
                 icon={meta?.icon ?? 'hash'}
-                color={meta?.color}
+                color={listColor(meta?.color, isDark)}
                 label={project.name + (counts.get(project.id) ? ' ' + counts.get(project.id) : '')}
                 selected={selected?.id === project.id}
                 onPress={() => {
@@ -325,9 +326,9 @@ export default function Inbox() {
         </PlainScroll>
         <View style={{ paddingRight: space.md, paddingBottom: space.sm }}>
           <IconButton
-            name="plus" label="새 목록 만들기" size={18} color={colors.accent}
+            name="plus" label="새 목록 만들기" size={18} color={colors.textMuted}
             onPress={openCreate}
-            style={{ width: 32, height: 32, backgroundColor: colors.accentSoft }} />
+            style={{ width: 32, height: 32, backgroundColor: colors.surfaceMuted }} />
         </View>
       </View>
 
@@ -358,7 +359,7 @@ export default function Inbox() {
                         <Txt variant="small" tone="faint">{sectionTasks.length}</Txt>
                       </Pressable>
                       <IconButton
-                        name="plus" label={section.name + '에 할 일 추가'} size={16} color={colors.accent}
+                        name="plus" label={section.name + '에 할 일 추가'} size={16} color={colors.textMuted}
                         onPress={() => quickAdd.open({ projectId: selected!.id, sectionId: section.id })}
                         style={{ width: 32, height: 32 }} />
                       <IconButton
@@ -386,8 +387,8 @@ export default function Inbox() {
               <Pressable
                 accessibilityRole="button" accessibilityLabel="새 섹션 추가" onPress={openCreateSection}
                 style={({ pressed }) => [styles.addSectionBtn, { opacity: pressed ? 0.6 : 1 }]}>
-                <Icon name="plus" size={15} color={colors.accent} />
-                <Txt variant="smallStrong" tone="accent">섹션 추가</Txt>
+                <Icon name="plus" size={15} color={colors.textFaint} />
+                <Txt variant="smallStrong" tone="muted">섹션 추가</Txt>
               </Pressable>
             </>
           ) : tasks.length ? (
@@ -446,7 +447,7 @@ export default function Inbox() {
               {showCompleted ? completedInScope.map((task) => (
                 <View key={task.id} style={styles.completedRow}>
                   <Checkbox
-                    checked size={20} color={colors.success}
+                    checked done size={20}
                     onPress={() => {
                       haptic.tap();
                       taskActions.reopen(task);
@@ -484,7 +485,7 @@ export default function Inbox() {
         {doneWindows.map((item) => (
           <Row
             key={item.value} label={item.label}
-            trailing={doneWindow === item.value ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+            trailing={doneWindow === item.value ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
             onPress={() => {
               haptic.tap();
               setDoneWindow(item.value);
@@ -512,7 +513,7 @@ export default function Inbox() {
             detail={option === 'manual'
               ? (effectiveScope === 'all' ? '목록별로만 가능' : '길게 눌러 순서 변경')
               : option === 'smart' ? '긴급도 · 우선순위 · 진행률' : undefined}
-            trailing={sort === option ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+            trailing={sort === option ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
             onPress={() => {
               haptic.tap();
               setSort(option);
@@ -591,20 +592,20 @@ export default function Inbox() {
           <View style={{ gap: 6 }}>
             <Txt variant="caption" tone="muted">색</Txt>
             <View style={styles.swatchRow}>
-              {PROJECT_COLORS.map((swatch) => {
-                const active = projectColor === swatch;
+              {LIST_COLORS.map((swatch) => {
+                const active = listColorEntry(projectColor)?.id === swatch.id;
                 return (
                   <Pressable
-                    key={swatch} accessibilityRole="button" accessibilityLabel={'색 ' + swatch}
+                    key={swatch.id} accessibilityRole="radio" accessibilityLabel={'색 ' + swatch.label} accessibilityState={{ selected: active }}
                     onPress={() => {
                       haptic.tap();
-                      setProjectColor(swatch);
+                      setProjectColor(swatch.stored);
                     }}
                     style={[
                       styles.swatch,
-                      { backgroundColor: swatch, borderColor: active ? colors.text : 'transparent' },
+                      { backgroundColor: isDark ? swatch.dark : swatch.light, borderColor: active ? colors.text : 'transparent' },
                     ]}>
-                    {active ? <Icon name="check" size={14} color="#FFFFFF" /> : null}
+                    {active ? <Icon name="check" size={14} color={colors.background} /> : null}
                   </Pressable>
                 );
               })}
@@ -625,11 +626,11 @@ export default function Inbox() {
                     style={[
                       styles.iconPick,
                       {
-                        borderColor: active ? projectColor : colors.border,
-                        backgroundColor: active ? colors.surfaceMuted : 'transparent',
+                        borderColor: active ? colors.accent : colors.border,
+                        backgroundColor: active ? colors.accentSoft : 'transparent',
                       },
                     ]}>
-                    <Icon name={ic} size={17} color={active ? projectColor : colors.textMuted} />
+                    <Icon name={ic} size={17} color={active ? listColor(projectColor, isDark) ?? colors.accentText : colors.textMuted} />
                   </Pressable>
                 );
               })}

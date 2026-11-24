@@ -154,7 +154,7 @@ function RepeatPickerContent({
             return (
               <Row
                 key={item.label} icon={item.rule ? 'repeat' : 'slash'} label={label} detail={item.detail}
-                trailing={active ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
+                trailing={active ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
                 onPress={() => onSelect(item.rule, item.rule ? mode : 'schedule')} />
             );
           })}
@@ -215,7 +215,7 @@ function RepeatPickerContent({
           {frequency === 'MONTHLY' ? (
             <Row
               icon="calendar" label="매월 말일에 반복" detail={lastDay ? '켜짐' : '꺼짐'}
-              trailing={<Icon name={lastDay ? 'check-circle' : 'circle'} size={20} color={lastDay ? colors.accent : colors.textFaint} />}
+              trailing={<Icon name={lastDay ? 'check-circle' : 'circle'} size={20} color={lastDay ? colors.accentText : colors.textFaint} />}
               onPress={() => {
                 haptic.tap();
                 setLastDay((prev) => !prev);
@@ -223,8 +223,8 @@ function RepeatPickerContent({
           ) : null}
 
           <View style={[styles.preview, { backgroundColor: colors.surfaceMuted }]}>
-            <Icon name="repeat" size={15} color={colors.accent} />
-            <Txt variant="smallStrong" tone="accent">{describeRecurrence(customRule, mode) ?? customRule}</Txt>
+            <Icon name="repeat" size={15} color={colors.textMuted} />
+            <Txt variant="smallStrong">{describeRecurrence(customRule, mode) ?? customRule}</Txt>
           </View>
 
           <Button label="반복 적용" onPress={() => onSelect(customRule, mode)} />

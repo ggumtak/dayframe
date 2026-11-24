@@ -59,7 +59,7 @@ export default function Appearance() {
               })}
             </View>
           </Card>
-          <Txt variant="small" tone="muted">버튼, 선택한 탭, 체크 표시의 색이 바뀝니다. 우선순위와 완료 색은 그대로입니다.</Txt>
+          <Txt variant="small" tone="muted">버튼, 선택한 탭, 체크 표시의 색이 바뀝니다.</Txt>
         </View>
 
         <View style={{ gap: space.sm }}>
@@ -67,7 +67,7 @@ export default function Appearance() {
           <Card style={{ paddingVertical: space.xs }}>
             <Row
               icon="smartphone" label="진동 피드백" detail={hapticsOn ? '켜짐' : '꺼짐'}
-              trailing={<Icon name={hapticsOn ? 'check-circle' : 'circle'} size={20} color={hapticsOn ? colors.accent : colors.textFaint} />}
+              trailing={<Icon name={hapticsOn ? 'check-circle' : 'circle'} size={20} color={hapticsOn ? colors.accentText : colors.textFaint} />}
               onPress={() => {
                 const next = !hapticsOn;
                 setHapticsEnabled(next);
@@ -88,14 +88,14 @@ function Preview() {
     <Card style={{ gap: space.md }}>
       <Txt variant="caption" tone="faint">미리보기</Txt>
       <View style={styles.previewRow}>
-        <Checkbox checked={done} color={colors.accent} label="미리보기 할 일 완료" onPress={() => setDone((value) => !value)} />
+        <Checkbox checked={done} label="미리보기 할 일 완료" onPress={() => setDone((value) => !value)} />
         <View style={{ flex: 1, gap: 2 }}>
           <Txt variant="bodyStrong" tone={done ? 'faint' : 'default'} style={done ? { textDecorationLine: 'line-through' } : undefined}>
             장보기 목록 정리하기
           </Txt>
           <View style={styles.previewMeta}>
-            <Icon name="calendar" size={12} color={colors.schedule} />
-            <Txt variant="small" style={{ color: colors.schedule }}>오늘 오후 6:00</Txt>
+            <Icon name="calendar" size={12} color={colors.textFaint} />
+            <Txt variant="small" tone="muted" style={{ fontWeight: '600' }}>오늘 오후 6:00</Txt>
           </View>
         </View>
       </View>

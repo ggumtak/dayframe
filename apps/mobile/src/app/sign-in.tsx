@@ -76,7 +76,7 @@ export default function SignIn() {
             accessibilityLabel="비밀번호" style={field} />
 
           {error ? <Txt variant="small" tone="danger" accessibilityLiveRegion="polite">{error}</Txt> : null}
-          {notice ? <Txt variant="small" tone="success" accessibilityLiveRegion="polite">{notice}</Txt> : null}
+          {notice ? <Txt variant="small" tone="muted" accessibilityLiveRegion="polite">{notice}</Txt> : null}
 
           <Button label={mode === 'sign-in' ? '로그인' : '계정 만들기'} onPress={submit} loading={busy} disabled={!ready} />
           <Button
