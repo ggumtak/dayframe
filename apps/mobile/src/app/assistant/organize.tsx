@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
@@ -129,7 +129,9 @@ export default function Organize() {
   const { data: openTasks } = useTasks();
   const flow = useTaskFlow();
   const request = useAiRequest<OrganizedTask[]>();
-  const [memo, setMemo] = useState('');
+  // Quick add's "AI로 정리" brings along whatever was typed there.
+  const { text: carried } = useLocalSearchParams<{ text?: string }>();
+  const [memo, setMemo] = useState(typeof carried === 'string' ? carried : '');
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [editing, setEditing] = useState<Draft | null>(null);
 
@@ -202,7 +204,7 @@ export default function Organize() {
         {state.status === 'loading' ? (
           <AiLoading message="메모를 할 일로 정리하고 있습니다" onCancel={request.cancel} />
         ) : state.status === 'error' ? (
-          <AiErrorView kind={state.kind} onRetry={() => void organize()} />
+          <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void organize()} />
         ) : preview ? (
           <>
             <Txt variant="small" tone="muted">

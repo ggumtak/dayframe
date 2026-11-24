@@ -113,7 +113,7 @@ export default function Plan() {
   let body;
   if (isPending) body = <Loading />;
   else if (state.status === 'loading') body = <AiLoading message="오늘 남은 시간에 할 일을 배치하고 있습니다" onCancel={request.cancel} />;
-  else if (state.status === 'error') body = <AiErrorView kind={state.kind} onRetry={() => void propose()} />;
+  else if (state.status === 'error') body = <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void propose()} />;
   else if (preview) {
     body = (
       <>
@@ -139,7 +139,7 @@ export default function Plan() {
               <View style={{ flex: 1, gap: 2 }}>
                 <Txt variant="body" numberOfLines={2}>{block.candidate.title}</Txt>
                 {block.fixed ? <Txt variant="caption" tone="muted">이미 정한 시간</Txt>
-                  : block.candidate.overdue ? <Txt variant="caption" tone="danger">밀린 일</Txt> : null}
+                  : block.candidate.overdue ? <Txt variant="caption" tone="danger">지연</Txt> : null}
               </View>
             </View>
           );
@@ -167,7 +167,7 @@ export default function Plan() {
     body = (
       <>
         <Txt variant="small" tone="muted">
-          오늘과 밀린 할 일 {candidates.length}개를 우선순위와 걸리는 시간에 맞춰 지금부터 하루 끝까지 배치합니다. 이미 시간을 정한 일은 그대로 둡니다.
+          오늘 할 일과 지연된 할 일 {candidates.length}개를 우선순위와 걸리는 시간에 맞춰 지금부터 하루 끝까지 배치합니다. 이미 시간을 정한 일은 그대로 둡니다.
         </Txt>
         <Stepper label="하루 시작" value={prefs.dayStart} min={0} max={prefs.dayEnd - 60} onChange={(dayStart) => setAiPrefs({ dayStart })} />
         <Stepper label="하루 끝" value={prefs.dayEnd} min={prefs.dayStart + 60} max={24 * 60} onChange={(dayEnd) => setAiPrefs({ dayEnd })} />
@@ -182,7 +182,7 @@ export default function Plan() {
               <View style={[styles.dot, { backgroundColor: priorityColor(colors, candidate.priority) }]} />
               <Txt variant="small" style={{ flex: 1 }} numberOfLines={1}>{candidate.title}</Txt>
               <Txt variant="caption" tone={candidate.overdue ? 'danger' : 'faint'}>
-                {candidate.fixedMinutes !== null ? formatTime(candidate.fixedMinutes) : candidate.overdue ? '밀린 일' : '오늘'}
+                {candidate.fixedMinutes !== null ? formatTime(candidate.fixedMinutes) : candidate.overdue ? '지연' : '오늘'}
               </Txt>
             </View>
           ))}

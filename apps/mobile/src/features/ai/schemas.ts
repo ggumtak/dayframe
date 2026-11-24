@@ -10,6 +10,8 @@ import { parseHHMM, parseIsoDate } from './time.ts';
 /** A JSON schema for the request plus the check that turns an untyped reply into `T`, or null when unusable. */
 export interface AiSchema<T> {
   json: Record<string, unknown>;
+  /** The top-level field the reply must have, named in the "자세히" line when a reply fails the check. */
+  rootKey: string;
   parse: (raw: unknown) => T | null;
 }
 
@@ -71,7 +73,7 @@ export function organizeSchema(listNames: string[], today: Temporal.PlainDate): 
       subtasks: arr(str()),
     })),
   });
-  return { json, parse: (raw) => parseOrganized(raw, names, today) };
+  return { json, rootKey: 'tasks', parse: (raw) => parseOrganized(raw, names, today) };
 }
 
 export function parseOrganized(raw: unknown, listNames: string[], today: Temporal.PlainDate): OrganizedTask[] | null {
@@ -113,7 +115,7 @@ export function planSchema(taskIds: string[]): AiSchema<RawPlan> {
     left_out: arr(obj({ task_id: id, reason: str('Short Korean reason, under 25 characters.') })),
     note: str('One or two Korean sentences about the plan.'),
   });
-  return { json, parse: parseRawPlan };
+  return { json, rootKey: 'blocks', parse: parseRawPlan };
 }
 
 export function parseRawPlan(raw: unknown): RawPlan | null {
@@ -139,7 +141,7 @@ export function breakdownSchema(existingSubtasks: string[]): AiSchema<BreakdownS
   const json = obj({
     steps: arr(obj({ title: str('Concrete step in natural Korean.'), minutes: nullable(int('Estimated minutes.')) })),
   });
-  return { json, parse: (raw) => parseBreakdown(raw, existingSubtasks) };
+  return { json, rootKey: 'steps', parse: (raw) => parseBreakdown(raw, existingSubtasks) };
 }
 
 export function parseBreakdown(raw: unknown, existingSubtasks: string[]): BreakdownStep[] | null {
@@ -175,7 +177,7 @@ export function reviewSchema(): AiSchema<WeeklyReview> {
     patterns: arr(str()),
     suggestions: arr(obj({ title: str(), as_task: { type: 'boolean' } })),
   });
-  return { json, parse: parseReview };
+  return { json, rootKey: 'headline', parse: parseReview };
 }
 
 const sentences = (value: unknown, max: number) =>

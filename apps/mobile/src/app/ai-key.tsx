@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Button, Card, Icon, IconButton, Sheet, Txt } from '@/components/ui';
 import { type CheckResult, checkConnection } from '@/features/ai/client';
-import { AiScreen } from '@/features/ai/components';
+import { AiScreen, ErrorDetail } from '@/features/ai/components';
 import { AI_ERROR_TEXT } from '@/features/ai/errors';
 import { deleteKey, saveKey, useAiKeyStatus } from '@/features/ai/keyStore';
 import { AI_MODELS, cleanKey, looksLikeKey, PRICING } from '@/features/ai/models';
@@ -45,7 +45,7 @@ function KeyEditor({ onDone, canCancel }: { onDone: () => void; canCancel: boole
   const save = async () => {
     const key = cleanKey(text);
     if (!looksLikeKey(key)) {
-      setProblem('키 모양이 아닙니다. sk-ant-로 시작하는 키 전체를 붙여 넣어 주세요.');
+      setProblem('키가 아닌 것 같습니다. sk-ant-로 시작하는 키를 처음부터 끝까지 붙여 넣어 주세요.');
       return;
     }
     setSaving(true);
@@ -102,6 +102,7 @@ function CheckLine({ result }: { result: CheckResult }) {
       <View style={{ flex: 1, gap: 2 }}>
         <Txt variant="smallStrong">{text.title}</Txt>
         {text.message ? <Txt variant="small" tone="muted">{text.message}</Txt> : null}
+        <ErrorDetail detail={result.detail} align="left" />
       </View>
     </View>
   );
@@ -179,7 +180,7 @@ export default function AiKeySettings() {
         ) : (
           <Card style={{ gap: space.sm }}>
             <Txt variant="small" tone="muted">
-              {hasKey ? '새 키를 붙여 넣으면 지금 키를 대신합니다.' : 'AI 비서는 내 Anthropic 키로 동작합니다. 쓴 만큼만 Anthropic이 요금을 청구합니다.'}
+              {hasKey ? '새 키를 저장하면 지금 키는 지워집니다.' : 'AI 비서는 내 Anthropic 키로 동작합니다. 쓴 만큼만 Anthropic이 요금을 청구합니다.'}
             </Txt>
             <KeyEditor canCancel={hasKey} onDone={() => setEditing(false)} />
           </Card>

@@ -8,7 +8,8 @@
 // API would send, which makes the shot fail visibly.
 //
 // Keys: a key containing "wrong" is answered 401, one containing "nocredit" 400 with the low-balance
-// message, one containing "busy" 529. Anything else is accepted.
+// message, one containing "busy" 529, and one containing "nofallback" refuses `fallbacks` with a 400
+// invalid_request_error (to show the client retrying without it). Anything else is accepted.
 
 export const isAnthropicMessages = (url) => {
   try {
@@ -127,7 +128,7 @@ function review(user) {
   const worst = habits.slice().sort((a, b) => a.done - b.done)[0];
   const overdueTitle = /^- (.*?) \(마감/.exec(overdue[0] ?? '')?.[1];
   return {
-    headline: `집중은 ${activeDays}일 동안 ${Math.round(focusTotal / 60 * 10) / 10}시간으로 꾸준했지만, ${overdueTitle ? `‘${overdueTitle}’${josa(overdueTitle, '이', '가')} 아직 남아 있습니다` : '밀린 일은 없습니다'}.`,
+    headline: `집중은 ${activeDays}일 동안 ${Math.round(focusTotal / 60 * 10) / 10}시간으로 꾸준했지만, ${overdueTitle ? `‘${overdueTitle}’${josa(overdueTitle, '이', '가')} 아직 남아 있습니다` : '지연된 할 일은 없습니다'}.`,
     wins: [
       `할 일 ${completed.length}개를 끝냈습니다.`,
       best ? `‘${best.name}’${josa(best.name, '을', '를')} 7일 중 ${best.done}일 지켰습니다.` : null,
@@ -160,6 +161,9 @@ export function handleAnthropic(method, headers, body, log) {
   if (key.includes('wrong')) return error(401, 'authentication_error', 'invalid x-api-key');
   if (key.includes('nocredit')) return error(400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API.');
   if (key.includes('busy')) return error(529, 'overloaded_error', 'Overloaded');
+  if (key.includes('nofallback') && body?.fallbacks !== undefined) {
+    return error(400, 'invalid_request_error', `Unexpected value(s) \`${betas.join(',')}\` for the \`anthropic-beta\` header.`);
+  }
   if (!['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'].includes(model)) return error(404, 'not_found_error', 'model: ' + model);
   for (const banned of ['temperature', 'top_p', 'top_k']) if (banned in body) return error(400, 'invalid_request_error', banned + ' is not supported');
   if (body.tool_choice && ['any', 'tool'].includes(body.tool_choice.type)) return error(400, 'invalid_request_error', 'tool_choice: type "tool" and "any" are not supported for this model.');

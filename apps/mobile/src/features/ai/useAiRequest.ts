@@ -7,7 +7,7 @@ export type AiRequestState<T> =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'done'; result: AiResult<T> }
-  | { status: 'error'; kind: AiErrorKind };
+  | { status: 'error'; kind: AiErrorKind; detail: string | null };
 
 /**
  * Runs one AI request at a time for a screen: a new run cancels the previous one, `cancel` stops it, and
@@ -32,7 +32,8 @@ export function useAiRequest<T>() {
     } catch (error) {
       if (controller.current !== current) return null;
       const kind = error instanceof AiError ? error.kind : 'server';
-      setState(kind === 'cancelled' ? { status: 'idle' } : { status: 'error', kind });
+      const detail = error instanceof AiError ? error.detail : null;
+      setState(kind === 'cancelled' ? { status: 'idle' } : { status: 'error', kind, detail });
       return null;
     } finally {
       if (controller.current === current) controller.current = null;

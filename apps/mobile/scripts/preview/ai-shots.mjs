@@ -4,8 +4,11 @@
 // (hub → key screen → 저장 → back) and then moves on by tapping, never by reloading. Requests to
 // api.anthropic.com are answered by mock-anthropic.mjs; nothing reaches Anthropic.
 
+import { ids } from './fixtures.mjs';
+
 const KEY = 'sk-ant-api03-preview' + 'x'.repeat(60) + 'abcd';
 const WRONG_KEY = 'sk-ant-api03-wrong' + 'x'.repeat(60) + 'zzzz';
+const NO_FALLBACK_KEY = 'sk-ant-api03-nofallback' + 'x'.repeat(60) + 'abcd';
 
 const saveKey = (key = KEY) => [
   { click: { label: '먼저 키를 저장해 주세요' } },
@@ -53,5 +56,34 @@ export default [
   ] },
   { name: 'ai-error-wrong-key', path: '/assistant', steps: [
     ...saveKey(WRONG_KEY), { click: { label: '메모 정리' } }, { fill: { label: '메모', value: MEMO } }, { click: { label: '정리하기' } }, { wait: 400 },
+  ] },
+  { name: 'ai-error-wrong-key-detail', path: '/assistant', steps: [
+    ...saveKey(WRONG_KEY), { click: { label: '메모 정리' } }, { fill: { label: '메모', value: MEMO } }, { click: { label: '정리하기' } }, { wait: 400 },
+    { click: { label: '자세히' } }, { wait: 200 },
+  ] },
+  // The API refuses `fallbacks` here: the client retries once without it (two requests in the log) and succeeds.
+  { name: 'ai-fallback-refused-retry', path: '/assistant', steps: [
+    ...saveKey(NO_FALLBACK_KEY), { click: { label: '큰 일 쪼개기' } }, { click: { label: '분기 보고서 초안 제출 쪼개기' } }, { wait: 600 },
+  ] },
+
+  // Entry points elsewhere in the app.
+  { name: 'entry-settings', path: '/settings', steps: [{ scroll: 500 }] },
+  { name: 'entry-today-options', path: '/', steps: [{ click: { label: '보기 옵션' } }, { wait: 500 }] },
+  { name: 'entry-plan-day-sheet', path: '/', steps: [{ click: { label: '하루 계획·일정 정리' } }, { wait: 500 }] },
+  { name: 'entry-task-menu', path: '/', steps: [{ hold: { text: '메일함 정리하고 답장하기' } }, { wait: 500 }, { scroll: 300 }] },
+  { name: 'entry-task-menu-breakdown', path: '/assistant', steps: [
+    ...saveKey(), { click: { label: '뒤로' } }, { hold: { text: '메일함 정리하고 답장하기' } }, { wait: 500 },
+    { click: { label: 'AI로 쪼개기' } }, { wait: 800 },
+  ] },
+  { name: 'entry-task-detail-more', path: '/task/' + ids.detailTask, steps: [{ click: { label: '더 보기' } }, { wait: 500 }] },
+  { name: 'entry-task-detail-breakdown', path: '/task/' + ids.detailTask, steps: [
+    { click: { label: '더 보기' } }, { wait: 400 }, { click: { label: 'AI로 쪼개기' } }, { wait: 600 },
+  ] },
+  { name: 'entry-quick-add', path: '/', steps: [
+    { click: { label: '할 일 빠른 추가' } }, { fill: { label: '할 일 입력', value: '내일 치과 전화, 금요일까지 보고서' } }, { wait: 300 },
+  ] },
+  { name: 'entry-quick-add-organize', path: '/assistant', steps: [
+    ...saveKey(), { click: { label: '뒤로' } }, { click: { label: '할 일 빠른 추가' } },
+    { fill: { label: '할 일 입력', value: '내일 치과 전화, 금요일까지 보고서 초안 마무리' } }, { click: { label: 'AI로 정리' } }, { wait: 500 },
   ] },
 ];

@@ -90,7 +90,8 @@ Routes the mock does not know answer 404 and are listed in the summary: add them
 `https://api.anthropic.com/v1/messages` are answered by `mock-anthropic.mjs`, never by the real API: it checks the
 request against the rules of the models the app uses (no sampling parameters, no forced tool choice, no prefill,
 `fallbacks` only with its beta and never on Haiku) and returns canned structured replies built from what the app
-sent. A key containing `wrong` gets a 401, `nocredit` the low-balance 400, `busy` a 529. The run's details list
+sent. A key containing `wrong` gets a 401, `nocredit` the low-balance 400, `busy` a 529, and `nofallback` a 400 for any
+request that sends `fallbacks` (the client then retries once without it). The run's details list
 each mocked request (model, effort, max_tokens, betas). The web build keeps the key in memory only, so shots save
 it through the UI and move on by tapping instead of reloading.
 

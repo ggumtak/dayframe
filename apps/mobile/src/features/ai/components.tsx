@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, EmptyState, Header, Icon, type IconName, IconButton, Loading, Screen, Txt } from '@/components/ui';
+import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
 import type { AiResult } from './client';
@@ -70,7 +71,47 @@ export function AiLoading({ message, onCancel }: { message: string; onCancel: ()
 
 const KEY_PROBLEMS: AiErrorKind[] = ['no_key', 'bad_key', 'no_credit', 'permission', 'model_unavailable', 'spend_limit'];
 
-export function AiErrorView({ kind, onRetry, onLeave }: { kind: AiErrorKind; onRetry: () => void; onLeave?: () => void }) {
+/**
+ * The technical line behind an error, folded under "자세히" with a copy button, so the owner can send it to
+ * the developer. It never holds the key or what was sent (see describeHttpFailure).
+ */
+export function ErrorDetail({ detail, align = 'center' }: { detail: string | null | undefined; align?: 'center' | 'left' }) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  if (!detail) return null;
+  const copy = async () => {
+    try {
+      const Clipboard = await import('expo-clipboard');
+      await Clipboard.setStringAsync(detail);
+      showToast('자세한 내용을 복사했습니다.');
+    } catch {
+      showToast('복사하지 못했습니다. 글자를 길게 눌러 복사해 주세요.', { tone: 'error' });
+    }
+  };
+  return (
+    <View style={{ alignItems: align === 'center' ? 'center' : 'flex-start', gap: space.xs, alignSelf: 'stretch' }}>
+      <Pressable
+        accessibilityRole="button" accessibilityLabel={open ? '자세히 접기' : '자세히'} accessibilityState={{ expanded: open }}
+        hitSlop={8} onPress={() => setOpen((value) => !value)} style={styles.detailToggle}>
+        <Txt variant="caption" tone="faint">자세히</Txt>
+        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={12} color={colors.textFaint} />
+      </Pressable>
+      {open ? (
+        <View style={[styles.detail, { backgroundColor: colors.surfaceMuted }]}>
+          <Txt variant="caption" tone="muted" selectable style={{ flex: 1 }}>{detail}</Txt>
+          <Pressable accessibilityRole="button" accessibilityLabel="자세한 내용 복사" hitSlop={8} onPress={() => void copy()} style={styles.detailCopy}>
+            <Icon name="copy" size={13} color={colors.accent} />
+            <Txt variant="caption" tone="accent">복사</Txt>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+export function AiErrorView({ kind, detail, onRetry, onLeave }: {
+  kind: AiErrorKind; detail?: string | null; onRetry: () => void; onLeave?: () => void;
+}) {
   const text = AI_ERROR_TEXT[kind];
   const icon: IconName = kind === 'offline' ? 'wifi-off' : KEY_PROBLEMS.includes(kind) ? 'key' : 'alert-circle';
   return (
@@ -80,6 +121,7 @@ export function AiErrorView({ kind, onRetry, onLeave }: { kind: AiErrorKind; onR
         <View style={{ gap: space.sm, marginTop: space.sm, alignSelf: 'stretch', paddingHorizontal: space.xl }}>
           {KEY_PROBLEMS.includes(kind) ? <Button label="AI 비서 설정" icon="key" onPress={() => { onLeave?.(); router.push(AI_ROUTES.key); }} /> : null}
           <Button label="다시 시도" icon="refresh-cw" kind={KEY_PROBLEMS.includes(kind) ? 'secondary' : 'primary'} onPress={onRetry} />
+          <ErrorDetail detail={detail} />
         </View>
       )} />
   );
@@ -122,5 +164,8 @@ const styles = StyleSheet.create({
   footer: { paddingHorizontal: space.lg, paddingTop: space.md, paddingBottom: space.lg, borderTopWidth: StyleSheet.hairlineWidth, gap: space.sm },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md, padding: space.xxl, minHeight: 320 },
   toggle: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  detailToggle: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: 28 },
+  detail: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm, padding: space.sm, borderRadius: radius.sm, alignSelf: 'stretch' },
+  detailCopy: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   note: { flexDirection: 'row', gap: space.sm, padding: space.md, borderRadius: radius.md, alignItems: 'flex-start' },
 });

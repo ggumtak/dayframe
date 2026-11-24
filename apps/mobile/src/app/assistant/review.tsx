@@ -111,7 +111,7 @@ export default function Review() {
   let body;
   if (cached === undefined || !ready) body = <Loading />;
   else if (state.status === 'loading') body = <AiLoading message="지난 7일을 돌아보고 있습니다" onCancel={request.cancel} />;
-  else if (state.status === 'error') body = <AiErrorView kind={state.kind} onRetry={() => void make()} />;
+  else if (state.status === 'error') body = <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void make()} />;
   else if (shown) {
     const { review } = shown;
     body = (
@@ -156,7 +156,7 @@ export default function Review() {
         <View style={styles.stats}>
           <Stat label="완료" value={`${facts.completed.length}개`} />
           <Stat label="집중" value={formatMinutes(focusTotal * 60)} />
-          <Stat label="밀린 일" value={`${facts.overdue.length}개`} />
+          <Stat label="지연" value={`${facts.overdue.length}개`} />
           <Stat label="습관" value={`${facts.habits.length}개`} />
         </View>
       </>

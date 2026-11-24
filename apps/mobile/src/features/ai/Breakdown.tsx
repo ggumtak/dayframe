@@ -79,7 +79,7 @@ export function BreakdownPanel({ task, onDone, maxHeight, inSheet }: { task: Tas
       {state.status === 'loading' ? (
         <AiLoading message="바로 시작할 수 있는 단계로 나누고 있습니다" onCancel={() => { request.cancel(); onDone(); }} />
       ) : state.status === 'error' ? (
-        <AiErrorView kind={state.kind} onRetry={() => void ask()} onLeave={inSheet ? onDone : undefined} />
+        <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void ask()} onLeave={inSheet ? onDone : undefined} />
       ) : state.status === 'done' && drafts ? (
         <View style={{ gap: space.md }}>
           <ScrollView style={maxHeight ? { maxHeight } : undefined} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: space.sm }}>

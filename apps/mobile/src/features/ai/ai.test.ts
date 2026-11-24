@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { FocusSession, Habit, HabitLog, Task, TaskCompletion } from '../../lib/shared';
-import { classifyStatus, isRetryable } from './errors.ts';
+import { AiError, classifyStatus, describeHttpFailure, describeInvalid, isRetryable, scrubSecrets, shouldRetryWithoutFallback } from './errors.ts';
 import { cleanKey, estimateCostUsd, hasServerFallback, isModelId, looksLikeKey, maskKey, usageLine } from './models.ts';
 import { blockChanges, checkPlan, collectCandidates, planWindow, type PlanCandidate } from './plan.ts';
 import { BREAKDOWN_SYSTEM, breakdownUser, ORGANIZE_SYSTEM, organizeUser, PLAN_SYSTEM, planUser, REVIEW_SYSTEM, reviewUser } from './prompts.ts';
@@ -81,6 +81,45 @@ test('HTTP errors map to kinds the owner can act on', () => {
   assert.equal(classifyStatus(500, 'api_error'), 'server');
   assert.ok(isRetryable('rate_limit'));
   assert.ok(!isRetryable('bad_key'));
+});
+
+test('only a 400 invalid_request_error on a request that sent fallbacks is retried without them', () => {
+  const base = { sentFallback: true, status: 400, type: 'invalid_request_error', aborted: false };
+  assert.ok(shouldRetryWithoutFallback(base));
+  assert.ok(!shouldRetryWithoutFallback({ ...base, sentFallback: false }));
+  assert.ok(!shouldRetryWithoutFallback({ ...base, aborted: true }));
+  assert.ok(!shouldRetryWithoutFallback({ ...base, status: 401, type: 'authentication_error' }));
+  assert.ok(!shouldRetryWithoutFallback({ ...base, status: 429, type: 'rate_limit_error' }));
+  assert.ok(!shouldRetryWithoutFallback({ ...base, status: 500, type: 'api_error' }));
+  assert.ok(!shouldRetryWithoutFallback({ ...base, type: 'billing_error' }));
+  assert.ok(!shouldRetryWithoutFallback({ ...base, status: undefined, type: undefined }));
+});
+
+test('error details keep status, type, message and request id, and never a key', () => {
+  const key = 'sk-ant-api03-' + 'A'.repeat(90);
+  assert.equal(
+    describeHttpFailure({ status: 401, type: 'authentication_error', message: 'invalid x-api-key', requestId: 'req_011CSHoEeqs5C35K2UUqR7Fy' }),
+    'HTTP 401 · authentication_error · invalid x-api-key · req_011CSHoEeqs5C35K2UUqR7Fy',
+  );
+  const leaked = describeHttpFailure({ status: 400, type: 'invalid_request_error', message: `bad header Authorization: Bearer ${key} and ${key}` });
+  assert.ok(!leaked.includes('AAAAAAAAAA'));
+  assert.match(leaked, /Bearer \*\*\* and sk-ant-\*\*\*/);
+  assert.equal(scrubSecrets('token ' + 'x9'.repeat(30) + ' end'), 'token *** end');
+  assert.equal(scrubSecrets('fallbacks: Extra inputs are not permitted'), 'fallbacks: Extra inputs are not permitted');
+  const long = describeHttpFailure({ status: 400, message: '가'.repeat(500) });
+  assert.ok(long.length < 230 && long.endsWith('…'));
+  assert.equal(describeHttpFailure({ requestId: 'not-a-request-id' }), '자세한 정보 없음');
+  assert.equal(describeHttpFailure({ type: 'APIConnectionError', message: 'Network request failed' }), 'APIConnectionError · Network request failed');
+});
+
+test('invalid replies are described by shape only', () => {
+  assert.equal(describeInvalid(undefined, 'tasks'), 'JSON 아님');
+  assert.equal(describeInvalid([1], 'tasks'), '객체 아님');
+  assert.equal(describeInvalid({ items: [] }, 'tasks'), 'tasks 없음');
+  assert.equal(describeInvalid({ steps: [] }, 'steps'), 'steps 비어 있음');
+  assert.equal(describeInvalid({ blocks: 'x' }, 'blocks'), 'blocks 형식이 다름');
+  assert.equal(new AiError('invalid', 'tasks 없음').detail, 'tasks 없음');
+  assert.equal(new AiError('offline').detail, null);
 });
 
 // ---------------------------------------------------------------------------------------------- time
