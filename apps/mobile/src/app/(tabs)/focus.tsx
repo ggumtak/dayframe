@@ -10,7 +10,7 @@ import { useDeleteFocus, useFocusActions, useFocusSessions } from '@/data/focus'
 import { useHabits } from '@/data/habits';
 import { bySchedule, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
 import {
-  clampInt, EMPTY_SESSION_MOD, FOCUS_LIMITS, type FocusMode, type FocusPrefs, nextBreak, setFocusPrefs, setFocusSessionMod,
+  clampInt, EMPTY_SESSION_MOD, FOCUS_LIMITS, focusDoneTitle, type FocusMode, type FocusPrefs, nextBreak, setFocusPrefs, setFocusSessionMod,
   STOPWATCH_MAX_SECONDS, useFocusPrefs, useFocusSessionMod, weeklyFocusStats,
 } from '@/features/focus/prefs';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
@@ -188,7 +188,7 @@ export default function Focus() {
     void scheduleAlert(
       'rest', from + earned.seconds * 1000,
       earned.long ? '긴 휴식이 끝났습니다' : '휴식이 끝났습니다',
-      earned.long ? '한 사이클을 마쳤습니다. 준비되면 새 세트를 시작해 보세요.' : '다음 집중을 시작해 보세요.',
+      earned.long ? '한 사이클을 마쳤습니다. 준비되면 새 사이클을 시작해 보세요.' : '다음 집중을 시작해 보세요.',
     );
   };
   const endRest = () => {
@@ -257,14 +257,15 @@ export default function Focus() {
   const remaining = running ? Math.max(0, plannedSeconds - elapsed) : minutes * 60;
   const breakRemaining = breakEndsAt === null ? 0 : (breakEndsAt - now) / 1000;
 
-  const scheduleRunningAlert = (remainingSec: number, activePrefs: FocusPrefs) => {
+  // `remainingSec` is when the alert fires; `plannedSec` is the session's whole length, which its title names.
+  const scheduleRunningAlert = (remainingSec: number, plannedSec: number, activePrefs: FocusPrefs) => {
     if (activePrefs.mode === 'stopwatch' || remainingSec <= 1) return;
     const earned = nextBreak(activePrefs, todayStats.count);
     const alertBody = earned
-      ? (earned.long ? `긴 휴식 ${earned.minutes}분 쉬어 가세요.` : `${earned.minutes}분 쉬어 가세요.`)
+      ? (earned.long ? `긴 휴식입니다. ${earned.minutes}분 쉬어 가세요.` : `${earned.minutes}분 쉬어 가세요.`)
       : '설정한 타이머가 끝났습니다.';
     void prepareAlerts().then(() =>
-      scheduleAlert('focus', Date.now() + remainingSec * 1000, `집중 ${Math.round(remainingSec / 60)}분 완료`, alertBody));
+      scheduleAlert('focus', Date.now() + remainingSec * 1000, focusDoneTitle(activePrefs.mode, plannedSec), alertBody));
   };
 
   const start = () => {
@@ -274,7 +275,7 @@ export default function Focus() {
     runningPrefs.current = prefs;
     const isStopwatch = prefs.mode === 'stopwatch';
     const seconds = isStopwatch ? STOPWATCH_MAX_SECONDS : minutes * 60;
-    if (!isStopwatch) scheduleRunningAlert(seconds, prefs);
+    if (!isStopwatch) scheduleRunningAlert(seconds, seconds, prefs);
     actions.start({
       planned_seconds: seconds,
       ...(target?.kind === 'task' ? { task_id: target.id } : target?.kind === 'habit' ? { habit_id: target.id } : {}),
@@ -289,7 +290,7 @@ export default function Focus() {
       const nextPausedMs = activeMod.pausedMs + (t - activeMod.pausedAt!);
       setFocusSessionMod({ id: running.id, pausedAt: null, pausedMs: nextPausedMs, extraSeconds: activeMod.extraSeconds });
       setNow(t);
-      if (!isRunningStopwatch) scheduleRunningAlert(remaining, runningPrefs.current);
+      if (!isRunningStopwatch) scheduleRunningAlert(remaining, plannedSeconds, runningPrefs.current);
     } else {
       void cancelAlert('focus');
       setFocusSessionMod({ id: running.id, pausedAt: t, pausedMs: activeMod.pausedMs, extraSeconds: activeMod.extraSeconds });
@@ -301,7 +302,7 @@ export default function Focus() {
     haptic.tap();
     const nextExtra = activeMod.extraSeconds + 300;
     setFocusSessionMod({ id: running.id, pausedAt: activeMod.pausedAt, pausedMs: activeMod.pausedMs, extraSeconds: nextExtra });
-    if (!isPaused) scheduleRunningAlert(remaining + 300, runningPrefs.current);
+    if (!isPaused) scheduleRunningAlert(remaining + 300, plannedSeconds + 300, runningPrefs.current);
     showToast('집중 시간을 5분 연장했습니다.');
   };
 
@@ -434,7 +435,7 @@ export default function Focus() {
           <View style={{ alignSelf: 'stretch', gap: space.sm }}>
             <View style={{ flexDirection: 'row', gap: space.sm }}>
               <Button
-                label={isPaused ? '재개' : '일시정지'} kind="secondary" icon={isPaused ? 'play' : 'pause'}
+                label={isPaused ? '계속' : '일시정지'} kind="secondary" icon={isPaused ? 'play' : 'pause'}
                 onPress={togglePause} style={{ flex: 1 }} />
               {!isRunningStopwatch ? (
                 <Button label="+5분 연장" kind="secondary" icon="plus" onPress={extendFiveMin} style={{ flex: 1 }} />
@@ -481,11 +482,11 @@ export default function Focus() {
                   ))}
                   <Chip icon="sliders" label="직접 입력" onPress={() => setConfiguring(true)} />
                 </ScrollView>
-                <Txt variant="small" tone="muted">휴식 없이 설정한 시간이 끝나면 바로 종료됩니다</Txt>
+                <Txt variant="small" tone="muted">정한 시간이 지나면 휴식 없이 끝납니다</Txt>
               </View>
             ) : (
               <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>
-                정해진 마감 없이 자유롭게 측정하고, 끝날 때 ‘기록 완료’를 누르세요.
+                시간 제한 없이 잽니다. 끝나면 ‘기록 완료’를 누르세요.
               </Txt>
             )}
 
@@ -588,7 +589,7 @@ export default function Focus() {
                 );
               })}
             </View>
-            <Txt variant="caption" tone="faint">막대 위 숫자는 그날 집중한 분입니다.</Txt>
+            <Txt variant="caption" tone="faint">막대 위 숫자는 그날 집중한 시간(분)입니다.</Txt>
           </Card>
         ) : null}
 
@@ -644,7 +645,7 @@ export default function Focus() {
                 </View>
               </View>
               <Txt variant="small" tone="muted">
-                {prefs.roundsBeforeLongBreak}세트 완료 후 긴 휴식이 끝나면 자동으로 다시 시작하지 않고 대기하며, 다음 집중 시작 시 1세트부터 새 사이클이 시작됩니다.
+                {prefs.roundsBeforeLongBreak}세트를 마치고 긴 휴식이 끝나면 타이머가 멈추고 기다립니다. 다음 집중은 1세트부터 다시 셉니다.
               </Txt>
             </>
           ) : (
@@ -659,7 +660,7 @@ export default function Focus() {
                     selected={prefs.timerMinutes === preset} onPress={() => setFocusPrefs({ timerMinutes: preset })} />
                 ))}
               </View>
-              <Txt variant="small" tone="muted">1분부터 최대 480분(8시간)까지 숫자를 눌러 직접 입력할 수 있습니다.</Txt>
+              <Txt variant="small" tone="muted">숫자를 눌러 1분에서 480분(8시간)까지 직접 입력할 수 있습니다.</Txt>
             </>
           )}
           <Button label="완료" onPress={() => setConfiguring(false)} style={{ marginTop: space.xs }} />

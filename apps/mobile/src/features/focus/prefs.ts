@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 import { defaultFocusPrefs, type FocusPrefs, normalizeFocusPrefs } from './model';
 
 export {
-  clampInt, defaultFocusPrefs, FOCUS_LIMITS, type FocusDayBar, type FocusMode, type FocusPrefs, nextBreak, normalizeFocusPrefs,
+  clampInt, defaultFocusPrefs, FOCUS_LIMITS, type FocusDayBar, focusDoneTitle, type FocusMode, type FocusPrefs, nextBreak, normalizeFocusPrefs,
   STOPWATCH_MAX_SECONDS, weeklyFocusStats,
 } from './model';
 

@@ -168,13 +168,26 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
   );
 }
 
-export function EmptyState({ icon, title, message, action }: { icon: IconName; title: string; message?: string; action?: ReactNode }) {
+/** Width of an empty-state illustration: keeps the art, text and action above the fold on a 360×760 screen. */
+export const EMPTY_ART = 140;
+
+/**
+ * A centred message for an empty or failed screen. `art` (an illustration from `@/components/art`) replaces the
+ * icon circle when given; `icon` stays the fallback, and empty states inside sheets or small cards keep using it.
+ */
+export function EmptyState({ icon, art, title, message, action }: {
+  icon: IconName; art?: ReactNode; title: string; message?: string; action?: ReactNode;
+}) {
   const { colors } = useTheme();
   return (
-    <View style={styles.empty}>
-      <View style={[styles.emptyIcon, { backgroundColor: colors.accentSoft }]}>
-        <Icon name={icon} size={26} color={colors.accent} />
-      </View>
+    <View style={[styles.empty, art ? styles.emptyWithArt : null]}>
+      {art ? (
+        <View style={styles.emptyArt}>{art}</View>
+      ) : (
+        <View style={[styles.emptyIcon, { backgroundColor: colors.accentSoft }]}>
+          <Icon name={icon} size={26} color={colors.accent} />
+        </View>
+      )}
       <Txt variant="bodyStrong" style={{ textAlign: 'center' }}>{title}</Txt>
       {message ? <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>{message}</Txt> : null}
       {action}
@@ -306,6 +319,8 @@ const styles = StyleSheet.create({
   fold: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, minHeight: 48, marginTop: space.md },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: space.lg },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.sm, padding: space.xxl, minHeight: 240 },
+  emptyWithArt: { paddingVertical: space.xl },
+  emptyArt: { marginBottom: space.xs },
   emptyIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
   segmented: { flexDirection: 'row', borderRadius: radius.md, padding: 3 },
   segment: {

@@ -101,7 +101,7 @@ export function EisenhowerView({
           { value: 'all', label: `전체 (${roots.length})`, icon: 'layers' },
         ]} />
       <Txt variant="small" tone="muted">
-        우선순위(P1–P2)와 마감일(오늘·지연)을 기준으로 자동 분류됩니다. 길게 눌러 우선순위나 날짜를 바꾸면 바로 이동합니다.
+        우선순위(가장 높음·높음)와 날짜(오늘·지연)를 보고 자동으로 나눕니다. 할 일을 길게 눌러 우선순위나 날짜를 바꾸면 바로 다른 칸으로 옮겨집니다.
       </Txt>
       {QUADRANTS.map((meta) => {
         const items = grouped[meta.key];

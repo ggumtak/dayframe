@@ -53,7 +53,7 @@ export function TemplatesSheet({
     });
     haptic.success();
     onClose();
-    showToast(`‘${tpl.title}’ 체크리스트(${tpl.items.length}개 항목)를 추가했습니다.`, {
+    showToast(`‘${tpl.title}’ 체크리스트(하위 작업 ${tpl.items.length}개)를 추가했습니다.`, {
       actionLabel: '열기',
       onAction: () => router.push({ pathname: '/task/[id]', params: { id: parentId } }),
     });
@@ -70,7 +70,7 @@ export function TemplatesSheet({
       <View style={{ flex: 1, gap: 2 }}>
         <Txt variant="bodyStrong" numberOfLines={1}>{tpl.title}</Txt>
         <Txt variant="caption" tone="muted" numberOfLines={1}>
-          {tpl.items.length}개 항목 · {tpl.items.slice(0, 3).join(', ')}
+          하위 작업 {tpl.items.length}개 · {tpl.items.slice(0, 3).join(', ')}
         </Txt>
       </View>
       {!tpl.builtin ? (

@@ -60,6 +60,6 @@ export function authMessage(error: { message?: string; code?: string; status?: n
   if (code === 'weak_password' || text.includes('password should')) return '비밀번호는 6자 이상이어야 합니다.';
   if (code === 'over_email_send_rate_limit' || error.status === 429) return '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.';
   if (code === 'validation_failed' || text.includes('invalid format')) return '이메일 형식을 확인해 주세요.';
-  if (text.includes('network') || text.includes('fetch')) return '서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.';
+  if (text.includes('network') || text.includes('fetch')) return '연결할 수 없습니다. 인터넷 연결을 확인해 주세요.';
   return '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 }

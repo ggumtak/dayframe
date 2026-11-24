@@ -11,6 +11,7 @@ import { useNewTaskDate } from '@/data/session';
 import { nextPosition, useProjects, useSections, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { describeRecurrence, deviceTimeZone, formatDue, formatDurationMinutes, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import { usePersistentState } from '@/lib/persist';
 import { analyzeTask, type Priority, type TaskAnalysis } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -58,8 +59,8 @@ const inserts: {
   { label: '저녁 7시', text: '저녁 7시', icon: 'moon', kind: 'time' },
   { label: '30분간', text: '30분간', icon: 'watch', kind: 'duration' },
   { label: '매일', text: '매일', icon: 'repeat', kind: 'recurrence' },
-  { label: '완료반복', text: '매일!', icon: 'check-circle', kind: 'recurrence' },
-  { label: '프로젝트', text: '#', icon: 'hash' },
+  { label: '완료 후 반복', text: '매일!', icon: 'check-circle', kind: 'recurrence' },
+  { label: '목록', text: '#', icon: 'hash' },
   { label: '태그', text: '@', icon: 'tag' },
   { label: '우선순위', text: 'p1', icon: 'flag', kind: 'priority' },
   { label: '메모', text: '', icon: 'align-left', kind: 'notes' },
@@ -210,7 +211,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
     rest.forEach((line, index) => {
       createSingleLine(line, index, null, parentId);
     });
-    afterSubmit(1, `‘${head}’와 하위 작업 ${rest.length}개를 추가했습니다.`);
+    afterSubmit(1, `‘${head}’${josa(head, '와/과')} 하위 작업 ${rest.length}개를 추가했습니다.`);
   };
 
   const submit = () => {
@@ -251,7 +252,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
       projectName: parent ? null : (parsed?.project ?? null),
       tagNames: parsed?.tags ?? [],
     });
-    afterSubmit(1, keepOpen === 'on' ? undefined : `‘${title}’을 추가했습니다.`);
+    afterSubmit(1, keepOpen === 'on' ? undefined : `‘${title}’${josa(title, '을/를')} 추가했습니다.`);
   };
 
   const tokens = !plainText && analysis && analysis.text === text ? analysis.tokens : [];
@@ -378,7 +379,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
         {plainText ? (
           <View style={[styles.plainHint, { backgroundColor: colors.surfaceMuted }]}>
             <Icon name="type" size={13} color={colors.accent} />
-            <Txt variant="caption" tone="muted" style={{ flex: 1 }}>원문 유지 켜짐 · 날짜·태그 해석 없이 제목 그대로 저장됩니다</Txt>
+            <Txt variant="caption" tone="muted" style={{ flex: 1 }}>원문 유지 켜짐 · 날짜나 태그를 읽지 않고 적은 그대로 저장합니다</Txt>
             <Pressable hitSlop={8} onPress={() => setPlainText(false)}>
               <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>해제</Txt>
             </Pressable>
@@ -387,7 +388,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
         {isMultiLine ? (
           <View style={[styles.multiBox, { backgroundColor: colors.accentSoft }]}>
             <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>
-              {multiLines.length}줄 감지됨 · 붙여넣은 목록을 한 번에 추가할 수 있습니다
+              {multiLines.length}줄을 한 번에 추가할 수 있습니다
             </Txt>
             <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
               <Chip icon="layers" label={`${multiLines.length}개 할 일로 추가`} selected onPress={submitMultiSeparate} />
@@ -406,7 +407,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
             contentContainerStyle={{ gap: 6, paddingTop: space.sm }}>
             {suggestions.map((name) => (
               <Pressable
-                key={name} accessibilityRole="button" accessibilityLabel={(mention.kind === 'project' ? '프로젝트 ' : '태그 ') + name}
+                key={name} accessibilityRole="button" accessibilityLabel={(mention.kind === 'project' ? '목록 ' : '태그 ') + name}
                 onPress={() => pickSuggestion(name)}
                 style={({ pressed }) => [styles.suggestion, { backgroundColor: colors.accentSoft, opacity: pressed ? 0.6 : 1 }]}>
                 <Icon name={mention.kind === 'project' ? 'hash' : 'tag'} size={12} color={colors.accent} />
@@ -465,7 +466,7 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
             {draft?.project ? (
               <Animated.View entering={ZoomIn.duration(140)}>
                 <Chip
-                  icon="hash" label={draft.project + (isNewProject ? ' · 새 프로젝트' : '') + ' ×'} color={colors.accent}
+                  icon="hash" label={draft.project + (isNewProject ? ' · 새 목록' : '') + ' ×'} color={colors.accent}
                   onPress={() => stripToken((token) => token.kind === 'project')} />
               </Animated.View>
             ) : defaultProject ? <Chip icon="hash" label={defaultSection ? `${defaultProject} · ${defaultSection}` : defaultProject} /> : null}

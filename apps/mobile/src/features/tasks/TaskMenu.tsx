@@ -8,10 +8,12 @@ import { useProjects, useSections, useSubtaskProgress, useTagNames, useTaskActio
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { describeRecurrence, formatDue, formatDurationMinutes, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import type { Priority, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, useTheme } from '@/theme';
 
+import { priorityA11y, priorityLabel } from './priority';
 import { toMarkdownChecklist, useTaskFlow } from './useTaskFlow';
 
 function Action({ icon, label, onPress, color }: { icon: IconName; label: string; onPress: () => void; color?: string }) {
@@ -90,14 +92,18 @@ function TaskMenuContent({
           const tint = priorityColor(colors, priority);
           return (
             <Pressable
-              key={priority} accessibilityRole="button" accessibilityLabel={'우선순위 ' + priority} accessibilityState={{ selected: active }}
+              key={priority} accessibilityRole="button" accessibilityLabel={priorityA11y(priority)} accessibilityState={{ selected: active }}
               onPress={() => {
                 haptic.tap();
                 run(() => actions.update(task.id, { priority }));
               }}
               style={[styles.priority, { borderColor: active ? tint : colors.border }]}>
-              <Icon name="flag" size={14} color={tint} />
-              <Txt variant="smallStrong" style={{ color: active ? colors.text : colors.textMuted }}>P{priority}</Txt>
+              <Icon name="flag" size={12} color={tint} />
+              <Txt
+                variant="caption" numberOfLines={1} maxFontSizeMultiplier={1.3}
+                style={{ color: active ? colors.text : colors.textMuted, fontWeight: active ? '700' : '600', flexShrink: 1 }}>
+                {priorityLabel(priority)}
+              </Txt>
             </Pressable>
           );
         })}
@@ -110,11 +116,11 @@ function TaskMenuContent({
             <Chip
               key={mins === null ? 'none' : String(mins)}
               icon={mins === null ? 'slash' : 'clock'}
-              label={mins === null ? '시간 없음' : formatDurationMinutes(mins)}
+              label={mins === null ? '없음' : formatDurationMinutes(mins)}
               selected={active}
               onPress={() => run(() => {
                 actions.update(task.id, { duration_minutes: mins });
-                showToast(mins ? `소요시간을 ${formatDurationMinutes(mins)}(으)로 설정했습니다.` : '소요시간을 지웠습니다.');
+                showToast(mins ? `소요 시간을 ${formatDurationMinutes(mins)}${josa(formatDurationMinutes(mins), '으로/로')} 정했습니다.` : '소요 시간을 지웠습니다.');
               })}
               style={{ flex: 1, justifyContent: 'center' }} />
           );
@@ -125,7 +131,7 @@ function TaskMenuContent({
         {!task.parent_task_id && projects?.length ? (
           <>
             <Row
-              icon="folder" label="프로젝트 옮기기" detail={projectName ? '#' + projectName : '미분류'}
+              icon="folder" label="목록 옮기기" detail={projectName ? '#' + projectName : '미분류'}
               trailing={<Icon name={movingProject ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textFaint} />}
               onPress={() => setMovingProject((open) => !open)} />
             {movingProject ? (
@@ -143,7 +149,7 @@ function TaskMenuContent({
                     key={project.id} icon="hash" label={project.name} selected={task.project_id === project.id}
                     onPress={() => run(() => {
                       actions.update(task.id, { project_id: project.id, section_id: null });
-                      showToast(`#${project.name} 프로젝트로 옮겼습니다.`);
+                      showToast(`#${project.name} 목록으로 옮겼습니다.`);
                     })} />
                 ))}
               </ScrollView>
@@ -169,7 +175,7 @@ function TaskMenuContent({
           </ScrollView>
         ) : null}
         {onStartSelect && !task.parent_task_id ? (
-          <Row icon="check-square" label="여러 개 선택" detail="일괄 편집" onPress={() => run(() => onStartSelect(task))} />
+          <Row icon="check-square" label="여러 개 선택" detail="한꺼번에 바꾸기" onPress={() => run(() => onStartSelect(task))} />
         ) : null}
         {task.parent_task_id ? null : (
           <Row icon="corner-down-right" label="하위 작업 추가" onPress={() => run(() => quickAdd.open({ parentTaskId: task.id }))} />
@@ -192,7 +198,7 @@ function TaskMenuContent({
             },
           }))} />
         <Row
-          icon="clipboard" label={openSubs.length + doneSubs.length > 0 ? '체크리스트 복사 (Markdown)' : '제목 복사'}
+          icon="clipboard" label={openSubs.length + doneSubs.length > 0 ? '체크리스트 복사' : '제목 복사'}
           onPress={() => run(() => {
             const payload = openSubs.length + doneSubs.length > 0
               ? toMarkdownChecklist(task, openSubs, doneSubs)
@@ -212,6 +218,10 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: space.sm },
   action: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, height: 64, borderRadius: radius.md },
   priorities: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  priority: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, height: 38, borderRadius: radius.md, borderWidth: 1 },
+  // Four across on a 360dp screen: "가장 높음" at caption size with a 12px flag fits in a quarter of the row.
+  priority: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, height: 38, paddingHorizontal: 4,
+    borderRadius: radius.md, borderWidth: 1,
+  },
   durations: { flexDirection: 'row', gap: 6, marginTop: space.sm },
 });

@@ -32,15 +32,15 @@ export function isUnreachable(error: unknown): boolean {
 }
 
 const messages: Record<string, string> = {
-  INVALID_INPUT: '입력값을 확인해 주세요.',
+  INVALID_INPUT: '입력한 내용을 확인해 주세요.',
   INVALID_SCHEDULE: '날짜나 시간을 이해하지 못했습니다.',
-  INVALID_REFERENCE: '연결된 항목을 찾을 수 없습니다.',
-  NOT_FOUND: '항목을 찾을 수 없습니다. 이미 삭제되었을 수 있습니다.',
-  CONFLICT: '이미 존재하거나 진행 중인 항목이 있습니다.',
-  STALE_RESOURCE: '다른 기기에서 변경되었습니다. 새로고침 후 다시 시도해 주세요.',
+  INVALID_REFERENCE: '연결된 목록이나 할 일을 찾을 수 없습니다.',
+  NOT_FOUND: '찾을 수 없습니다. 이미 삭제되었을 수 있습니다.',
+  CONFLICT: '이미 있거나 진행 중이라 처리하지 못했습니다.',
+  STALE_RESOURCE: '다른 곳에서 먼저 바뀌었습니다. 화면을 당겨 새로고침한 뒤 다시 시도해 주세요.',
   UNAUTHORIZED: '로그인이 만료되었습니다. 다시 로그인해 주세요.',
-  SERVER: '서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도해 주세요.',
-  NETWORK: '서버에 연결할 수 없습니다. 네트워크를 확인해 주세요.',
+  SERVER: '일시적인 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.',
+  NETWORK: '연결할 수 없습니다. 인터넷 연결을 확인해 주세요.',
 };
 
 export function errorMessage(error: unknown): string {

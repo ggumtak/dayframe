@@ -4,7 +4,8 @@ import { Pressable, RefreshControl, ScrollView as PlainScroll, type ScrollViewIn
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Chip, EmptyState, Header, Icon, IconButton, type IconName, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { EmptyList } from '@/components/art';
+import { Button, Chip, EMPTY_ART, EmptyState, Header, Icon, IconButton, type IconName, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import {
   byPosition, byPriority, bySchedule, byTitle, useCompletedTasks, useProjectActions, useProjects,
   useSectionActions, useSections, useSubtaskProgress, useTaskActions, useTaskIndex,
@@ -18,6 +19,7 @@ import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import { usePersistentState } from '@/lib/persist';
 import type { Section, Task } from '@/lib/shared';
 import { bySmartRank } from '@/lib/smart';
@@ -30,7 +32,7 @@ type SortMode = 'manual' | 'smart' | 'schedule' | 'priority' | 'title';
 
 const sortLabels: Record<SortMode, string> = {
   manual: '내 순서',
-  smart: '스마트 추천순',
+  smart: '추천순',
   schedule: '일정순',
   priority: '우선순위순',
   title: '이름순',
@@ -196,7 +198,7 @@ export default function Inbox() {
     const duplicate = (projects ?? []).some((item) => item.name.toLowerCase() === trimmed.toLowerCase()
       && (editor.mode === 'create' || item.id !== editor.id));
     if (duplicate) {
-      showToast('같은 이름의 프로젝트가 이미 있습니다.', { tone: 'error' });
+      showToast('같은 이름의 목록이 이미 있습니다.', { tone: 'error' });
       return;
     }
     haptic.success();
@@ -207,11 +209,11 @@ export default function Inbox() {
         setProjectMeta(created.id, { color: chosenColor, icon: chosenIcon });
         setScope(created.id);
       });
-      showToast(`#${trimmed} 프로젝트를 만들었습니다.`);
+      showToast(`#${trimmed} 목록을 만들었습니다.`);
     } else {
       projectActions.rename(editor.id, trimmed);
       setProjectMeta(editor.id, { color: chosenColor, icon: chosenIcon });
-      showToast(`#${trimmed} 프로젝트를 저장했습니다.`);
+      showToast(`#${trimmed} 목록을 저장했습니다.`);
     }
     setEditor(null);
   };
@@ -224,7 +226,7 @@ export default function Inbox() {
     setScope('inbox');
     projectActions.remove(removedId);
     deleteProjectMeta(removedId);
-    showToast(`#${removedName} 프로젝트를 삭제했습니다.`);
+    showToast(`#${removedName} 목록을 삭제했습니다.`);
   };
 
   const openCreateSection = () => {
@@ -250,7 +252,7 @@ export default function Inbox() {
       showToast(`‘${trimmed}’ 섹션을 만들었습니다.`);
     } else {
       sectionActions.rename(sectionEditor.section.id, trimmed);
-      showToast(`섹션 이름을 ‘${trimmed}’(으)로 바꿨습니다.`);
+      showToast(`섹션 이름을 ‘${trimmed}’${josa(trimmed, '으로/로')} 바꿨습니다.`);
     }
     setSectionEditor(null);
   };
@@ -283,7 +285,7 @@ export default function Inbox() {
               color={sort !== 'manual' ? colors.accent : colors.textMuted} />
             <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
             {selected ? (
-              <IconButton name="more-horizontal" label="프로젝트 관리" onPress={() => setProjectMenu(true)} color={colors.textMuted} />
+              <IconButton name="more-horizontal" label="목록 관리" onPress={() => setProjectMenu(true)} color={colors.textMuted} />
             ) : null}
           </View>
         )} />
@@ -323,7 +325,7 @@ export default function Inbox() {
         </PlainScroll>
         <View style={{ paddingRight: space.md, paddingBottom: space.sm }}>
           <IconButton
-            name="plus" label="새 프로젝트 만들기" size={18} color={colors.accent}
+            name="plus" label="새 목록 만들기" size={18} color={colors.accent}
             onPress={openCreate}
             style={{ width: 32, height: 32, backgroundColor: colors.accentSoft }} />
         </View>
@@ -398,19 +400,20 @@ export default function Inbox() {
                   accessibilityRole="button" accessibilityLabel="섹션으로 나누기" onPress={openCreateSection}
                   style={({ pressed }) => [styles.addSectionBtn, { opacity: pressed ? 0.6 : 1 }]}>
                   <Icon name="bookmark" size={14} color={colors.textMuted} />
-                  <Txt variant="small" tone="muted">섹션으로 그룹 나누기</Txt>
+                  <Txt variant="small" tone="muted">섹션으로 나누기</Txt>
                 </Pressable>
               ) : null}
             </>
           ) : (
             <EmptyState
               icon={selected ? (projectMeta[selected.id]?.icon ?? 'hash') : effectiveScope === 'all' ? 'layers' : 'inbox'}
-              title={selected ? '이 프로젝트는 비어 있습니다' : effectiveScope === 'all' ? '열려 있는 할 일이 없습니다' : '미분류 할 일이 없습니다'}
+              art={<EmptyList size={EMPTY_ART} />}
+              title={selected ? '이 목록은 비어 있습니다' : effectiveScope === 'all' ? '열려 있는 할 일이 없습니다' : '미분류 할 일이 없습니다'}
               message={selected
                 ? '+ 버튼으로 할 일을 추가하거나 템플릿으로 체크리스트를 시작해 보세요.'
                 : effectiveScope === 'all'
                   ? '아래 + 버튼으로 새 할 일을 추가해 보세요.'
-                  : '#프로젝트 없이 적은 할 일이 여기에 모입니다. 위의 + 버튼으로 프로젝트나 템플릿을 활용해 보세요.'}
+                  : '목록을 정하지 않고 적은 할 일이 여기에 모입니다. 위의 + 버튼으로 새 목록을 만들어 보세요.'}
               action={(
                 <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
                   <Button label="템플릿에서 추가" kind="secondary" icon="bookmark" onPress={() => setShowTemplates(true)} />
@@ -423,15 +426,15 @@ export default function Inbox() {
             <View style={{ marginTop: space.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Pressable
-                  accessibilityRole="button" accessibilityLabel={`완료한 항목 ${completedInScope.length}개 ${showCompleted ? '접기' : '펼치기'}`}
+                  accessibilityRole="button" accessibilityLabel={`완료한 할 일 ${completedInScope.length}개 ${showCompleted ? '접기' : '펼치기'}`}
                   onPress={() => setShowCompleted((open) => !open)}
                   style={({ pressed }) => [styles.completedToggle, { flex: 1, opacity: pressed ? 0.6 : 1 }]}>
                   <Icon name={showCompleted ? 'chevron-down' : 'chevron-right'} size={15} color={colors.textFaint} />
-                  <Txt variant="smallStrong" tone="muted">완료한 항목 {completedInScope.length}</Txt>
+                  <Txt variant="smallStrong" tone="muted">완료한 할 일 {completedInScope.length}</Txt>
                 </Pressable>
                 {/* Where the list says how long it keeps finished tasks is also where that is changed. */}
                 <Pressable
-                  accessibilityRole="button" accessibilityLabel={`완료한 항목 표시 기간: ${doneWindowLabel}. 눌러서 변경`} hitSlop={10}
+                  accessibilityRole="button" accessibilityLabel={`완료한 할 일 표시 기간 ${doneWindowLabel}, 눌러서 변경`} hitSlop={10}
                   onPress={() => {
                     haptic.tap();
                     setPickingDoneWindow(true);
@@ -447,7 +450,7 @@ export default function Inbox() {
                     onPress={() => {
                       haptic.tap();
                       taskActions.reopen(task);
-                      showToast(`‘${task.title}’을 다시 열었습니다.`);
+                      showToast(`‘${task.title}’${josa(task.title, '을/를')} 다시 열었습니다.`);
                     }}
                     label={task.title + ' 다시 열기'} />
                   <View style={[styles.completedBody, { borderBottomColor: colors.border }]}>
@@ -477,7 +480,7 @@ export default function Inbox() {
         visible={showTemplates} onClose={() => setShowTemplates(false)}
         projectId={selected?.id ?? null} />
 
-      <Sheet visible={pickingDoneWindow} onClose={() => setPickingDoneWindow(false)} title="완료한 항목을 여기에 얼마나 둘까요?">
+      <Sheet visible={pickingDoneWindow} onClose={() => setPickingDoneWindow(false)} title="완료한 할 일을 얼마 동안 보여 줄까요?">
         {doneWindows.map((item) => (
           <Row
             key={item.value} label={item.label}
@@ -489,7 +492,7 @@ export default function Inbox() {
             }} />
         ))}
         <Txt variant="small" tone="muted" style={{ marginTop: space.sm }}>
-          기간이 지나도 지워지지 않습니다. 오래된 항목은 완료한 일 화면에 그대로 있습니다.
+          기간이 지나도 삭제되지 않습니다. 완료한 일 화면에서 계속 볼 수 있습니다.
         </Txt>
         <Row
           icon="check-circle" label="완료한 일 전체 보기"
@@ -507,8 +510,8 @@ export default function Inbox() {
             icon={option === 'manual' ? 'menu' : option === 'smart' ? 'zap' : option === 'schedule' ? 'calendar' : option === 'priority' ? 'flag' : 'type'}
             label={sortLabels[option]}
             detail={option === 'manual'
-              ? (effectiveScope === 'all' ? '프로젝트별로 사용' : '길게 눌러 순서 변경')
-              : option === 'smart' ? '긴급도 · 중요도 · 진행률' : undefined}
+              ? (effectiveScope === 'all' ? '목록별로만 가능' : '길게 눌러 순서 변경')
+              : option === 'smart' ? '긴급도 · 우선순위 · 진행률' : undefined}
             trailing={sort === option ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
             onPress={() => {
               haptic.tap();
@@ -519,16 +522,16 @@ export default function Inbox() {
       </Sheet>
 
       <Sheet visible={projectMenu && !!selected} onClose={() => setProjectMenu(false)} title={selected ? '#' + selected.name : ''}>
-        <Row icon="plus" label="새 섹션 추가" detail="목록을 단계·카테고리로 분류" onPress={openCreateSection} />
+        <Row icon="plus" label="새 섹션 추가" detail="목록을 단계·종류별로 나누기" onPress={openCreateSection} />
         <Row
           icon="bookmark" label="체크리스트 템플릿 추가"
           onPress={() => {
             setProjectMenu(false);
             setShowTemplates(true);
           }} />
-        <Row icon="edit-2" label="프로젝트 이름 · 색상 · 아이콘 수정" onPress={openRename} />
+        <Row icon="edit-2" label="목록 이름 · 색 · 아이콘 바꾸기" onPress={openRename} />
         <Row
-          icon="trash-2" label="프로젝트 삭제" tone="danger"
+          icon="trash-2" label="목록 삭제" tone="danger"
           onPress={() => {
             setProjectMenu(false);
             setConfirmDelete(true);
@@ -552,7 +555,7 @@ export default function Inbox() {
             setManagingSection(null);
           }} />
         <Row
-          icon="trash-2" label="섹션 삭제" detail="안의 할 일은 유지됩니다" tone="danger"
+          icon="trash-2" label="섹션 삭제" detail="할 일은 남습니다" tone="danger"
           onPress={() => {
             if (!managingSection) return;
             const removed = managingSection.name;
@@ -578,21 +581,21 @@ export default function Inbox() {
         </View>
       </Sheet>
 
-      <Sheet visible={!!editor} onClose={() => setEditor(null)} title={editor?.mode === 'rename' ? '프로젝트 설정' : '새 프로젝트'}>
+      <Sheet visible={!!editor} onClose={() => setEditor(null)} title={editor?.mode === 'rename' ? '목록 설정' : '새 목록'}>
         <View style={{ gap: space.md }}>
           <TextInput
             value={projectName} onChangeText={setProjectName} autoFocus maxLength={120}
-            placeholder="예: 회사, 건강, 사이드 프로젝트" placeholderTextColor={colors.textFaint}
-            returnKeyType="done" onSubmitEditing={saveProject} accessibilityLabel="프로젝트 이름"
+            placeholder="예: 회사, 건강, 장보기" placeholderTextColor={colors.textFaint}
+            returnKeyType="done" onSubmitEditing={saveProject} accessibilityLabel="목록 이름"
             style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
           <View style={{ gap: 6 }}>
-            <Txt variant="caption" tone="muted">색상</Txt>
+            <Txt variant="caption" tone="muted">색</Txt>
             <View style={styles.swatchRow}>
               {PROJECT_COLORS.map((swatch) => {
                 const active = projectColor === swatch;
                 return (
                   <Pressable
-                    key={swatch} accessibilityRole="button" accessibilityLabel={'색상 ' + swatch}
+                    key={swatch} accessibilityRole="button" accessibilityLabel={'색 ' + swatch}
                     onPress={() => {
                       haptic.tap();
                       setProjectColor(swatch);
@@ -641,11 +644,11 @@ export default function Inbox() {
         </View>
       </Sheet>
 
-      <Sheet visible={confirmDelete && !!selected} onClose={() => setConfirmDelete(false)} title={`#${selected?.name ?? ''} 프로젝트를 삭제할까요?`}>
+      <Sheet visible={confirmDelete && !!selected} onClose={() => setConfirmDelete(false)} title={`#${selected?.name ?? ''} 목록을 삭제할까요?`}>
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
           {counts.get(selected?.id ?? null)
-            ? `이 프로젝트 안에 있는 할 일 ${counts.get(selected?.id ?? null)}개가 함께 삭제되며 되돌릴 수 없습니다.`
-            : '이 프로젝트가 삭제되며 되돌릴 수 없습니다.'}
+            ? `이 목록의 할 일 ${counts.get(selected?.id ?? null)}개도 함께 삭제됩니다. 되돌릴 수 없습니다.`
+            : '삭제하면 되돌릴 수 없습니다.'}
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button label="삭제" kind="danger" onPress={deleteSelected} />

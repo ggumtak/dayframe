@@ -36,7 +36,10 @@ function Routes({ signedIn }: { signedIn: boolean }) {
         <Stack.Screen name="task/[id]" />
         <Stack.Screen name="habit/[id]" />
         <Stack.Screen name="habit/new" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="habit/overview" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="appearance" />
+        <Stack.Screen name="tab-bar" />
         <Stack.Screen name="ai" />
         <Stack.Screen name="add" options={{ animation: 'none' }} />
         <Stack.Screen name="search" options={{ animation: 'fade' }} />

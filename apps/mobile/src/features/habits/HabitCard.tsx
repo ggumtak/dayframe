@@ -1,18 +1,22 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
 import { Card, Icon, Row, Sheet, Txt } from '@/components/ui';
-import { periodProgress, useHabitActions } from '@/data/habits';
-import { Temporal, today, weekdayName, weekStart } from '@/lib/dates';
+import { useHabitActions } from '@/data/habits';
+import { Temporal, weekdayName, weekStart } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Habit, HabitLog, HabitStats } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
 import { nextCheckIn } from './checkIn';
+import { dayState, logsByDate, outsideHabit, periodProgress, weekDates } from './goal';
+import { habitLook } from './display';
+import { HabitAvatar } from './HabitAvatar';
+import type { HabitMeta } from './habitMeta';
 import { computeHabitStrength } from './strength';
 
 const SIZE = 52;
@@ -53,23 +57,29 @@ function CheckIn({ progress, target, done, onPress, onLongPress, label }: {
   );
 }
 
-export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog[]; stats?: HabitStats }) {
+/**
+ * One habit on the habits tab. Memoised: it re-renders when its habit, logs, stats or look change, or when
+ * `date` (today in the habit's time zone, passed by the screen) rolls over, so a check-in always lands on
+ * the current day.
+ */
+export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, date }: {
+  habit: Habit; logs: HabitLog[]; stats?: HabitStats; meta?: HabitMeta; date: string;
+}) {
   const { colors } = useTheme();
   const actions = useHabitActions();
   const [menu, setMenu] = useState(false);
-  const day = today(habit.timezone);
-  const date = day.toString();
-  const todayLog = logs.find((log) => log.log_date === date);
+  const day = useMemo(() => Temporal.PlainDate.from(date), [date]);
+  const byDate = useMemo(() => logsByDate(logs), [logs]);
+  const todayLog = byDate.get(date);
   const todayCount = todayLog?.count ?? 0;
-  const progress = periodProgress(habit, logs, date);
+  const progress = useMemo(() => periodProgress(habit, logs, date), [habit, logs, date]);
   const done = progress >= habit.target_count;
   const weekly = habit.cadence === 'weekly';
-  const byDate = new Map(logs.map((log) => [log.log_date, log]));
   // This week, Monday first, the same week the weekly goal counts; days still to come are dimmed.
-  const monday = weekStart(day);
-  const week = Array.from({ length: 7 }, (_, index) => monday.add({ days: index }));
+  const week = useMemo(() => weekDates(weekStart(day)), [day]);
   const streak = stats?.current_streak ?? 0;
-  const strength = computeHabitStrength(habit, logs, day);
+  const strength = useMemo(() => computeHabitStrength(habit, logs, day), [habit, logs, day]);
+  const look = habitLook(habit.name, meta);
 
   const checkIn = () => {
     const next = nextCheckIn(habit, todayCount, progress);
@@ -91,6 +101,7 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
         <Card style={styles.card}>
           <View style={{ flex: 1, gap: space.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+              <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={24} />
               <Txt variant="bodyStrong" numberOfLines={1} style={{ flexShrink: 1 }}>{habit.name}</Txt>
               {streak > 0 ? (
                 <View style={[styles.streak, { backgroundColor: colors.warningSoft }]} accessibilityLabel={`${streak}${weekly ? '주' : '일'} 연속`}>
@@ -107,11 +118,11 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
             <View style={{ flexDirection: 'row', gap: 5 }}>
               {week.map((item) => {
                 const log = byDate.get(item.toString());
-                const outside = Temporal.PlainDate.compare(item, Temporal.PlainDate.from(habit.start_date)) < 0
-                  || Temporal.PlainDate.compare(item, day) > 0;
+                const outside = outsideHabit(habit, item, day);
                 // A day short of a daily goal (2 of 4) is lighter than a day that met it.
-                const met = log?.status === 'completed' && (weekly || log.count >= habit.target_count);
-                const fill = met ? colors.success : log?.status === 'completed' ? colors.successSoft : log ? colors.border : colors.surfaceMuted;
+                const state = dayState(habit, log);
+                const met = state === 'met';
+                const fill = met ? colors.success : state === 'partial' ? colors.successSoft : log ? colors.border : colors.surfaceMuted;
                 // Tapping a day sets or clears its record, so a forgotten yesterday is fixed right here.
                 return (
                   <Pressable
@@ -126,7 +137,7 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
                         habitId: habit.id, date: targetDate, status: met ? null : 'completed', count: met ? 0 : weekly ? 1 : habit.target_count,
                       });
                       if (!item.equals(day)) {
-                        showToast(`${item.month}월 ${item.day}일 기록을 ${met ? '지웠습니다.' : '체크했습니다.'}`, {
+                        showToast(`${item.month}월 ${item.day}일 기록을 ${met ? '지웠습니다.' : '남겼습니다.'}`, {
                           actionLabel: '실행 취소',
                           onAction: () => actions.setLog({ habitId: habit.id, date: targetDate, status: prevStatus, count: prevCount }),
                         });
@@ -144,14 +155,14 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
             </View>
             <Txt variant="small" tone={strength.missedYesterday ? 'default' : 'muted'} style={strength.missedYesterday ? { color: colors.warning } : undefined}>
               {strength.missedYesterday
-                ? '어제 놓쳤어요 · 이틀 연속 빠지지 않게 오늘 체크!'
+                ? '어제 놓침 · 이틀 연속 빠지지 않게 오늘은 꼭'
                 : (weekly ? `이번 주 ${progress}/${habit.target_count}회` : habit.target_count > 1 ? `오늘 ${progress}/${habit.target_count}회` : done ? '오늘 완료' : '오늘 아직')
                   + (todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : '')}
             </Txt>
           </View>
           <CheckIn
             progress={progress} target={habit.target_count} done={done} onPress={checkIn} onLongPress={() => setMenu(true)}
-            label={habit.name + (done ? ' 완료 취소' : ' 체크')} />
+            label={habit.name + (done ? ' 기록 취소' : ' 기록')} />
         </Card>
       </Pressable>
       <Sheet visible={menu} onClose={() => setMenu(false)} title={habit.name}>
@@ -161,7 +172,7 @@ export function HabitCard({ habit, logs, stats }: { habit: Habit; logs: HabitLog
       </Sheet>
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', gap: space.lg },

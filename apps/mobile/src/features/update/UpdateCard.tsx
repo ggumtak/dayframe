@@ -35,7 +35,7 @@ export function UpdateCard() {
       </View>
 
       {update.checkFailed && !update.isChecking ? (
-        <Txt variant="small" tone="danger">업데이트 정보를 가져오지 못했습니다. 네트워크를 확인해 주세요.</Txt>
+        <Txt variant="small" tone="danger">업데이트 정보를 가져오지 못했습니다. 인터넷 연결을 확인해 주세요.</Txt>
       ) : null}
 
       {update.available && release?.notes ? (
@@ -52,7 +52,7 @@ export function UpdateCard() {
       {phase.name === 'permission' ? (
         <View style={{ gap: space.sm }}>
           <Txt variant="small" tone="muted">
-            처음 한 번만 허용이 필요합니다. 설정에서 ‘이 출처 허용’을 켜고 돌아오면 다운로드가 바로 시작됩니다.
+            처음 한 번만 허용하면 됩니다. 설정에서 ‘이 출처 허용’을 켜고 돌아오면 바로 다운로드를 시작합니다.
           </Txt>
           <Button label="설치 권한 설정 열기" icon="shield" onPress={update.openPermissionSettings} />
           <Button label="취소" kind="ghost" onPress={update.cancel} />
@@ -76,7 +76,7 @@ export function UpdateCard() {
 
       {update.available && update.action === 'none' ? (
         <Txt variant="small" tone="muted">
-          {Platform.OS === 'web' ? '앱 설치는 Android 기기에서 진행해 주세요.' : '이 릴리스의 설치 파일이 아직 올라오지 않았습니다.'}
+          {Platform.OS === 'web' ? '앱 설치는 Android 기기에서 진행해 주세요.' : '이 버전의 설치 파일이 아직 올라오지 않았습니다.'}
         </Txt>
       ) : null}
 

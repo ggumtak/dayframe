@@ -1,10 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { type DayMark, MonthCalendar } from '@/components/MonthCalendar';
 import { Button, Card, Chip, EmptyState, Header, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import { useHabitActions, useHabitLogs, useHabits, useHabitStats } from '@/data/habits';
+import { habitLook, startDateLabel } from '@/features/habits/display';
+import { HabitAvatar } from '@/features/habits/HabitAvatar';
+import { type HabitLook, HabitLookPicker, QuoteField } from '@/features/habits/HabitLookPicker';
 import { deleteHabitMeta, HABIT_TIME_GROUPS, setHabitMeta, useHabitMetaMap } from '@/features/habits/habitMeta';
 import { Heatmap, heatmapWidth } from '@/features/habits/Heatmap';
 import { computeHabitStrength } from '@/features/habits/strength';
@@ -35,6 +38,8 @@ export default function HabitDetail() {
   const habit = habits?.find((item) => item.id === id);
   const [name, setName] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+  // The look being edited in the sheet; null while the sheet is closed.
+  const [editing, setEditing] = useState<(HabitLook & { quote: string }) | null>(null);
 
   const marks = useMemo(() => {
     const map = new Map<string, DayMark>();
@@ -68,6 +73,16 @@ export default function HabitDetail() {
     actions.setLog({ habitId: habit.id, date: key, status: done ? null : 'completed', count: done ? 0 : perDay });
   };
 
+  const meta = habitMeta[habit.id];
+  const look = habitLook(habit.name, meta);
+  const openLook = () => setEditing({ emoji: meta?.emoji, color: meta?.color, quote: meta?.quote ?? '' });
+  const saveLook = () => {
+    if (!editing) return;
+    setHabitMeta(habit.id, { emoji: editing.emoji, color: editing.color, quote: editing.quote.trim() || undefined });
+    haptic.success();
+    setEditing(null);
+  };
+
   const rename = () => {
     const next = (name ?? '').trim();
     if (next && next !== habit.name) actions.rename(habit.id, next);
@@ -78,10 +93,20 @@ export default function HabitDetail() {
     <Screen>
       <Header
         title={habit.name}
-        subtitle={(habit.archived_at ? '보관됨 · ' : '') + (habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${habit.start_date} 시작`}
-        left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
+        subtitle={(habit.archived_at ? '보관됨 · ' : '') + (habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${startDateLabel(habit.start_date, day.year)}`}
+        left={(
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
+            <IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />
+            <Pressable accessibilityRole="button" accessibilityLabel="아이콘과 문구 바꾸기" onPress={openLook} hitSlop={4}>
+              <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={40} />
+            </Pressable>
+          </View>
+        )} />
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl }} keyboardShouldPersistTaps="handled">
+        {meta?.quote ? (
+          <Txt variant="small" tone="muted" numberOfLines={2} style={{ marginTop: -space.sm }}>“{meta.quote}”</Txt>
+        ) : null}
         <View style={{ flexDirection: 'row', gap: space.sm }}>
           <Stat label="습관 강도" value={strength.score + '%' + trendGlyph} />
           <Stat label="현재 연속" value={(stats?.current_streak ?? 0) + unit} />
@@ -129,17 +154,18 @@ export default function HabitDetail() {
         <Card style={{ paddingVertical: space.xs }}>
           {habit.archived_at ? (
             <Row
-              icon="rotate-ccw" label="보관 해제 (다시 활성화)" detail="습관 목록으로 복원"
+              icon="rotate-ccw" label="보관 해제" detail="습관 목록으로 되돌리기"
               onPress={() => {
                 haptic.success();
                 actions.unarchive(habit.id);
-                showToast(`‘${habit.name}’ 습관을 다시 활성화했습니다.`);
+                showToast(`‘${habit.name}’ 습관을 보관 해제했습니다.`);
                 router.back();
               }} />
           ) : (
             <Row icon="clock" label="이 습관으로 집중 시작" onPress={() => router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } })} />
           )}
           <Row icon="edit-2" label="이름 바꾸기" onPress={() => setName(habit.name)} />
+          <Row icon="smile" label="아이콘·색·응원 문구" onPress={openLook} />
           {habit.archived_at ? null : (
             <Row
               icon="archive" label="보관하기" detail="기록은 남습니다"
@@ -167,8 +193,21 @@ export default function HabitDetail() {
         </View>
       </Sheet>
 
+      <Sheet visible={editing !== null} onClose={() => setEditing(null)} title="아이콘과 응원 문구">
+        {editing ? (
+          <View style={{ gap: space.lg }}>
+            <HabitLookPicker name={habit.name} look={editing} onChange={(look) => setEditing({ ...editing, ...look })} />
+            <QuoteField value={editing.quote} onChange={(quote) => setEditing({ ...editing, quote })} />
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <Button label="취소" kind="secondary" onPress={() => setEditing(null)} style={{ flex: 1 }} />
+              <Button label="저장" onPress={saveLook} style={{ flex: 1 }} />
+            </View>
+          </View>
+        ) : null}
+      </Sheet>
+
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="습관을 삭제할까요?">
-        <Txt tone="muted" style={{ marginBottom: space.lg }}>모든 기록이 함께 지워지며 되돌릴 수 없습니다. 기록을 남기려면 보관을 선택하세요.</Txt>
+        <Txt tone="muted" style={{ marginBottom: space.lg }}>모든 기록이 함께 지워지고 되돌릴 수 없습니다. 기록을 남기려면 ‘보관하기’를 쓰세요.</Txt>
         <View style={{ gap: space.sm }}>
           <Button
             label="삭제" kind="danger"

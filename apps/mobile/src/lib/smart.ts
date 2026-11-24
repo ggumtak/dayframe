@@ -214,12 +214,12 @@ export function planBalancedReschedule(
     loads.set(chosenKey, (loads.get(chosenKey) ?? 0) + 1);
     const offset = referenceToday.until(bestDay).days;
     const reason = task.priority === 1
-      ? '긴급 우선순위'
+      ? '우선순위 가장 높음'
       : offset === 0
         ? '오늘 여유 있음'
         : offset === 1
-          ? '내일로 분산'
-          : `일정 적은 날 (${bestDay.month}/${bestDay.day})`;
+          ? '내일이 여유 있음'
+          : `일정 적은 날 (${bestDay.month}월 ${bestDay.day}일)`;
     proposals.push({ task, targetDate: bestDay, reason });
   }
 
@@ -263,22 +263,22 @@ export function suggestForToday(
       reason = `진행 중 (${progress!.completed}/${progress!.total})`;
     } else if (task.priority === 1) {
       score += 85;
-      reason = 'P1 긴급';
+      reason = '우선순위 가장 높음';
     } else if (task.priority === 2) {
       score += 65;
-      reason = 'P2 높음';
+      reason = '우선순위 높음';
     } else if (tomorrow) {
       score += 50;
-      reason = '내일 예정 · 미리 처리';
+      reason = '내일 할 일 · 미리 하기';
     } else if (stale) {
       score += 40;
-      reason = '오래된 미분류';
+      reason = '오래 미뤄 둔 일';
     } else if (!task.due_at && task.priority === 3) {
       score += 32;
-      reason = 'P3 미분류';
+      reason = '우선순위 보통 · 날짜 없음';
     } else if (!task.due_at) {
       score += 18;
-      reason = '날짜 없는 할 일';
+      reason = '날짜 없음';
     }
 
     if (score > 0) {

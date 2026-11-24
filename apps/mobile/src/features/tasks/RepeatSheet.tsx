@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Chip, Icon, IconButton, Row, Segmented, Sheet, Txt } from '@/components/ui';
-import { describeRecurrence } from '@/lib/dates';
+import { describeRecurrence, dueMinutes, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { recurrence, type RecurrenceMode } from '@/lib/shared';
+import { recurrence, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
 import { radius, space, useTheme } from '@/theme';
+
+import { localTimeString } from './useTaskFlow';
 
 type Freq = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
 type DayCode = 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU';
@@ -23,8 +25,8 @@ const WEEKDAYS: { code: DayCode; label: string }[] = [
 const repeatOptions: { rule: string | null; label: string; detail?: string }[] = [
   { rule: null, label: '반복 없음' },
   { rule: 'FREQ=DAILY', label: '매일' },
-  { rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: '평일', detail: '월–금' },
-  { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', label: '주말', detail: '토–일' },
+  { rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: '평일', detail: '월~금' },
+  { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', label: '주말', detail: '토~일' },
   { rule: 'FREQ=WEEKLY', label: '매주' },
   { rule: 'FREQ=WEEKLY;INTERVAL=2', label: '격주' },
   { rule: 'FREQ=MONTHLY', label: '매월' },
@@ -41,6 +43,22 @@ export function buildRRule(frequency: Freq, interval: number, weekdays: DayCode[
     + (frequency === 'MONTHLY' && lastDay ? ';BYMONTHDAY=-1' : '');
 }
 
+/**
+ * The schedule fields for giving a task a repeat (or taking it away), keeping its time of day. A task without a date
+ * starts repeating from today, all day. Null when nothing would change.
+ */
+export function repeatPatch(task: Task, rule: string | null, mode: RecurrenceMode): TaskPatch | null {
+  if (rule === task.recurrence_rule && mode === task.recurrence_mode) return null;
+  if (!rule) return { recurrence_rule: null, recurrence_mode: 'schedule', recurrence_local_time: null };
+  const minutes = dueMinutes(task);
+  return task.due_at
+    ? { recurrence_rule: rule, recurrence_mode: mode, recurrence_local_time: task.all_day || minutes === null ? null : localTimeString(minutes) }
+    : {
+      due_at: instantFor(today(task.timezone), null, task.timezone), all_day: true,
+      recurrence_rule: rule, recurrence_mode: mode, recurrence_local_time: null,
+    };
+}
+
 /** Repeat picker with schedule vs. completion-based recurrence modes, common presets, and a custom RRULE builder. */
 export function RepeatSheet({
   visible, currentRule, currentMode = 'schedule', onClose, onSelect,
@@ -53,18 +71,30 @@ export function RepeatSheet({
 }) {
   if (!visible) return null;
   return (
-    <RepeatSheetContent
-      key={(currentRule ?? 'none') + '|' + currentMode}
-      currentRule={currentRule} currentMode={currentMode} onClose={onClose} onSelect={onSelect} />
+    <Sheet visible onClose={onClose} title="반복 설정">
+      <RepeatPicker currentRule={currentRule} currentMode={currentMode} onSelect={onSelect} />
+    </Sheet>
   );
 }
 
-function RepeatSheetContent({
-  currentRule, currentMode, onClose, onSelect,
+/** The repeat choices without a sheet around them, for screens that show them inside their own sheet. */
+export function RepeatPicker({ currentRule, currentMode = 'schedule', onSelect }: {
+  currentRule: string | null;
+  currentMode?: RecurrenceMode;
+  onSelect: (rule: string | null, mode: RecurrenceMode) => void;
+}) {
+  // Keyed by the saved rule so the editor starts over from it whenever it changes.
+  return (
+    <RepeatPickerContent
+      key={(currentRule ?? 'none') + '|' + currentMode} currentRule={currentRule} currentMode={currentMode} onSelect={onSelect} />
+  );
+}
+
+function RepeatPickerContent({
+  currentRule, currentMode, onSelect,
 }: {
   currentRule: string | null;
   currentMode: RecurrenceMode;
-  onClose: () => void;
   onSelect: (rule: string | null, mode: RecurrenceMode) => void;
 }) {
   const { colors } = useTheme();
@@ -95,7 +125,7 @@ function RepeatSheetContent({
   };
 
   return (
-    <Sheet visible onClose={onClose} title="반복 설정">
+    <View>
       <View style={{ gap: 6, marginBottom: space.md }}>
         <Segmented<RecurrenceMode>
           value={mode} onChange={setMode}
@@ -105,7 +135,7 @@ function RepeatSheetContent({
           ]} />
         <Txt variant="caption" tone="muted">
           {mode === 'completion'
-            ? '실제로 완료한 날부터 다음 주기를 계산합니다. (예: 필터 교체, 청소, 미용실)'
+            ? '실제로 완료한 날을 기준으로 다음 날짜를 정합니다. (예: 필터 교체, 청소, 미용실)'
             : '원래 정해진 날짜·요일에 맞춰 반복합니다. (예: 주간 회의, 월세 납부)'}
         </Txt>
       </View>
@@ -200,7 +230,7 @@ function RepeatSheetContent({
           <Button label="반복 적용" onPress={() => onSelect(customRule, mode)} />
         </View>
       )}
-    </Sheet>
+    </View>
   );
 }
 

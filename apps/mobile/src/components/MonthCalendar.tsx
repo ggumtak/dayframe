@@ -13,8 +13,13 @@ const names = ['월', '화', '수', '목', '금', '토', '일'];
 export type DayMark = 'done' | 'partial' | 'skipped';
 
 /** A Monday-first month grid with horizontal swipe month navigation and optional workload density dots. */
-export function MonthCalendar({ initial, selected, today, marks, dots, dotCounts, min, max, onSelect, onLongPress, onMonthChange }: {
+export function MonthCalendar({ initial, month: shownMonth, selected, today, marks, dots, dotCounts, min, max, onSelect, onLongPress, onMonthChange }: {
   initial: PlainDate;
+  /**
+   * Optional: the month to show, for a screen that holds it itself (e.g. to jump to a month from elsewhere).
+   * When given, `initial` is ignored and navigation only reports the next month through `onMonthChange`.
+   */
+  month?: Temporal.PlainYearMonth;
   selected?: PlainDate | null;
   today: PlainDate;
   marks?: Map<string, DayMark>;
@@ -31,11 +36,12 @@ export function MonthCalendar({ initial, selected, today, marks, dots, dotCounts
   onMonthChange?: (month: Temporal.PlainYearMonth) => void;
 }) {
   const { colors } = useTheme();
-  const [month, setMonthState] = useState(() => initial.toPlainYearMonth());
+  const [ownMonth, setMonthState] = useState(() => initial.toPlainYearMonth());
+  const month = shownMonth ?? ownMonth;
   const [picking, setPicking] = useState(false);
   const [pickYear, setPickYear] = useState(month.year);
   const setMonth = (next: Temporal.PlainYearMonth) => {
-    setMonthState(next);
+    if (!shownMonth) setMonthState(next);
     onMonthChange?.(next);
   };
   const first = month.toPlainDate({ day: 1 });

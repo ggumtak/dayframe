@@ -4,12 +4,14 @@ import { useMemo, useState } from 'react';
 import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, EmptyState, Header, Icon, IconButton, Loading, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
+import { EmptyDone, EmptySearch, OfflineArt } from '@/components/art';
+import { Button, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
 import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
-import { useProjects, useTagNames, useTaskActions } from '@/data/tasks';
+import { useProjects, useTagNames, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { api } from '@/lib/api';
 import { deviceTimeZone, formatDate, formatTime, Temporal, today } from '@/lib/dates';
+import { josa } from '@/lib/josa';
 import { searchTasks } from '@/lib/search';
 import type { Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -31,6 +33,20 @@ export default function Completed() {
   const [deleting, setDeleting] = useState<Task | null>(null);
 
   const names = useMemo(() => new Map((projects ?? []).map((project) => [project.id, project.name])), [projects]);
+  // A finished subtask names its parent, which is already loaded: an open task, or one in this completed list.
+  const { byId: openById } = useTaskIndex();
+  const parentTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    const list = query.data ?? [];
+    if (!list.some((task) => task.parent_task_id)) return titles;
+    const doneById = new Map(list.map((task) => [task.id, task]));
+    for (const task of list) {
+      if (!task.parent_task_id) continue;
+      const parent = openById.get(task.parent_task_id) ?? doneById.get(task.parent_task_id);
+      if (parent) titles.set(task.id, parent.title);
+    }
+    return titles;
+  }, [query.data, openById]);
 
   const filtered = useMemo(() => {
     const visible = (query.data ?? []).filter((task) => !!task.completed_at && !removed.has(task.id));
@@ -53,7 +69,7 @@ export default function Completed() {
   const reopen = (task: Task) => {
     setRemoved((current) => new Set(current).add(task.id));
     actions.reopen(task);
-    showToast(`‘${task.title}’을 다시 할 일로 되돌렸습니다.`);
+    showToast(`‘${task.title}’${josa(task.title, '을/를')} 다시 열었습니다.`);
   };
 
   const confirmDelete = () => {
@@ -71,7 +87,7 @@ export default function Completed() {
       <Header title="완료한 일" subtitle={total > 0 ? `${total}개` : undefined} left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       {query.isPending ? <Loading /> : query.isError ? (
         <EmptyState
-          icon="cloud-off" title="불러오지 못했습니다" message="완료한 일은 서버에서 불러옵니다. 네트워크를 확인해 주세요."
+          icon="cloud-off" art={<OfflineArt size={EMPTY_ART} />} title="불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
           action={<Button label="다시 시도" kind="secondary" onPress={() => void query.refetch()} />} />
       ) : (
         <>
@@ -94,6 +110,7 @@ export default function Completed() {
             {days.length === 0 ? (
               <EmptyState
                 icon={search.trim() ? 'search' : 'check-circle'}
+                art={search.trim() ? <EmptySearch size={EMPTY_ART} /> : <EmptyDone size={EMPTY_ART} />}
                 title={search.trim() ? '일치하는 완료 기록이 없습니다' : '아직 완료한 일이 없습니다'} />
             ) : days.map(([day, tasks]) => (
               <View key={day}>
@@ -101,13 +118,15 @@ export default function Completed() {
                 {tasks.map((task) => {
                   const at = Temporal.Instant.from(task.completed_at!).toZonedDateTimeISO(zone);
                   const project = task.project_id ? names.get(task.project_id) : undefined;
+                  const parentTitle = parentTitles.get(task.id);
                   return (
                     <View key={task.id} style={styles.row}>
-                      <Checkbox checked color={colors.success} onPress={() => reopen(task)} label={task.title + ' 다시 할 일로 되돌리기'} />
+                      <Checkbox checked color={colors.success} onPress={() => reopen(task)} label={task.title + ' 다시 열기'} />
                       <View style={[styles.body, { borderBottomColor: colors.border }]}>
                         <View style={{ flex: 1, gap: 2 }}>
                           <Txt tone="muted" numberOfLines={2}>{task.title}</Txt>
                           <Txt variant="small" tone="faint">{formatTime(at.hour * 60 + at.minute) + ' 완료' + (project ? ' · #' + project : '')}</Txt>
+                          {parentTitle ? <Txt variant="caption" tone="faint" numberOfLines={1}>상위 할 일: {parentTitle}</Txt> : null}
                         </View>
                         <IconButton
                           name="trash-2" label={task.title + ' 삭제'} size={16} color={colors.textFaint}
@@ -129,7 +148,7 @@ export default function Completed() {
 
       <Sheet visible={!!deleting} onClose={() => setDeleting(null)} title="완료 기록을 삭제할까요?">
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          ‘{deleting?.title}’ 기록이 영구적으로 지워집니다.
+          ‘{deleting?.title}’ 기록을 완전히 지웁니다. 되돌릴 수 없습니다.
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button label="삭제" kind="danger" onPress={confirmDelete} />

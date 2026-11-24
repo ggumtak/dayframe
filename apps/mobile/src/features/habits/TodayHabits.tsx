@@ -12,6 +12,9 @@ import { usePersistentState } from '@/lib/persist';
 import { fontFamily, space, type, useTheme } from '@/theme';
 
 import { nextCheckIn } from './checkIn';
+import { habitLook } from './display';
+import { HabitAvatar } from './HabitAvatar';
+import { useHabitMetaMap } from './habitMeta';
 import { computeHabitStrength } from './strength';
 
 type Fold = 'open' | 'closed';
@@ -54,6 +57,7 @@ export function TodayHabits() {
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
   const details = useHabitDetails(habits);
   const actions = useHabitActions();
+  const habitMeta = useHabitMetaMap();
   const [fold, setFold] = usePersistentState<Fold>('dayframe-today-habits', 'open', isFold);
 
   const rows = habits.map((habit, order) => {
@@ -66,7 +70,7 @@ export function TodayHabits() {
     // A weekly habit ticked today has nothing more to do today, even while the week's goal is open.
     const settled = progress >= habit.target_count || (weekly && todayCount > 0);
     const missedYesterday = !settled && computeHabitStrength(habit, logs, day).missedYesterday;
-    return { habit, order, date, todayCount, progress, weekly, settled, missedYesterday };
+    return { habit, look: habitLook(habit.name, habitMeta[habit.id]), order, date, todayCount, progress, weekly, settled, missedYesterday };
   }).sort((a, b) => Number(a.settled) - Number(b.settled) || Number(b.missedYesterday) - Number(a.missedYesterday) || a.order - b.order);
   if (!rows.length) return null;
   const settledCount = rows.filter((row) => row.settled).length;
@@ -79,7 +83,7 @@ export function TodayHabits() {
         open={open} onToggle={() => setFold(open ? 'closed' : 'open')} label="오늘의 습관" />
       {open ? (
         <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(100)}>
-          {rows.map(({ habit, date, todayCount, progress, weekly, settled, missedYesterday }) => (
+          {rows.map(({ habit, look, date, todayCount, progress, weekly, settled, missedYesterday }) => (
         <Pressable
           key={habit.id} accessibilityRole="button" accessibilityLabel={habit.name + ' 자세히 보기'}
           onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
@@ -96,6 +100,7 @@ export function TodayHabits() {
             <Mark ratio={progress / habit.target_count} settled={settled} />
           </Pressable>
           <View style={[styles.body, { borderBottomColor: colors.border }]}>
+            <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={22} />
             <Text numberOfLines={1} style={[type.body as TextStyle, { flex: 1, color: settled ? colors.textFaint : colors.text }]}>{habit.name}</Text>
             {missedYesterday ? (
               <Text style={[styles.count, { color: colors.warning, fontWeight: '600' }]}>어제 놓침</Text>

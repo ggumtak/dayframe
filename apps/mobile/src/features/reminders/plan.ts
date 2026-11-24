@@ -2,6 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { Task } from '@/lib/shared';
 
+import { allDayLeadDays, clampLead } from './lead.ts';
+
 export interface ReminderSettings {
   enabled: boolean;
   /** Minutes before a timed task's due time. */
@@ -53,12 +55,11 @@ export function planReminders(
     if (task.completed_at || !task.due_at) continue;
     const own = options.leadFor?.(task);
     if (own === 'off') continue;
-    const lead = own ?? settings.leadMinutes;
     let occurrence: string | null = task.due_at;
     // Completion-based repeats don't have deterministic future dates until completed, so only schedule the current occurrence.
     const repeatsAhead = !!task.recurrence_rule && task.recurrence_mode !== 'completion';
     for (let count = 0; occurrence && count < (repeatsAhead ? options.perTask ?? 4 : 1); count++) {
-      const at = alertTime(task, occurrence, settings, lead);
+      const at = alertTime(task, occurrence, settings, own);
       if (at !== null && at > horizon) break;
       if (at !== null && at > now) planned.push({ id: reminderId(task.id, occurrence), taskId: task.id, occurrence, at });
       occurrence = repeatsAhead ? safely(() => upcoming(task, occurrence!)) : null;
@@ -67,10 +68,17 @@ export function planReminders(
   return planned.sort((a, b) => a.at - b.at).slice(0, options.limit ?? 60);
 }
 
-function alertTime(task: ReminderTask, occurrence: string, settings: ReminderSettings, lead: number): number | null {
-  if (!task.all_day) return Date.parse(occurrence) - lead * 60_000;
+/**
+ * When an occurrence's alert fires. A timed task rings `own` minutes early (or by the settings default); an all-day task
+ * rings at the settings hour on its day, or whole days earlier when its own lead asks for that. Null means no alert.
+ */
+export function alertTime(
+  task: Pick<ReminderTask, 'all_day' | 'timezone'>, occurrence: string, settings: Pick<ReminderSettings, 'leadMinutes' | 'allDayHour'>,
+  own?: number,
+): number | null {
+  if (!task.all_day) return Date.parse(occurrence) - clampLead(own ?? settings.leadMinutes) * 60_000;
   if (settings.allDayHour === null) return null;
-  const day = Temporal.Instant.from(occurrence).toZonedDateTimeISO(task.timezone).toPlainDate();
+  const day = Temporal.Instant.from(occurrence).toZonedDateTimeISO(task.timezone).toPlainDate().subtract({ days: own === undefined ? 0 : allDayLeadDays(own) });
   return day.toZonedDateTime({ timeZone: task.timezone, plainTime: { hour: settings.allDayHour } }).epochMilliseconds;
 }
 
