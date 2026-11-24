@@ -54,7 +54,9 @@ const config: ExpoConfig = {
       imageWidth: 96,
       dark: { backgroundColor: '#15171A', image: './assets/images/splash-icon.png' },
     }],
-    'expo-localization',
+    // The UI is Korean only, so the APK keeps only Korean translations of library strings (AndroidX, Material,
+    // React Native) next to the default (English) ones: about 0.7 MB less resources.arsc than all 85 languages.
+    ['expo-localization', { supportedLocales: { android: ['ko'] } }],
     ['expo-font', {
       android: {
         fonts: [{
