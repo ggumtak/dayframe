@@ -1,10 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 
+import { accentPalette, type AccentId, DEFAULT_ACCENT, parseAccent } from '@/features/settings/palettes';
 import type { Priority } from '@/lib/shared';
 
-// One blue carries every interactive element; red, orange and green appear only where they mean something
+export { ACCENTS, type AccentId, type AccentPalette } from '@/features/settings/palettes';
+
+// One accent (blue by default, see 외관) carries every interactive element; red, orange and green appear only where they mean something
 // (overdue and P1, P2, done and today), so the screens stay calm and the colours never compete.
 const light = {
   background: '#FFFFFF',
@@ -93,31 +96,66 @@ export function elevation(colors: Colors, level: 1 | 2 = 1) {
   });
 }
 
-interface ThemeValue { colors: Colors; isDark: boolean; mode: ThemeMode; setMode: (mode: ThemeMode) => void }
+interface ThemeValue {
+  colors: Colors; isDark: boolean; mode: ThemeMode; setMode: (mode: ThemeMode) => void;
+  /** The chosen accent palette (외관 → 강조색); only the interactive colour family changes with it. */
+  accent: AccentId; setAccent: (accent: AccentId) => void;
+}
 
-const ThemeContext = createContext<ThemeValue>({ colors: light, isDark: false, mode: 'system', setMode: () => {} });
+const ThemeContext = createContext<ThemeValue>({
+  colors: light, isDark: false, mode: 'system', setMode: () => {}, accent: DEFAULT_ACCENT, setAccent: () => {},
+});
 const STORAGE_KEY = 'dayframe-theme';
+const ACCENT_KEY = 'dayframe-accent';
+
+/** One frozen colour object per mode and accent, so a context consumer sees the same object until either changes. */
+const colorCache = new Map<string, Colors>();
+function colorsFor(isDark: boolean, accent: AccentId): Colors {
+  const key = (isDark ? 'dark:' : 'light:') + accent;
+  let colors = colorCache.get(key);
+  if (!colors) {
+    const base = isDark ? dark : light;
+    colors = accent === DEFAULT_ACCENT ? base : { ...base, ...accentPalette(accent)[isDark ? 'dark' : 'light'] };
+    colorCache.set(key, colors);
+  }
+  return colors;
+}
+
+const isThemeMode = (value: unknown): value is ThemeMode => value === 'light' || value === 'dark' || value === 'system';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const system = useColorScheme();
-  const [mode, setModeState] = useState<ThemeMode>('system');
+  // Mode and accent live in one state so the stored pair arrives in a single repaint at startup.
+  const [prefs, setPrefs] = useState<{ mode: ThemeMode; accent: AccentId }>({ mode: 'system', accent: DEFAULT_ACCENT });
+  const touched = useRef(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
-      if (stored === 'light' || stored === 'dark' || stored === 'system') setModeState(stored);
+    AsyncStorage.multiGet([STORAGE_KEY, ACCENT_KEY]).then((entries) => {
+      if (touched.current) return;
+      const stored = Object.fromEntries(entries);
+      const mode = isThemeMode(stored[STORAGE_KEY]) ? stored[STORAGE_KEY] : 'system';
+      const accent = parseAccent(stored[ACCENT_KEY]);
+      setPrefs((current) => (current.mode === mode && current.accent === accent ? current : { mode, accent }));
     }).catch(() => {});
   }, []);
 
+  const setMode = useCallback((mode: ThemeMode) => {
+    touched.current = true;
+    setPrefs((current) => (current.mode === mode ? current : { ...current, mode }));
+    AsyncStorage.setItem(STORAGE_KEY, mode).catch(() => {});
+  }, []);
+
+  const setAccent = useCallback((accent: AccentId) => {
+    touched.current = true;
+    setPrefs((current) => (current.accent === accent ? current : { ...current, accent }));
+    AsyncStorage.setItem(ACCENT_KEY, accent).catch(() => {});
+  }, []);
+
+  const { mode, accent } = prefs;
   const value = useMemo<ThemeValue>(() => {
     const isDark = mode === 'system' ? system === 'dark' : mode === 'dark';
-    return {
-      colors: isDark ? dark : light, isDark, mode,
-      setMode: (next) => {
-        setModeState(next);
-        AsyncStorage.setItem(STORAGE_KEY, next).catch(() => {});
-      },
-    };
-  }, [mode, system]);
+    return { colors: colorsFor(isDark, accent), isDark, mode, setMode, accent, setAccent };
+  }, [mode, accent, system, setMode, setAccent]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
