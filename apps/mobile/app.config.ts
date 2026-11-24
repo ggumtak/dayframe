@@ -59,6 +59,8 @@ const config: ExpoConfig = {
       },
     }],
     ['expo-notifications', { color: '#3574F0' }],
+    // Keeps the AI 비서 key (Android Keystore) out of Android Auto Backup, where it could not be decrypted anyway.
+    'expo-secure-store',
     // previewImage is what the home screen's widget picker shows; redraw with scripts/widget-previews.mjs.
     ['react-native-android-widget', {
       widgets: [{

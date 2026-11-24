@@ -10,6 +10,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { fakeSession } from './fixtures.mjs';
+import { handleAnthropic, isAnthropicMessages } from './mock-anthropic.mjs';
 import { createMockApi, isApiPath, isAuthPath } from './mock-api.mjs';
 import { serve } from './server.mjs';
 
@@ -133,7 +134,7 @@ async function runStep(page, step) {
 
 async function takeShot(browser, baseUrl, shot, options) {
   const { api, outDir, dark } = options;
-  const log = { consoleErrors: [], pageErrors: [], aborted: [], unknownRoutes: [], mockErrors: [] };
+  const log = { consoleErrors: [], pageErrors: [], aborted: [], unknownRoutes: [], mockErrors: [], anthropic: [] };
   api.reset();
   const context = await browser.newContext({
     viewport: shot.viewport ?? VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul',
@@ -162,6 +163,18 @@ async function takeShot(browser, baseUrl, shot, options) {
         pathname = new URL(url).pathname;
       } catch {
         // not a URL we can parse: abort below
+      }
+      // The AI 비서 screens call the Claude API directly; answer from mock-anthropic.mjs, never the real host.
+      if (isAnthropicMessages(url)) {
+        if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+        let body;
+        try {
+          body = request.postDataJSON() ?? undefined;
+        } catch {
+          body = undefined;
+        }
+        const result = handleAnthropic(request.method(), await request.allHeaders(), body, log.anthropic);
+        return route.fulfill({ status: result.status, headers: cors, contentType: 'application/json', body: JSON.stringify(result.json) });
       }
       if (isApiPath(pathname) || isAuthPath(pathname)) {
         const method = request.method();
@@ -284,6 +297,7 @@ async function main() {
     const sections = [
       ['page errors', log.pageErrors], ['console errors', log.consoleErrors],
       ['unknown API routes (answered 404)', log.unknownRoutes], ['mock errors (answered 500)', log.mockErrors], ['blocked requests', log.aborted],
+      ['mocked Claude API requests', log.anthropic.map((entry) => JSON.stringify(entry))],
     ].filter(([, list]) => list.length);
     if (!sections.length) continue;
     console.log(`\n[${shot.name}]`);

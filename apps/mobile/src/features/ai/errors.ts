@@ -1,0 +1,58 @@
+// What can go wrong with a request, in words the owner can act on. Pure, tested with node:test.
+// The texts never repeat the server's message: it is English, technical, and not ours to show.
+
+export type AiErrorKind =
+  | 'no_key' | 'bad_key' | 'no_credit' | 'permission' | 'model_unavailable' | 'rate_limit' | 'spend_limit'
+  | 'overloaded' | 'server' | 'offline' | 'timeout' | 'refusal' | 'max_tokens' | 'invalid' | 'bad_request' | 'cancelled';
+
+export class AiError extends Error {
+  readonly kind: AiErrorKind;
+  constructor(kind: AiErrorKind) {
+    super(kind);
+    this.name = 'AiError';
+    this.kind = kind;
+  }
+}
+
+export const isAiError = (error: unknown): error is AiError => error instanceof AiError;
+
+export const AI_ERROR_TEXT: Record<AiErrorKind, { title: string; message: string }> = {
+  no_key: { title: '키가 필요합니다', message: 'AI 비서를 쓰려면 먼저 Anthropic 키를 저장해 주세요.' },
+  bad_key: { title: '키가 맞지 않습니다', message: 'Anthropic이 저장한 키를 받아들이지 않았습니다. 키를 다시 복사해 바꿔 주세요.' },
+  no_credit: { title: '크레딧이 부족합니다', message: 'Anthropic 콘솔의 결제 화면에서 크레딧을 충전한 뒤 다시 시도해 주세요.' },
+  permission: { title: '이 키로는 쓸 수 없습니다', message: 'Anthropic 콘솔에서 키의 권한과 워크스페이스 설정을 확인해 주세요.' },
+  model_unavailable: { title: '선택한 모델을 쓸 수 없습니다', message: 'AI 비서 설정에서 다른 모델을 골라 다시 시도해 주세요.' },
+  rate_limit: { title: '요청이 너무 많습니다', message: '잠시 후 다시 시도해 주세요.' },
+  spend_limit: { title: '사용 한도에 닿았습니다', message: 'Anthropic 콘솔에서 월 사용 한도를 확인해 주세요.' },
+  overloaded: { title: 'Anthropic 서버가 붐빕니다', message: '잠시 후 다시 시도해 주세요.' },
+  server: { title: 'Anthropic 서버에 문제가 생겼습니다', message: '잠시 후 다시 시도해 주세요.' },
+  offline: { title: '인터넷에 연결되어 있지 않습니다', message: '연결을 확인한 뒤 다시 시도해 주세요.' },
+  timeout: { title: '응답이 너무 늦어 멈췄습니다', message: '잠시 후 다시 시도해 주세요.' },
+  refusal: { title: '이 요청에는 답하지 못했습니다', message: '내용을 조금 바꿔 다시 시도해 주세요.' },
+  max_tokens: { title: '답이 길어 중간에 끊겼습니다', message: '내용을 줄이거나 나눠서 다시 시도해 주세요.' },
+  invalid: { title: '답을 읽지 못했습니다', message: '다시 시도해 주세요.' },
+  bad_request: { title: '요청을 보내지 못했습니다', message: '앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.' },
+  cancelled: { title: '취소했습니다', message: '' },
+};
+
+/** Maps an HTTP error to a kind, from the status, the error `type` and, for 429, the spend-cap code. */
+export function classifyStatus(
+  status: number | undefined, type?: string | null, code?: string | null, message?: string | null,
+): AiErrorKind {
+  if (type === 'overloaded_error' || status === 529) return 'overloaded';
+  if (type === 'authentication_error' || status === 401) return 'bad_key';
+  if (type === 'billing_error' || status === 402) return 'no_credit';
+  if (type === 'permission_error' || status === 403) return 'permission';
+  if (type === 'not_found_error' || status === 404) return 'model_unavailable';
+  if (status === 429) return code === 'enforced_spend_limit_reached' ? 'spend_limit' : 'rate_limit';
+  if (status === 408) return 'timeout';
+  if (status !== undefined && status >= 500) return 'server';
+  // An empty prepaid balance has long been answered with a plain 400 whose only distinguishing mark is its
+  // wording; billing_error (402) is the typed form. Both mean the same thing to the owner.
+  if (status === 400) return message && /credit balance/i.test(message) ? 'no_credit' : 'bad_request';
+  return 'server';
+}
+
+/** Whether pressing "다시 시도" right away has a chance of working. */
+export const isRetryable = (kind: AiErrorKind): boolean =>
+  ['rate_limit', 'overloaded', 'server', 'offline', 'timeout', 'refusal', 'max_tokens', 'invalid', 'cancelled'].includes(kind);
