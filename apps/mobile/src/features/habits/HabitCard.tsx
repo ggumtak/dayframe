@@ -14,6 +14,7 @@ import { radius, space, useTheme } from '@/theme';
 
 import { nextCheckIn } from './checkIn';
 import { dayState, logsByDate, outsideHabit, periodProgress, weekDates } from './goal';
+import { habitLook } from './display';
 import { HabitAvatar } from './HabitAvatar';
 import type { HabitMeta } from './habitMeta';
 import { computeHabitStrength } from './strength';
@@ -78,6 +79,7 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
   const week = useMemo(() => weekDates(weekStart(day)), [day]);
   const streak = stats?.current_streak ?? 0;
   const strength = useMemo(() => computeHabitStrength(habit, logs, day), [habit, logs, day]);
+  const look = habitLook(habit.name, meta);
 
   const checkIn = () => {
     const next = nextCheckIn(habit, todayCount, progress);
@@ -99,7 +101,7 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
         <Card style={styles.card}>
           <View style={{ flex: 1, gap: space.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-              <HabitAvatar name={habit.name} emoji={meta?.emoji} color={meta?.color} size={24} />
+              <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={24} />
               <Txt variant="bodyStrong" numberOfLines={1} style={{ flexShrink: 1 }}>{habit.name}</Txt>
               {streak > 0 ? (
                 <View style={[styles.streak, { backgroundColor: colors.warningSoft }]} accessibilityLabel={`${streak}${weekly ? '주' : '일'} 연속`}>

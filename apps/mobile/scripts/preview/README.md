@@ -54,6 +54,8 @@ Edit `shots.mjs`. Each entry is `{ name, path, steps? }`:
 { name: 'today-bottom', path: '/', steps: [{ scroll: 900 }] },  // scrolls the tallest visible scroll view
 { name: 'report', path: '/', steps: [{ click: { text: '분기 보고서 초안 제출' } }] }, // first visible text match
 { name: 'esc', path: '/', steps: [{ press: 'Escape' }] },      // Playwright key names
+{ name: 'menu', path: '/inbox', steps: [{ hold: { text: '휴대폰 사진 백업' } }] }, // long press (ms: 900 by default)
+{ name: 'small', path: '/', viewport: { width: 360, height: 760 } }, // this shot's viewport instead of 412×915
 ```
 
 Prefer a `path` (deep link) over clicking through the UI, and accessibility labels over visible text:

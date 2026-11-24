@@ -3,6 +3,7 @@ import { type RefObject, useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
 
+import { EmptyUpcoming } from '@/components/art';
 import { MonthCalendar } from '@/components/MonthCalendar';
 import { YearCalendar } from '@/components/YearCalendar';
 import { FoldHeader, Header, Icon, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
@@ -330,7 +331,11 @@ function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
   );
 }
 
+/** Smaller than a full-screen empty state: it sits under the month calendar. */
+const MONTH_EMPTY_ART = 120;
+
 const styles = StyleSheet.create({
+  emptyMonth: { alignItems: 'center', gap: space.sm, paddingVertical: space.lg },
   weekNav: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.md, paddingBottom: 2 },
   week: { flexDirection: 'row', paddingHorizontal: space.sm, paddingBottom: space.sm, borderBottomWidth: StyleSheet.hairlineWidth },
   monthBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.lg, paddingTop: space.md, marginTop: space.sm, borderTopWidth: StyleSheet.hairlineWidth },
@@ -440,7 +445,10 @@ function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected,
         {selected ? <AddButton label={title(picked!)} onPress={() => onAdd(picked!)} /> : null}
       </View>
       {listed.length === 0 ? (
-        <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>이번 달에는 일정이 없습니다.</Txt>
+        <View style={styles.emptyMonth}>
+          <EmptyUpcoming size={MONTH_EMPTY_ART} />
+          <Txt variant="small" tone="muted">이번 달에는 일정이 없습니다.</Txt>
+        </View>
       ) : listed.map((key) => {
         const date = Temporal.PlainDate.from(key);
         const entry = days.get(key) ?? { real: [], previews: [] };

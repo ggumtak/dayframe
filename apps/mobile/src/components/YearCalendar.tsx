@@ -161,6 +161,7 @@ const styles = StyleSheet.create({
   weekday: { width: CELL, fontFamily, fontSize: 9, lineHeight: 14, fontWeight: '500', textAlign: 'center' },
   dayText: { fontFamily, fontSize: 9, lineHeight: 12, textAlign: 'center', includeFontPadding: false },
   todayText: { fontWeight: '800' },
-  legend: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: space.lg },
+  // Left-aligned so the floating + button at the bottom right never covers it.
+  legend: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start', gap: 4, marginTop: space.lg },
   swatch: { width: 12, height: 12, borderRadius: 3 },
 });

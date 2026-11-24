@@ -5,6 +5,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View 
 import { type DayMark, MonthCalendar } from '@/components/MonthCalendar';
 import { Button, Card, Chip, EmptyState, Header, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import { useHabitActions, useHabitLogs, useHabits, useHabitStats } from '@/data/habits';
+import { habitLook, startDateLabel } from '@/features/habits/display';
 import { HabitAvatar } from '@/features/habits/HabitAvatar';
 import { type HabitLook, HabitLookPicker, QuoteField } from '@/features/habits/HabitLookPicker';
 import { deleteHabitMeta, HABIT_TIME_GROUPS, setHabitMeta, useHabitMetaMap } from '@/features/habits/habitMeta';
@@ -73,6 +74,7 @@ export default function HabitDetail() {
   };
 
   const meta = habitMeta[habit.id];
+  const look = habitLook(habit.name, meta);
   const openLook = () => setEditing({ emoji: meta?.emoji, color: meta?.color, quote: meta?.quote ?? '' });
   const saveLook = () => {
     if (!editing) return;
@@ -91,12 +93,12 @@ export default function HabitDetail() {
     <Screen>
       <Header
         title={habit.name}
-        subtitle={(habit.archived_at ? '보관됨 · ' : '') + (habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${habit.start_date} 시작`}
+        subtitle={(habit.archived_at ? '보관됨 · ' : '') + (habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${startDateLabel(habit.start_date, day.year)}`}
         left={(
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
             <IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />
             <Pressable accessibilityRole="button" accessibilityLabel="아이콘과 문구 바꾸기" onPress={openLook} hitSlop={4}>
-              <HabitAvatar name={habit.name} emoji={meta?.emoji} color={meta?.color} size={40} />
+              <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={40} />
             </Pressable>
           </View>
         )} />

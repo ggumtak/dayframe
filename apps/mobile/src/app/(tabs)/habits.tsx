@@ -2,7 +2,8 @@ import { router } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 
-import { Button, Card, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, Txt } from '@/components/ui';
+import { EmptyHabits } from '@/components/art';
+import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, Txt } from '@/components/ui';
 import { periodProgress, useHabitDetails, useHabits } from '@/data/habits';
 import { dayMet, logsByDate } from '@/features/habits/goal';
 import { HabitCard } from '@/features/habits/HabitCard';
@@ -150,7 +151,7 @@ export default function Habits() {
             </>
           ) : (
             <EmptyState
-              icon="repeat" title="습관을 만들어 보세요" message="매일 또는 매주 반복할 일을 정하고, 체크할 때마다 연속 기록이 쌓입니다."
+              icon="repeat" art={<EmptyHabits size={EMPTY_ART} />} title="습관을 만들어 보세요" message="매일 또는 매주 반복할 일을 정하고, 체크할 때마다 연속 기록이 쌓입니다."
               action={(
                 <View style={{ gap: space.sm, marginTop: space.md, alignSelf: 'stretch' }}>
                   <Button label="갤러리에서 고르기" icon="star" onPress={() => router.push('/routines')} />

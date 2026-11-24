@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { Temporal } from '@js-temporal/polyfill';
 
-import { clampInt, defaultFocusPrefs, nextBreak, normalizeFocusPrefs, weeklyFocusStats } from './model.ts';
+import { clampInt, defaultFocusPrefs, focusDoneTitle, nextBreak, normalizeFocusPrefs, weeklyFocusStats } from './model.ts';
 
 test('clampInt keeps custom durations inside valid server bounds', () => {
   assert.equal(clampInt(0, 1, 480, 25), 1);
@@ -52,4 +52,13 @@ test('weeklyFocusStats aggregates completed sessions across the last 7 local day
   assert.equal(stats.days[6].isToday, true);
   assert.equal(stats.days[6].minutes, 45);
   assert.equal(stats.days[4].minutes, 30);
+});
+
+test("focusDoneTitle names the planned length in the mode's own word", () => {
+  assert.equal(focusDoneTitle('pomodoro', 25 * 60), '집중 25분 완료');
+  assert.equal(focusDoneTitle('timer', 50 * 60), '타이머 50분 완료');
+  // A 25-minute round extended twice by 5 minutes.
+  assert.equal(focusDoneTitle('pomodoro', 25 * 60 + 600), '집중 35분 완료');
+  assert.equal(focusDoneTitle('timer', 90 * 60), '타이머 1시간 30분 완료');
+  assert.equal(focusDoneTitle('timer', 120 * 60), '타이머 2시간 완료');
 });

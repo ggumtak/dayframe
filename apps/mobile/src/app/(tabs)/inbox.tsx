@@ -4,7 +4,8 @@ import { Pressable, RefreshControl, ScrollView as PlainScroll, type ScrollViewIn
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Chip, EmptyState, Header, Icon, IconButton, type IconName, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { EmptyList } from '@/components/art';
+import { Button, Chip, EMPTY_ART, EmptyState, Header, Icon, IconButton, type IconName, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
 import {
   byPosition, byPriority, bySchedule, byTitle, useCompletedTasks, useProjectActions, useProjects,
   useSectionActions, useSections, useSubtaskProgress, useTaskActions, useTaskIndex,
@@ -406,6 +407,7 @@ export default function Inbox() {
           ) : (
             <EmptyState
               icon={selected ? (projectMeta[selected.id]?.icon ?? 'hash') : effectiveScope === 'all' ? 'layers' : 'inbox'}
+              art={<EmptyList size={EMPTY_ART} />}
               title={selected ? '이 목록은 비어 있습니다' : effectiveScope === 'all' ? '열려 있는 할 일이 없습니다' : '미분류 할 일이 없습니다'}
               message={selected
                 ? '+ 버튼으로 할 일을 추가하거나 템플릿으로 체크리스트를 시작해 보세요.'

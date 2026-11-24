@@ -13,6 +13,7 @@ import { TaskReminderPicker } from '@/features/reminders/ReminderChips';
 import { useReminderOverrides } from '@/features/reminders/overrides';
 import { useReminderSettings } from '@/features/reminders/settings';
 import { useProjectMetaMap } from '@/features/tasks/projectMeta';
+import { priorityA11y, priorityLabel } from '@/features/tasks/priority';
 import { RepeatSheet, repeatPatch } from '@/features/tasks/RepeatSheet';
 import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
@@ -26,12 +27,7 @@ import { analyzeTask, type Priority, type RecurrenceMode, type Task, type TaskPa
 import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, type, useTheme } from '@/theme';
 
-const priorities: { value: Priority; label: string }[] = [
-  { value: 1, label: '가장 높음' },
-  { value: 2, label: '높음' },
-  { value: 3, label: '보통' },
-  { value: 4, label: '없음' },
-];
+const priorities: { value: Priority; label: string }[] = ([1, 2, 3, 4] as Priority[]).map((value) => ({ value, label: priorityLabel(value) }));
 
 export default function TaskDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -273,11 +269,11 @@ function TaskEditor({ task }: { task: Task }) {
         )}
         <View style={{ flex: 1 }} />
         <Pressable
-          accessibilityRole="button" accessibilityLabel={'우선순위 P' + task.priority}
+          accessibilityRole="button" accessibilityLabel={priorityA11y(task.priority)}
           onPress={() => setSheet('priority')} hitSlop={8}
           style={({ pressed }) => [styles.priorityBtn, { opacity: pressed ? 0.6 : 1 }]}>
           <Icon name="flag" size={17} color={pColor} />
-          {task.priority < 4 ? <Txt variant="caption" style={{ color: pColor, fontWeight: '700' }}>P{task.priority}</Txt> : null}
+          {task.priority < 4 ? <Txt variant="caption" style={{ color: pColor, fontWeight: '700' }}>{priorityLabel(task.priority)}</Txt> : null}
         </Pressable>
         <IconButton
           name="clock" label="이 할 일로 집중 시작" color={colors.textMuted}

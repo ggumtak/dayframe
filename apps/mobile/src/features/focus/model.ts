@@ -57,6 +57,17 @@ export function nextBreak(prefs: FocusPrefs, completedTodayBefore: number): { mi
   return { minutes, seconds: minutes * 60, long };
 }
 
+/**
+ * The title of the "session finished" notification: the session's planned length (with any +5분 extensions), not
+ * the time that happened to be left when the alert was scheduled after a pause or an extension. Pomodoro rounds
+ * say 집중 and single timers say 타이머, as the in-app toast does: "집중 25분 완료", "타이머 1시간 30분 완료".
+ */
+export function focusDoneTitle(mode: FocusMode, plannedSeconds: number): string {
+  const minutes = Math.max(1, Math.round(plannedSeconds / 60));
+  const length = minutes < 60 ? minutes + '분' : Math.floor(minutes / 60) + '시간' + (minutes % 60 ? ' ' + (minutes % 60) + '분' : '');
+  return (mode === 'pomodoro' ? '집중 ' : '타이머 ') + length + ' 완료';
+}
+
 export interface FocusDayBar {
   date: string;
   weekday: string;

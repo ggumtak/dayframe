@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, TextInput, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
-import { Button, Chip, EmptyState, Icon, IconButton, Row, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
+import { EmptySearch } from '@/components/art';
+import { Button, Chip, EMPTY_ART, EmptyState, Icon, IconButton, Row, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
 import {
   bySchedule, useCompletedTasks, useProjects, useSubtaskProgress, useTagActions, useTagNames, useTags, useTaskActions, useTaskIndex,
 } from '@/data/tasks';
@@ -351,7 +352,7 @@ export default function Search() {
             </>
           ) : (
             <EmptyState
-              icon="search" title={quickFilter && !query.trim() ? `${filterLabels[quickFilter]}${josa(filterLabels[quickFilter], '이/가')} 없습니다` : '찾는 할 일이 없습니다'}
+              icon="search" art={<EmptySearch size={EMPTY_ART} />} title={quickFilter && !query.trim() ? `${filterLabels[quickFilter]}${josa(filterLabels[quickFilter], '이/가')} 없습니다` : '찾는 할 일이 없습니다'}
               message={query.trim()
                 ? (includeCompleted ? '다른 검색어나 초성으로 찾아보세요.' : '위의 ‘완료한 일 포함’을 켜면 완료 기록까지 함께 찾습니다.')
                 : undefined}

@@ -2,9 +2,11 @@ import { router } from 'expo-router';
 import { memo, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Card, EmptyState, Header, Icon, IconButton, Loading, Screen, Segmented, Txt } from '@/components/ui';
+import { EmptyHabits } from '@/components/art';
+import { Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Screen, Segmented, Txt } from '@/components/ui';
 import { useHabitDetails, useHabits } from '@/data/habits';
 import { type DayState, dayState, earliestStart, logsByDate, monthCells, outsideHabit, weekDates } from '@/features/habits/goal';
+import { habitLook } from '@/features/habits/display';
 import { HabitAvatar } from '@/features/habits/HabitAvatar';
 import { type HabitMeta, useHabitMetaMap } from '@/features/habits/habitMeta';
 import { softTint } from '@/features/habits/palette';
@@ -44,6 +46,7 @@ const WeekRow = memo(function WeekRow({ habit, logs, meta, days, todayKey }: {
 }) {
   const byDate = useMemo(() => logsByDate(logs), [logs]);
   const fills = useCellColors(meta);
+  const look = habitLook(habit.name, meta);
   const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   return (
     <Pressable
@@ -51,7 +54,7 @@ const WeekRow = memo(function WeekRow({ habit, logs, meta, days, todayKey }: {
       onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
       style={({ pressed }) => [styles.weekRow, pressed && { opacity: 0.7 }]}>
       <View style={styles.weekName}>
-        <HabitAvatar name={habit.name} emoji={meta?.emoji} color={meta?.color} size={26} />
+        <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={26} />
         <Txt variant="smallStrong" numberOfLines={1} style={{ flex: 1 }}>{habit.name}</Txt>
       </View>
       <View style={styles.weekCells}>
@@ -78,6 +81,7 @@ const MiniMonth = memo(function MiniMonth({ habit, logs, meta, cells, todayKey }
   const { colors } = useTheme();
   const byDate = useMemo(() => logsByDate(logs), [logs]);
   const fills = useCellColors(meta);
+  const look = habitLook(habit.name, meta);
   const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   const { days, met } = useMemo(() => {
     const list = cells.map((date) => (date ? {
@@ -105,7 +109,7 @@ const MiniMonth = memo(function MiniMonth({ habit, logs, meta, cells, todayKey }
       style={({ pressed }) => [styles.miniWrap, pressed && { opacity: 0.7 }]}>
       <Card style={styles.miniCard}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <HabitAvatar name={habit.name} emoji={meta?.emoji} color={meta?.color} size={22} />
+          <HabitAvatar name={habit.name} emoji={look.emoji} color={look.color} size={22} />
           <Txt variant="smallStrong" numberOfLines={1} style={{ flex: 1 }}>{habit.name}</Txt>
           <Txt variant="caption" tone="faint">{met}일</Txt>
         </View>
@@ -174,7 +178,7 @@ export default function HabitOverview() {
         <Segmented<Mode> value={mode} onChange={setMode} options={[{ value: 'week', label: '주간' }, { value: 'month', label: '월간' }]} />
       </View>
       {isLoading ? <Loading /> : !habits.length ? (
-        <EmptyState icon="grid" title="아직 습관이 없습니다" message="습관을 만들면 여기서 기록을 한눈에 볼 수 있습니다." />
+        <EmptyState icon="grid" art={<EmptyHabits size={EMPTY_ART} />} title="아직 습관이 없습니다" message="습관을 만들면 여기서 기록을 한눈에 볼 수 있습니다." />
       ) : mode === 'week' ? (
         <ScrollView contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.xxl, gap: space.sm }}>
           <Stepper

@@ -13,6 +13,7 @@ import type { Priority, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, useTheme } from '@/theme';
 
+import { priorityA11y, priorityLabel } from './priority';
 import { toMarkdownChecklist, useTaskFlow } from './useTaskFlow';
 
 function Action({ icon, label, onPress, color }: { icon: IconName; label: string; onPress: () => void; color?: string }) {
@@ -91,14 +92,18 @@ function TaskMenuContent({
           const tint = priorityColor(colors, priority);
           return (
             <Pressable
-              key={priority} accessibilityRole="button" accessibilityLabel={'우선순위 ' + priority} accessibilityState={{ selected: active }}
+              key={priority} accessibilityRole="button" accessibilityLabel={priorityA11y(priority)} accessibilityState={{ selected: active }}
               onPress={() => {
                 haptic.tap();
                 run(() => actions.update(task.id, { priority }));
               }}
               style={[styles.priority, { borderColor: active ? tint : colors.border }]}>
-              <Icon name="flag" size={14} color={tint} />
-              <Txt variant="smallStrong" style={{ color: active ? colors.text : colors.textMuted }}>P{priority}</Txt>
+              <Icon name="flag" size={12} color={tint} />
+              <Txt
+                variant="caption" numberOfLines={1} maxFontSizeMultiplier={1.3}
+                style={{ color: active ? colors.text : colors.textMuted, fontWeight: active ? '700' : '600', flexShrink: 1 }}>
+                {priorityLabel(priority)}
+              </Txt>
             </Pressable>
           );
         })}
@@ -213,6 +218,10 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: space.sm },
   action: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, height: 64, borderRadius: radius.md },
   priorities: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  priority: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, height: 38, borderRadius: radius.md, borderWidth: 1 },
+  // Four across on a 360dp screen: "가장 높음" at caption size with a 12px flag fits in a quarter of the row.
+  priority: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, height: 38, paddingHorizontal: 4,
+    borderRadius: radius.md, borderWidth: 1,
+  },
   durations: { flexDirection: 'row', gap: 6, marginTop: space.sm },
 });

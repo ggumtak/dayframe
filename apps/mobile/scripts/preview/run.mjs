@@ -95,6 +95,15 @@ async function runStep(page, step) {
     return visible(page.locator(`[aria-label="${step.click.label.replaceAll('"', '\\"')}"]`)).click({ timeout: 5000 });
   }
   if (step.press !== undefined) return page.keyboard.press(step.press);
+  if (step.hold?.text !== undefined) {
+    // Long press: hold the pointer on the first visible text match (for long-press menus).
+    const box = await visible(page.getByText(step.hold.text)).boundingBox({ timeout: 5000 });
+    if (!box) throw new Error('hold target has no box');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await sleep(step.hold.ms ?? 900);
+    return page.mouse.up();
+  }
   if (step.fill) {
     const { label, value } = step.fill;
     const byLabel = page.locator(`[aria-label="${label.replaceAll('"', '\\"')}"]`).filter({ visible: true });
@@ -127,7 +136,7 @@ async function takeShot(browser, baseUrl, shot, options) {
   const log = { consoleErrors: [], pageErrors: [], aborted: [], unknownRoutes: [], mockErrors: [] };
   api.reset();
   const context = await browser.newContext({
-    viewport: VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul',
+    viewport: shot.viewport ?? VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul',
     colorScheme: dark ? 'dark' : 'light',
   });
   try {

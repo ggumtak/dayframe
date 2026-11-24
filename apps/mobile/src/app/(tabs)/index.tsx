@@ -2,8 +2,10 @@ import { router } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, type ScrollViewInstance, Share, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, Card, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
+import { AllDoneArt, backdropFor, DayBackdrop, EmptyToday, OfflineArt } from '@/components/art';
+import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { byPriority, bySchedule, useDoneToday, useProjects, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
@@ -22,7 +24,7 @@ import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { UpdateBanner } from '@/features/update/UpdateBanner';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, formatTime, instantFor, today, weekdayName } from '@/lib/dates';
+import { deviceTimeZone, formatTime, instantFor, Temporal, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { usePersistentState } from '@/lib/persist';
@@ -33,6 +35,11 @@ import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
 type TodayView = 'list' | 'timeline' | 'matrix';
+
+/** The sky band behind the header (below the status bar): it covers the title row and fades out at the view switch. */
+const BACKDROP_HEIGHT = 120;
+/** The medal in the all-done card: small, so the card stays one compact row. */
+const ALL_DONE_ART = 48;
 type TodaySort = 'schedule' | 'smart' | 'priority';
 
 const sortLabels: Record<TodaySort, string> = {
@@ -75,6 +82,10 @@ export default function Today() {
   const timeZone = deviceTimeZone();
   const date = today(timeZone);
   useScreenDefaults({ dueToday: true });
+  // The sky behind the header follows the hour; a plain string, so the memoised backdrop re-renders only when the
+  // period of the day changes, not on every minute tick.
+  const backdrop = backdropFor(Temporal.Instant.fromEpochMilliseconds(minute * 60_000).toZonedDateTimeISO(timeZone).hour);
+  const insets = useSafeAreaInsets();
 
   // Only the smart order depends on the clock; the other two stay the same function all day.
   const smartNowMs = sort === 'smart' ? minute * 60_000 : 0;
@@ -209,7 +220,10 @@ export default function Today() {
 
   const allDoneCard = (
     <View style={[styles.allDoneCard, { backgroundColor: done.length ? colors.successSoft : colors.surfaceMuted }]}>
-      <Icon name={done.length ? 'award' : 'check-circle'} size={20} color={colors.success} />
+      {done.length ? (
+        // The medal sits in the middle of a wide canvas; the negative margins let the confetti run into the padding.
+        <View style={styles.allDoneArt}><AllDoneArt size={ALL_DONE_ART} /></View>
+      ) : <Icon name="check-circle" size={20} color={colors.success} />}
       <View style={{ flex: 1 }}>
         <Txt variant="bodyStrong" style={{ color: done.length ? colors.success : colors.text }}>
           {done.length ? `오늘 예정된 ${done.length}개를 모두 마쳤습니다!` : '오늘 남은 할 일이 없습니다'}
@@ -224,6 +238,7 @@ export default function Today() {
 
   return (
     <Screen>
+      <DayBackdrop variant={backdrop} height={insets.top + BACKDROP_HEIGHT} />
       <Header
         title="오늘" subtitle={`${date.month}월 ${date.day}일 (${weekdayName(date)}) · ${summary}`}
         right={(
@@ -284,7 +299,7 @@ export default function Today() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {isError && tasks.length === 0 ? (
             <EmptyState
-              icon="cloud-off" title="불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+              icon="cloud-off" art={<OfflineArt size={EMPTY_ART} />} title="불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
               action={<Button label="다시 시도" kind="secondary" onPress={refresh} />} />
           ) : showOnboarding ? (
             <View style={{ padding: space.lg, gap: space.md }}>
@@ -310,7 +325,7 @@ export default function Today() {
             </View>
           ) : remaining === 0 && done.length === 0 && !hasHabits ? (
             <EmptyState
-              icon="sun" title="오늘 할 일이 없습니다"
+              icon="sun" art={<EmptyToday size={EMPTY_ART} />} title="오늘 할 일이 없습니다"
               message="아래 + 버튼으로 추가하거나 하루 계획에서 남은 일을 가져올 수 있습니다."
               action={<Button label="오늘 할 일 추천 보기" kind="secondary" icon="compass" onPress={() => setPlanning(true)} />} />
           ) : grouped ? (
@@ -459,6 +474,7 @@ export default function Today() {
 const styles = StyleSheet.create({
   progressLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   guideBadge: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  allDoneArt: { marginHorizontal: -14, marginVertical: -8 },
   allDoneCard: {
     flexDirection: 'row', alignItems: 'center', gap: space.md,
     marginHorizontal: space.lg, marginTop: space.md, padding: space.md, borderRadius: radius.lg,
