@@ -189,6 +189,29 @@ operation("/mcp-connections/{id}", "delete", "deleteMcpConnection", "Remove an A
   { status: 204, parameters: [id], description: "The connection's URL stops working immediately." });
 operation("/app/version", "get", "getAppVersion", "Read published Android update metadata", "Releases",
   { result: "AppVersion", anonymous: true, description: "Selects the highest published Android build number. Returns 404 until a release is published." });
+const updateHeader = (name: string, required: boolean, description: string) =>
+  ({ name, in: "header", required, schema: { type: "string" }, description });
+paths["/updates/manifest"] = { get: {
+  operationId: "getUpdateManifest", summary: "Get the newest over-the-air update for an app build", tags: ["Releases"],
+  security: [],
+  description: "Expo Updates protocol version 1, as requested by the expo-updates client. Serves the newest published " +
+    "update for the platform and runtime version, or 204 when there is none or the client already runs it.",
+  parameters: [
+    updateHeader("expo-platform", true, "android or ios. The query parameter platform also works."),
+    updateHeader("expo-runtime-version", true, "The build's native fingerprint. The query parameter runtime-version also works."),
+    updateHeader("expo-protocol-version", false, "Must be 1 when sent."),
+    updateHeader("expo-current-update-id", false, "The running update; a match answers 204."),
+    updateHeader("expo-expect-signature", false, "Sent by builds with a code signing certificate; unsigned updates then answer 409."),
+  ],
+  responses: {
+    200: { description: "A multipart/mixed body with one manifest part, signed in its expo-signature header when the update is signed.",
+      content: { "multipart/mixed": { schema: { type: "string" } } } },
+    204: { description: "No update for this platform and runtime." },
+    400: { description: "Missing or invalid protocol headers.", content: content("ApiError") },
+    409: { description: "The client requires signed updates and the newest one is unsigned.", content: content("ApiError") },
+    503: { description: "Upstream service temporarily unavailable.", content: content("ApiError") },
+  },
+} };
 
 const spec = stringify({
   openapi: "3.1.0",
