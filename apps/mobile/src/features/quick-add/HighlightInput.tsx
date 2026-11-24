@@ -46,7 +46,8 @@ export function HighlightInput({ value, tokens, palette, disableHighlight, ref, 
       <TextInput
         ref={ref} value={value} multiline submitBehavior="submit" returnKeyType="done" autoCapitalize="none" autoCorrect={false}
         placeholderTextColor={colors.textFaint} selectionColor={colors.accentSoft} cursorColor={colors.text}
-        underlineColorAndroid="transparent" {...props}
+        // The drawn highlight layer only works in place: never hand the text to Android's full-screen landscape editor.
+        underlineColorAndroid="transparent" disableFullscreenUI {...props}
         style={[
           styles.text,
           styles.input,
