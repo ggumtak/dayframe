@@ -52,7 +52,9 @@ const config: ExpoConfig = {
       backgroundColor: '#FFFFFF',
       image: './assets/images/splash-icon.png',
       imageWidth: 96,
-      dark: { backgroundColor: '#15171A', image: './assets/images/splash-icon.png' },
+      // No dark image: the logo is the same, and Android falls back to the light drawables at night
+      // instead of shipping a second copy at every density.
+      dark: { backgroundColor: '#15171A' },
     }],
     // The UI is Korean only, so the APK keeps only Korean translations of library strings (AndroidX, Material,
     // React Native) next to the default (English) ones: about 0.7 MB less resources.arsc than all 85 languages.
