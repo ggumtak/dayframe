@@ -8,6 +8,7 @@ import { Button, Chip, EmptyState, Icon, IconButton, Loading, ProgressBar, Row, 
 import {
   attachTagByName, nextDueAfterComplete, nextPosition, useProjects, useSections, useSubtaskProgress, useTags, useTaskIndex, useTaskTags,
 } from '@/data/tasks';
+import { AiBreakdownSheet } from '@/features/ai';
 import { reminderSummary } from '@/features/reminders/lead';
 import { TaskReminderPicker } from '@/features/reminders/ReminderChips';
 import { useReminderOverrides } from '@/features/reminders/overrides';
@@ -52,7 +53,7 @@ export default function TaskDetail() {
   return <TaskEditor key={task.id} task={task} />;
 }
 
-type ModalKind = null | 'schedule' | 'duration' | 'repeat' | 'reminder' | 'priority' | 'project' | 'tags' | 'more';
+type ModalKind = null | 'schedule' | 'duration' | 'repeat' | 'reminder' | 'priority' | 'project' | 'tags' | 'more' | 'breakdown';
 
 const durationPresets = [15, 30, 45, 60, 90, 120, 180] as const;
 
@@ -585,6 +586,10 @@ function TaskEditor({ task }: { task: Task }) {
             setSheet(null);
             flow.duplicate(task, { openSubtasks: subtasks, completedSubtasks, tagNames: attachedTags.map((t) => t.name) });
           }} />
+        {task.parent_task_id ? null : (
+          // Swapping `sheet` closes 더 보기 as AI로 쪼개기 opens, so the two never stack.
+          <Row icon="layers" label="AI로 쪼개기" onPress={() => setSheet('breakdown')} />
+        )}
         <Row icon="clipboard" label="체크리스트 복사" onPress={copyMarkdown} />
         <Row
           icon="bookmark" label="체크리스트 템플릿으로 저장" detail="다음에 다시 쓰기"
@@ -606,6 +611,7 @@ function TaskEditor({ task }: { task: Task }) {
             router.back();
           }} />
       </Sheet>
+      {sheet === 'breakdown' ? <AiBreakdownSheet task={task} visible onClose={() => setSheet(null)} /> : null}
     </Screen>
   );
 }

@@ -9,6 +9,7 @@ import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading,
 import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { byPriority, bySchedule, useDoneToday, useProjects, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
+import { AI_ROUTES } from '@/features/ai';
 import { TodayHabits } from '@/features/habits/TodayHabits';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
@@ -456,6 +457,12 @@ export default function Today() {
                 onPress={() => {
                   closeOptions();
                   shareToday();
+                }} />
+              <Row
+                icon="zap" label="AI 비서"
+                onPress={() => {
+                  closeOptions();
+                  router.push(AI_ROUTES.hub);
                 }} />
               <Row
                 icon="settings" label="설정"

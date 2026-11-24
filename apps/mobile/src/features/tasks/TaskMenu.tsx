@@ -33,18 +33,24 @@ function Action({ icon, label, onPress, color }: { icon: IconName; label: string
  * `onSchedule` opens the full date picker the list already has.
  */
 export function TaskMenu({
-  task, onClose, onSchedule, onStartSelect,
+  task, onClose, onSchedule, onStartSelect, onBreakdown,
 }: {
   task: Task | null; onClose: () => void; onSchedule: (task: Task) => void; onStartSelect?: (task: Task) => void;
+  /** Opens AI로 쪼개기 from the host after this sheet has closed, so two sheets never stack. */
+  onBreakdown?: (task: Task) => void;
 }) {
   if (!task) return null;
-  return <TaskMenuContent key={task.id} task={task} onClose={onClose} onSchedule={onSchedule} onStartSelect={onStartSelect} />;
+  return (
+    <TaskMenuContent
+      key={task.id} task={task} onClose={onClose} onSchedule={onSchedule} onStartSelect={onStartSelect} onBreakdown={onBreakdown} />
+  );
 }
 
 function TaskMenuContent({
-  task, onClose, onSchedule, onStartSelect,
+  task, onClose, onSchedule, onStartSelect, onBreakdown,
 }: {
   task: Task; onClose: () => void; onSchedule: (task: Task) => void; onStartSelect?: (task: Task) => void;
+  onBreakdown?: (task: Task) => void;
 }) {
   const { colors } = useTheme();
   const flow = useTaskFlow();
@@ -180,6 +186,9 @@ function TaskMenuContent({
         {task.parent_task_id ? null : (
           <Row icon="corner-down-right" label="하위 작업 추가" onPress={() => run(() => quickAdd.open({ parentTaskId: task.id }))} />
         )}
+        {onBreakdown && !task.parent_task_id ? (
+          <Row icon="layers" label="AI로 쪼개기" onPress={() => run(() => onBreakdown(task))} />
+        ) : null}
         {doneSubs.length > 0 ? (
           <Row
             icon="rotate-ccw" label="하위 작업 체크 초기화" detail={`${doneSubs.length}개 다시 열기`}

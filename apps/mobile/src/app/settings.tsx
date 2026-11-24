@@ -4,6 +4,7 @@ import { Linking, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Header, Icon, type IconName, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useNewTaskDate, useProfile, useSession } from '@/data/session';
+import { AI_ROUTES, useAiKeyStatus } from '@/features/ai';
 import { RemindersCard } from '@/features/reminders/RemindersCard';
 import { accentPalette, MODE_LABELS } from '@/features/settings/palettes';
 import { hiddenTabs, TAB_ICONS, TAB_LABELS, visibleTabs } from '@/features/settings/tabBar';
@@ -22,6 +23,7 @@ export default function Settings() {
   const [newTaskDate, setNewTaskDate] = useNewTaskDate();
   const tabBar = useTabBarConfig();
   const hidden = hiddenTabs(tabBar);
+  const aiKey = useAiKeyStatus();
   const email = account?.email ?? '';
 
   return (
@@ -73,6 +75,7 @@ export default function Settings() {
 
         <Group title="기능">
           <Card style={styles.list}>
+            <LinkRow icon="zap" label="AI 비서" detail={aiKey.ready && !aiKey.hasKey ? '키 필요' : undefined} href={AI_ROUTES.hub} />
             <LinkRow icon="cpu" label="AI 연결" detail="Claude · ChatGPT" href="/ai" />
             <LinkRow icon="check-circle" label="완료한 일" detail="전체 완료 기록" href="/completed" />
             <LinkRow icon="star" label="습관 갤러리" detail="눌러서 습관에 추가" href="/routines" />

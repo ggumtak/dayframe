@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Chip, Icon, IconButton, type IconName, Txt } from '@/components/ui';
 import { useNewTaskDate } from '@/data/session';
+import { AI_ROUTES } from '@/features/ai/routes';
 import { nextPosition, useProjects, useSections, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { describeRecurrence, deviceTimeZone, formatDue, formatDurationMinutes, instantFor, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -362,6 +363,21 @@ function QuickAddSheet({ defaults, onClose }: { defaults: QuickAddDefaults; onCl
             <Icon name="layers" size={12} color={keepOpen === 'on' ? colors.accent : colors.textMuted} />
             <Txt variant="caption" tone={keepOpen === 'on' ? 'accent' : 'muted'} style={{ fontWeight: '600' }}>연속</Txt>
           </Pressable>
+          {parent ? null : (
+            // A long or messy note is easier to hand to 메모 정리; whatever is typed goes along.
+            <Pressable
+              accessibilityRole="button" accessibilityLabel="AI로 정리"
+              onPress={() => {
+                haptic.tap();
+                const memo = text.trim();
+                closeSheet();
+                router.push({ pathname: AI_ROUTES.organize, params: memo ? { text: memo } : {} });
+              }}
+              style={({ pressed }) => [styles.keepPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.65 : 1 }]}>
+              <Icon name="zap" size={12} color={colors.textMuted} />
+              <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>AI로 정리</Txt>
+            </Pressable>
+          )}
           <IconButton name="x" label="닫기" size={18} color={colors.textMuted} onPress={closeSheet} style={{ width: 32, height: 32 }} />
         </View>
 

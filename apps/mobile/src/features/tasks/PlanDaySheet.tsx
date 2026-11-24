@@ -1,7 +1,9 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Chip, Icon, Segmented, Sheet, Txt } from '@/components/ui';
+import { AI_ROUTES } from '@/features/ai/routes';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, formatDate, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -167,6 +169,12 @@ export function PlanDaySheet({
           </View>
         )}
       </ScrollView>
+      <Button
+        label="AI로 계획" icon="zap" kind="secondary" style={{ marginTop: space.sm }}
+        onPress={() => {
+          onClose();
+          router.push(AI_ROUTES.plan);
+        }} />
     </Sheet>
   );
 }
