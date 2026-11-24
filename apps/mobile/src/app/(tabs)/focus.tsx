@@ -19,6 +19,7 @@ import { cancelAlert, prepareAlerts, scheduleAlert } from '@/lib/alerts';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, formatDuration, formatMinutes, formatTime, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { useLayout } from '@/lib/layoutContext';
 import type { FocusSession } from '@/lib/shared';
 import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
@@ -363,6 +364,23 @@ export default function Focus() {
   const ringColor = isPaused ? colors.accentRamp[1] : colors.accent;
   const recent = (sessions ?? []).filter((session) => session.status !== 'running' && !isFalseStart(session)).slice(0, 5);
   const canConfigure = !running && !onBreak && prefs.mode !== 'stopwatch';
+  // A short window (a landscape tablet) puts the dial and its controls side by side so both stay above the fold.
+  const { short: sideBySide } = useLayout();
+  const modePicker = !running ? (
+    <View style={{ alignSelf: 'stretch' }}>
+      <Segmented<FocusMode>
+        value={prefs.mode}
+        onChange={(mode) => {
+          if (mode !== 'pomodoro' && onBreak) endRest();
+          setFocusPrefs({ mode });
+        }}
+        options={[
+          { value: 'pomodoro', label: '뽀모도로', icon: 'repeat' },
+          { value: 'timer', label: '타이머', icon: 'clock' },
+          { value: 'stopwatch', label: '스톱워치', icon: 'play-circle' },
+        ]} />
+    </View>
+  ) : null;
 
   return (
     <Screen>
@@ -372,137 +390,127 @@ export default function Focus() {
           <IconButton name="sliders" label="시간 설정" onPress={() => setConfiguring(true)} color={colors.textMuted} />
         ) : undefined} />
       <ScrollView ref={scrollRef} contentContainerStyle={{ padding: space.lg, paddingBottom: 140, gap: space.lg, alignItems: 'center' }}>
-        {!running ? (
-          <View style={{ alignSelf: 'stretch' }}>
-            <Segmented<FocusMode>
-              value={prefs.mode}
-              onChange={(mode) => {
-                if (mode !== 'pomodoro' && onBreak) endRest();
-                setFocusPrefs({ mode });
-              }}
-              options={[
-                { value: 'pomodoro', label: '뽀모도로', icon: 'repeat' },
-                { value: 'timer', label: '타이머', icon: 'clock' },
-                { value: 'stopwatch', label: '스톱워치', icon: 'play-circle' },
-              ]} />
-          </View>
-        ) : null}
-
-        <Pressable
-          disabled={!canConfigure}
-          accessibilityRole={running || onBreak ? 'timer' : 'button'}
-          accessibilityLabel={running || onBreak
-            ? `${onBreak ? '휴식' : isRunningStopwatch ? '스톱워치' : '집중'} ${formatDuration(shown)}`
-            : `타이머 ${formatDuration(shown)}`}
-          onPress={() => {
-            if (!canConfigure) return;
-            haptic.tap();
-            setConfiguring(true);
-          }}
-          style={({ pressed }) => ({
-            width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center', marginTop: space.xs,
-            opacity: canConfigure && pressed ? 0.75 : 1,
-          })}>
-          <Svg width={SIZE} height={SIZE} style={StyleSheet.absoluteFill}>
-            <Circle cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={colors.surfaceMuted} strokeWidth={STROKE} fill="none" />
-            {ratio > 0.002 ? (
-              <Circle
-                cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={ringColor} strokeWidth={STROKE} fill="none" strokeLinecap="round"
-                strokeDasharray={`${circumference * ratio} ${circumference}`} transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`} />
-            ) : null}
-          </Svg>
-          <Txt variant="caption" tone={isPaused || onBreak ? 'default' : 'muted'} style={[{ marginBottom: 4 }, (isPaused || onBreak) && { fontWeight: '600' }]}>
-            {isPaused ? '일시정지됨'
-              : running ? (isRunningStopwatch ? '스톱워치 측정 중' : '집중 중')
-                : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중')
-                  : prefs.mode === 'pomodoro' ? '뽀모도로' : prefs.mode === 'timer' ? '일반 타이머' : '스톱워치'}
-          </Txt>
-          <Txt
-            numberOfLines={1} adjustsFontSizeToFit
-            style={{ fontSize: 54, lineHeight: 62, fontWeight: '400', fontVariant: ['tabular-nums'], maxWidth: SIZE - 44 }}>
-            {formatDuration(shown)}
-          </Txt>
-          {targetName ? (
-            <Txt variant="small" tone="muted" numberOfLines={1} style={{ maxWidth: SIZE - 64, marginTop: 4 }}>{targetName}</Txt>
-          ) : canConfigure ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
-              <Icon name="edit-2" size={11} color={colors.textFaint} />
-              <Txt variant="caption" tone="muted">눌러서 시간 설정</Txt>
-            </View>
-          ) : null}
-        </Pressable>
-
-        {running ? (
-          <View style={{ alignSelf: 'stretch', gap: space.sm }}>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Button
-                label={isPaused ? '계속' : '일시정지'} kind="secondary" icon={isPaused ? 'play' : 'pause'}
-                onPress={togglePause} style={{ flex: 1 }} />
-              {!isRunningStopwatch ? (
-                <Button label="+5분 연장" kind="secondary" icon="plus" onPress={extendFiveMin} style={{ flex: 1 }} />
+        <View style={sideBySide ? styles.dialRow : styles.dialStack}>
+          {sideBySide ? null : modePicker}
+          <Pressable
+            disabled={!canConfigure}
+            accessibilityRole={running || onBreak ? 'timer' : 'button'}
+            accessibilityLabel={running || onBreak
+              ? `${onBreak ? '휴식' : isRunningStopwatch ? '스톱워치' : '집중'} ${formatDuration(shown)}`
+              : `타이머 ${formatDuration(shown)}`}
+            onPress={() => {
+              if (!canConfigure) return;
+              haptic.tap();
+              setConfiguring(true);
+            }}
+            style={({ pressed }) => ({
+              width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center', marginTop: space.xs,
+              opacity: canConfigure && pressed ? 0.75 : 1,
+            })}>
+            <Svg width={SIZE} height={SIZE} style={StyleSheet.absoluteFill}>
+              <Circle cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={colors.surfaceMuted} strokeWidth={STROKE} fill="none" />
+              {ratio > 0.002 ? (
+                <Circle
+                  cx={SIZE / 2} cy={SIZE / 2} r={r} stroke={ringColor} strokeWidth={STROKE} fill="none" strokeLinecap="round"
+                  strokeDasharray={`${circumference * ratio} ${circumference}`} transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`} />
               ) : null}
-            </View>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Button label="그만두기" kind="ghost" icon="x" onPress={() => stop('cancelled')} style={{ flex: 1 }} />
-              <Button label={isRunningStopwatch ? '기록 완료' : '지금 완료'} icon="check" onPress={() => stop('completed')} style={{ flex: 1 }} />
-            </View>
-          </View>
-        ) : (
-          <>
-            {prefs.mode === 'pomodoro' ? (
-              <View style={{ alignSelf: 'stretch', gap: space.sm, alignItems: 'center' }}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                  {pomoPresets.map((preset) => {
-                    const selected = prefs.focusMinutes === preset.focus && prefs.shortBreakMinutes === preset.rest && prefs.longBreakMinutes === preset.longRest;
-                    return (
-                      <Chip
-                        key={preset.label} label={preset.label} selected={selected}
-                        onPress={() => setFocusPrefs({ focusMinutes: preset.focus, shortBreakMinutes: preset.rest, longBreakMinutes: preset.longRest })} />
-                    );
-                  })}
-                  <Chip icon="sliders" label="직접 설정" onPress={() => setConfiguring(true)} />
-                </ScrollView>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }} accessibilityLabel={`${rounds}세트 중 ${round}세트 완료`}>
-                  {Array.from({ length: rounds }, (_, index) => (
-                    <View
-                      key={index}
-                      style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: index < round ? colors.accent : colors.surfaceMuted }} />
-                  ))}
-                  <Txt variant="small" tone="muted" style={{ marginLeft: 4 }}>
-                    휴식 {prefs.shortBreakMinutes}분 · {rounds - round}세트 후 긴 휴식 {prefs.longBreakMinutes}분
-                  </Txt>
+            </Svg>
+            <Txt variant="caption" tone={isPaused || onBreak ? 'default' : 'muted'} style={[{ marginBottom: 4 }, (isPaused || onBreak) && { fontWeight: '600' }]}>
+              {isPaused ? '일시정지됨'
+                : running ? (isRunningStopwatch ? '스톱워치 측정 중' : '집중 중')
+                  : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중')
+                    : prefs.mode === 'pomodoro' ? '뽀모도로' : prefs.mode === 'timer' ? '일반 타이머' : '스톱워치'}
+            </Txt>
+            <Txt
+              numberOfLines={1} adjustsFontSizeToFit
+              style={{ fontSize: 54, lineHeight: 62, fontWeight: '400', fontVariant: ['tabular-nums'], maxWidth: SIZE - 44 }}>
+              {formatDuration(shown)}
+            </Txt>
+            {targetName ? (
+              <Txt variant="small" tone="muted" numberOfLines={1} style={{ maxWidth: SIZE - 64, marginTop: 4 }}>{targetName}</Txt>
+            ) : canConfigure ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                <Icon name="edit-2" size={11} color={colors.textFaint} />
+                <Txt variant="caption" tone="muted">눌러서 시간 설정</Txt>
+              </View>
+            ) : null}
+          </Pressable>
+
+          <View style={sideBySide ? styles.controlsSide : styles.dialStack}>
+            {sideBySide ? modePicker : null}
+            {running ? (
+              <View style={{ alignSelf: 'stretch', gap: space.sm }}>
+                <View style={{ flexDirection: 'row', gap: space.sm }}>
+                  <Button
+                    label={isPaused ? '계속' : '일시정지'} kind="secondary" icon={isPaused ? 'play' : 'pause'}
+                    onPress={togglePause} style={{ flex: 1 }} />
+                  {!isRunningStopwatch ? (
+                    <Button label="+5분 연장" kind="secondary" icon="plus" onPress={extendFiveMin} style={{ flex: 1 }} />
+                  ) : null}
+                </View>
+                <View style={{ flexDirection: 'row', gap: space.sm }}>
+                  <Button label="그만두기" kind="ghost" icon="x" onPress={() => stop('cancelled')} style={{ flex: 1 }} />
+                  <Button label={isRunningStopwatch ? '기록 완료' : '지금 완료'} icon="check" onPress={() => stop('completed')} style={{ flex: 1 }} />
                 </View>
               </View>
-            ) : prefs.mode === 'timer' ? (
-              <View style={{ alignSelf: 'stretch', gap: space.sm, alignItems: 'center' }}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                  {timerPresets.map((preset) => (
-                    <Chip
-                      key={preset} label={`${preset}분`} selected={prefs.timerMinutes === preset}
-                      onPress={() => setFocusPrefs({ timerMinutes: preset })} />
-                  ))}
-                  <Chip icon="sliders" label="직접 입력" onPress={() => setConfiguring(true)} />
-                </ScrollView>
-                <Txt variant="small" tone="muted">정한 시간이 지나면 휴식 없이 끝납니다</Txt>
-              </View>
             ) : (
-              <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>
-                시간 제한 없이 잽니다. 끝나면 ‘기록 완료’를 누르세요.
-              </Txt>
-            )}
+              <>
+                {prefs.mode === 'pomodoro' ? (
+                  <View style={{ alignSelf: 'stretch', gap: space.sm, alignItems: 'center' }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                      {pomoPresets.map((preset) => {
+                        const selected = prefs.focusMinutes === preset.focus && prefs.shortBreakMinutes === preset.rest && prefs.longBreakMinutes === preset.longRest;
+                        return (
+                          <Chip
+                            key={preset.label} label={preset.label} selected={selected}
+                            onPress={() => setFocusPrefs({ focusMinutes: preset.focus, shortBreakMinutes: preset.rest, longBreakMinutes: preset.longRest })} />
+                        );
+                      })}
+                      <Chip icon="sliders" label="직접 설정" onPress={() => setConfiguring(true)} />
+                    </ScrollView>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }} accessibilityLabel={`${rounds}세트 중 ${round}세트 완료`}>
+                      {Array.from({ length: rounds }, (_, index) => (
+                        <View
+                          key={index}
+                          style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: index < round ? colors.accent : colors.surfaceMuted }} />
+                      ))}
+                      <Txt variant="small" tone="muted" style={{ marginLeft: 4 }}>
+                        휴식 {prefs.shortBreakMinutes}분 · {rounds - round}세트 후 긴 휴식 {prefs.longBreakMinutes}분
+                      </Txt>
+                    </View>
+                  </View>
+                ) : prefs.mode === 'timer' ? (
+                  <View style={{ alignSelf: 'stretch', gap: space.sm, alignItems: 'center' }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                      {timerPresets.map((preset) => (
+                        <Chip
+                          key={preset} label={`${preset}분`} selected={prefs.timerMinutes === preset}
+                          onPress={() => setFocusPrefs({ timerMinutes: preset })} />
+                      ))}
+                      <Chip icon="sliders" label="직접 입력" onPress={() => setConfiguring(true)} />
+                    </ScrollView>
+                    <Txt variant="small" tone="muted">정한 시간이 지나면 휴식 없이 끝납니다</Txt>
+                  </View>
+                ) : (
+                  <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>
+                    시간 제한 없이 잽니다. 끝나면 ‘기록 완료’를 누르세요.
+                  </Txt>
+                )}
 
-            <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
-              <Chip icon="link" label={targetName ?? '할 일·습관 연결'} tone={target ? 'set' : undefined} onPress={() => setPicking(true)} style={{ maxWidth: 260 }} />
-              {target ? <Chip icon="x" label="해제" onPress={() => setTarget(null)} /> : null}
-            </View>
-            <View style={{ alignSelf: 'stretch', gap: space.sm }}>
-              <Button
-                label={onBreak ? '휴식 건너뛰고 집중 시작' : prefs.mode === 'pomodoro' ? '집중 시작' : prefs.mode === 'timer' ? '타이머 시작' : '스톱워치 시작'}
-                icon="play" onPress={start} />
-              {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={endRest} /> : null}
-            </View>
-          </>
-        )}
+                <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
+                  <Chip icon="link" label={targetName ?? '할 일·습관 연결'} tone={target ? 'set' : undefined} onPress={() => setPicking(true)} style={{ maxWidth: 260 }} />
+                  {target ? <Chip icon="x" label="해제" onPress={() => setTarget(null)} /> : null}
+                </View>
+                <View style={{ alignSelf: 'stretch', gap: space.sm }}>
+                  <Button
+                    label={onBreak ? '휴식 건너뛰고 집중 시작' : prefs.mode === 'pomodoro' ? '집중 시작' : prefs.mode === 'timer' ? '타이머 시작' : '스톱워치 시작'}
+                    icon="play" onPress={start} />
+                  {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={endRest} /> : null}
+                </View>
+              </>
+            )}
+          </View>
+        </View>
 
         {linkedTask ? (
           <Card style={{ alignSelf: 'stretch', gap: space.sm }}>
@@ -736,6 +744,10 @@ export default function Focus() {
 }
 
 const styles = StyleSheet.create({
+  // The dial, then its controls, each as wide as the column: the phone layout.
+  dialStack: { alignSelf: 'stretch', alignItems: 'center', gap: space.lg },
+  dialRow: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: space.xl },
+  controlsSide: { flex: 1, alignItems: 'center', gap: space.lg },
   controlRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   numBox: {

@@ -14,6 +14,8 @@ import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, dueDate, formatDate, Temporal, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { gridColumns } from '@/lib/layout';
+import { useLayout } from '@/lib/layoutContext';
 import { datePhrase, occurrenceDates } from '@/lib/occurrences';
 import { usePersistentState } from '@/lib/persist';
 import { nextOccurrence, type Task } from '@/lib/shared';
@@ -481,13 +483,17 @@ function YearView({ scrollRef, tasks, year, today: now, onYearChange, onPickMont
   refreshing: boolean; onRefresh: () => void;
 }) {
   const { colors } = useTheme();
+  const { column } = useLayout();
   const counts = useMemo(() => yearCounts(tasks, year, nextOccurrence), [tasks, year]);
+  // Three months a row on a phone; four in a tablet's column, so a landscape screen shows the year in three rows.
+  const columns = column.maxWidth === undefined ? 3 : gridColumns(column.width - 2 * space.lg, 150, 3, 6, 20);
   return (
     <ScrollView
       ref={scrollRef}
       contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: 140, flexGrow: 1 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
-      <YearCalendar year={year} today={now} counts={counts} onYearChange={onYearChange} onPickMonth={onPickMonth} />
+      <YearCalendar
+        year={year} today={now} counts={counts} columns={columns} onYearChange={onYearChange} onPickMonth={onPickMonth} />
     </ScrollView>
   );
 }
