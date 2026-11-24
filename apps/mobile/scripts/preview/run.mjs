@@ -142,13 +142,15 @@ async function takeShot(browser, baseUrl, shot, options) {
   });
   try {
     const session = JSON.stringify(fakeSession());
-    await context.addInitScript(([key, value]) => {
+    // The shot's `storage` (key → string) seeds what the app keeps on the device, e.g. list colours and habit looks.
+    const seed = [[AUTH_STORAGE_KEY, session], ...Object.entries(shot.storage ?? {})];
+    await context.addInitScript((entries) => {
       try {
-        window.localStorage.setItem(key, value);
+        for (const [key, value] of entries) window.localStorage.setItem(key, value);
       } catch {
         // storage unavailable: the app will show sign-in and the shot reports it
       }
-    }, [AUTH_STORAGE_KEY, session]);
+    }, seed);
 
     const cors = {
       'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
