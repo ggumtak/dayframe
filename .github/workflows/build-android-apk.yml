@@ -51,7 +51,11 @@ jobs:
       EXPO_NO_TELEMETRY: '1'
       # Non-release builds also run on the x86_64 emulator and log an on-device self-check for the smoke test.
       EXPO_PUBLIC_SELF_CHECK: ${{ !(github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')) && '1' || '' }}
-      ANDROID_ABIS: ${{ (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')) && 'armeabi-v7a,arm64-v8a' || 'armeabi-v7a,arm64-v8a,x86_64' }}
+      # Releases carry 64-bit ARM code only, which phones of recent years run (the owner's included); 32-bit ARM
+      # (armeabi-v7a) would add about 7 MB. A phone that runs only 32-bit apps can no longer install a release: its
+      # installer refuses the update and the version already installed keeps working. Non-release builds add
+      # x86_64 for the emulator smoke test.
+      ANDROID_ABIS: ${{ (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')) && 'arm64-v8a' || 'arm64-v8a,x86_64' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -184,7 +188,12 @@ jobs:
           {
             echo "### Dayframe $APP_VERSION (versionCode $ANDROID_VERSION_CODE)"
             echo "- Signing: \`$SIGNING\`"
-            echo "- Size: $(du -h "$apk" | cut -f1)"
+            echo "- Size: $(du -h "$apk" | cut -f1) ($(stat -c %s "$apk") bytes)"
+            # What a release of this commit would weigh: the same APK without the emulator's x86_64 libraries.
+            x86_bytes="$(unzip -lv "$apk" | awk '$8 ~ /^lib\/x86_64\// { sum += $3 } END { print sum + 0 }')"
+            if [[ "$x86_bytes" -gt 0 ]]; then
+              echo "- Without x86_64 (as a release): $(awk -v all="$(stat -c %s "$apk")" -v x86="$x86_bytes" 'BEGIN { printf "%.1f MiB", (all - x86) / 1048576 }')"
+            fi
             echo "- SHA-256: \`$(cut -d' ' -f1 "$apk.sha256")\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
