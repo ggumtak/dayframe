@@ -1,9 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { type RefObject, useMemo, useRef, useState } from 'react';
+import { type RefObject, useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
 
 import { MonthCalendar } from '@/components/MonthCalendar';
+import { YearCalendar } from '@/components/YearCalendar';
 import { FoldHeader, Header, Icon, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
@@ -16,10 +17,11 @@ import { datePhrase, occurrenceDates } from '@/lib/occurrences';
 import { usePersistentState } from '@/lib/persist';
 import { nextOccurrence, type Task } from '@/lib/shared';
 import { useTabScrollTop } from '@/lib/tabScroll';
+import { yearCounts } from '@/lib/yearView';
 import { radius, space, useTheme } from '@/theme';
 
-type UpcomingView = 'week' | 'month';
-const isUpcomingView = (value: string): value is UpcomingView => value === 'week' || value === 'month';
+type UpcomingView = 'week' | 'month' | 'year';
+const isUpcomingView = (value: string): value is UpcomingView => value === 'week' || value === 'month' || value === 'year';
 
 export default function Upcoming() {
   const { colors } = useTheme();
@@ -30,13 +32,18 @@ export default function Upcoming() {
   const [overdueOpen, setOverdueOpen] = useState(false);
   const [view, setView] = usePersistentState<UpcomingView>('dayframe-upcoming-view', 'week', isUpcomingView);
   const [monthDay, setMonthDay] = useState<string | null>(null);
+  // The calendar's shown month ("YYYY-MM") once the person moves it or picks one in the year view; until then it
+  // follows the selected day, or this month.
+  const [calendarMonth, setCalendarMonth] = useState<string | null>(null);
+  const [yearShown, setYearShown] = useState<number | null>(null);
   const quickAdd = useQuickAdd();
   const listScroll = useRef<ScrollViewInstance>(null);
   const monthScroll = useRef<ScrollViewInstance>(null);
-  useTabScrollTop('upcoming', view === 'week' ? listScroll : monthScroll);
+  const yearScroll = useRef<ScrollViewInstance>(null);
+  useTabScrollTop('upcoming', view === 'week' ? listScroll : view === 'month' ? monthScroll : yearScroll);
 
   // The floating + adds to the day in view: the picked day of the week strip or of the calendar.
-  const focusDay = view === 'month' ? monthDay : picked;
+  const focusDay = view === 'month' ? monthDay : view === 'week' ? picked : null;
   useScreenDefaults({ initialText: focusDay ? datePhrase(Temporal.PlainDate.from(focusDay), today(deviceTimeZone())) + ' ' : undefined });
   const addOn = (date: Temporal.PlainDate) => quickAdd.open({ initialText: datePhrase(date, today(deviceTimeZone())) + ' ' });
 
@@ -47,10 +54,24 @@ export default function Upcoming() {
   if (link !== appliedLink) {
     setAppliedLink(link);
     if (params.view === 'month') setView('month');
-    if (params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date)) setMonthDay(params.date);
+    if (params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date)) {
+      setMonthDay(params.date);
+      setCalendarMonth(null);
+    }
   }
   const minute = useMinute();
   const now = today(deviceTimeZone());
+  const shownMonth = calendarMonth ?? (monthDay ? monthDay.slice(0, 7) : now.toPlainYearMonth().toString());
+  const showMonth = useCallback((next: Temporal.PlainYearMonth) => {
+    setCalendarMonth(next.toString());
+    setMonthDay(null);
+  }, []);
+  // A month tapped in the year view opens in the calendar, with no day picked.
+  const openMonth = useCallback((year: number, month: number) => {
+    setCalendarMonth(Temporal.PlainYearMonth.from({ year, month }).toString());
+    setMonthDay(null);
+    setView('month');
+  }, [setView]);
 
   const overdue = useMemo(
     () => tasks.filter((item) => dueBucket(item) === 'overdue').sort(bySchedule),
@@ -102,7 +123,10 @@ export default function Upcoming() {
   }, [tasks, weekOffset, minute]);
 
   const selected = picked && week.some((date) => date.toString() === picked) ? picked : null;
-  const upcomingCount = tasks.filter((item) => dueBucket(item) === 'upcoming').length;
+  // dueBucket reads the clock for every task, so count once per task list and minute rather than on every render;
+  // `minute` is a dependency only so the count follows the day turning over.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const upcomingCount = useMemo(() => tasks.filter((item) => dueBucket(item) === 'upcoming').length, [tasks, minute]);
 
   const plannerDays = selected
     ? [{ key: selected, ...(weekMap.get(selected) ?? { real: [], previews: [] }) }]
@@ -151,11 +175,19 @@ export default function Upcoming() {
       <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
         <Segmented<UpcomingView>
           value={view} onChange={setView}
-          options={[{ value: 'week', label: '목록', icon: 'list' }, { value: 'month', label: '달력', icon: 'calendar' }]} />
+          options={[
+            { value: 'week', label: '주', icon: 'list' },
+            { value: 'month', label: '월', icon: 'calendar' },
+            { value: 'year', label: '연', icon: 'grid' },
+          ]} />
       </View>
-      {view === 'month' ? (
+      {view === 'year' ? (
+        <YearView
+          scrollRef={yearScroll} tasks={tasks} year={yearShown ?? now.year} today={now} onYearChange={setYearShown}
+          onPickMonth={openMonth} refreshing={refreshing} onRefresh={refresh} />
+      ) : view === 'month' ? (
         <MonthView
-          key={appliedLink} scrollRef={monthScroll} tasks={tasks} selected={monthDay}
+          key={appliedLink} scrollRef={monthScroll} tasks={tasks} month={shownMonth} onMonthChange={showMonth} selected={monthDay}
           onSelect={setMonthDay} onAdd={addOn} refreshing={refreshing} onRefresh={refresh} />
       ) : (
         <>
@@ -341,16 +373,18 @@ function Preview({ task, date }: { task: Task; date: Temporal.PlainDate }) {
 /**
  * A month at a glance. Density dots mark workload per day (repeats included); swipe left/right to change months.
  */
-function MonthView({ scrollRef, tasks, selected, onSelect, onAdd, refreshing, onRefresh }: {
+function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected, onSelect, onAdd, refreshing, onRefresh }: {
   scrollRef: RefObject<ScrollViewInstance | null>;
-  tasks: Task[]; selected: string | null; onSelect: (day: string | null) => void; onAdd: (date: Temporal.PlainDate) => void;
+  tasks: Task[];
+  /** The shown month, "YYYY-MM"; held by the screen so the year view can open a month here. */
+  month: string; onMonthChange: (month: Temporal.PlainYearMonth) => void;
+  selected: string | null; onSelect: (day: string | null) => void; onAdd: (date: Temporal.PlainDate) => void;
   refreshing: boolean; onRefresh: () => void;
 }) {
   const { colors } = useTheme();
   const now = today(deviceTimeZone());
   const picked = selected ? Temporal.PlainDate.from(selected) : null;
-  const [month, setMonth] = useState(() => (picked ?? now).toPlainYearMonth());
-  const monthKey = month.toString();
+  const month = useMemo(() => Temporal.PlainYearMonth.from(monthKey), [monthKey]);
   const days = useMemo(() => {
     const shown = Temporal.PlainYearMonth.from(monthKey);
     const first = shown.toPlainDate({ day: 1 });
@@ -365,21 +399,24 @@ function MonthView({ scrollRef, tasks, selected, onSelect, onAdd, refreshing, on
         map.set(key, entry);
       }
     }
+    // Sorted once here, not on every render of every day section.
+    map.forEach((entry) => entry.real.sort(bySchedule));
     return map;
   }, [tasks, monthKey]);
 
-  const dotCounts = useMemo(() => {
+  const [dotCounts, total] = useMemo(() => {
     const counts = new Map<string, number>();
+    let sum = 0;
     days.forEach((entry, key) => {
       counts.set(key, entry.real.length + entry.previews.length);
+      sum += entry.real.length + entry.previews.length;
     });
-    return counts;
+    return [counts, sum] as const;
   }, [days]);
 
   const listed = [...days.keys()].filter((key) => !selected || key === selected).sort();
   if (selected && !days.has(selected)) listed.push(selected);
   const title = (date: Temporal.PlainDate) => dayTitle(date, now);
-  const total = [...days.values()].reduce((sum, day) => sum + day.real.length + day.previews.length, 0);
 
   return (
     <ScrollView
@@ -388,11 +425,8 @@ function MonthView({ scrollRef, tasks, selected, onSelect, onAdd, refreshing, on
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
       <View style={{ paddingHorizontal: space.md }}>
         <MonthCalendar
-          initial={picked ?? now} selected={picked} today={now} dotCounts={dotCounts}
-          onMonthChange={(next) => {
-            setMonth(next);
-            onSelect(null);
-          }}
+          initial={picked ?? now} month={month} selected={picked} today={now} dotCounts={dotCounts}
+          onMonthChange={onMonthChange}
           onSelect={(date) => onSelect(date.toString() === selected ? null : date.toString())}
           onLongPress={(date) => {
             onSelect(date.toString());
@@ -415,7 +449,7 @@ function MonthView({ scrollRef, tasks, selected, onSelect, onAdd, refreshing, on
             <SectionTitle
               title={title(date)} count={entry.real.length + entry.previews.length} tone={Temporal.PlainDate.compare(date, now) < 0 ? 'danger' : undefined}
               action={<AddButton label={title(date)} onPress={() => onAdd(date)} />} />
-            {entry.real.length ? <TaskList tasks={[...entry.real].sort(bySchedule)} hideDate /> : null}
+            {entry.real.length ? <TaskList tasks={entry.real} hideDate /> : null}
             {entry.previews.map((task) => <Preview key={task.id} task={task} date={date} />)}
             {entry.real.length + entry.previews.length === 0 ? (
               <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.sm }}>이 날은 할 일이 없습니다.</Txt>
@@ -423,6 +457,28 @@ function MonthView({ scrollRef, tasks, selected, onSelect, onAdd, refreshing, on
           </View>
         );
       })}
+    </ScrollView>
+  );
+}
+
+/**
+ * The year at a glance. Per-day counts are built once per task list and year (repeats included, as in the month
+ * view); the twelve months are memoized blocks, so only months whose days changed re-render.
+ */
+function YearView({ scrollRef, tasks, year, today: now, onYearChange, onPickMonth, refreshing, onRefresh }: {
+  scrollRef: RefObject<ScrollViewInstance | null>;
+  tasks: Task[]; year: number; today: Temporal.PlainDate;
+  onYearChange: (year: number) => void; onPickMonth: (year: number, month: number) => void;
+  refreshing: boolean; onRefresh: () => void;
+}) {
+  const { colors } = useTheme();
+  const counts = useMemo(() => yearCounts(tasks, year, nextOccurrence), [tasks, year]);
+  return (
+    <ScrollView
+      ref={scrollRef}
+      contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: 140, flexGrow: 1 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
+      <YearCalendar year={year} today={now} counts={counts} onYearChange={onYearChange} onPickMonth={onPickMonth} />
     </ScrollView>
   );
 }
