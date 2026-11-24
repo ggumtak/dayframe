@@ -56,6 +56,7 @@ Edit `shots.mjs`. Each entry is `{ name, path, steps? }`:
 { name: 'esc', path: '/', steps: [{ press: 'Escape' }] },      // Playwright key names
 { name: 'menu', path: '/inbox', steps: [{ hold: { text: '휴대폰 사진 백업' } }] }, // long press (ms: 900 by default)
 { name: 'small', path: '/', viewport: { width: 360, height: 760 } }, // this shot's viewport instead of 412×915
+{ name: 'tablet', path: '/', viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1.5 }, // and pixel density (2 by default)
 { name: 'swipe', path: '/inbox', steps: [{ drag: { text: '휴대폰 사진 백업', dx: 150 } }] }, // touch drag; finger stays down
 { name: 'swiped', path: '/inbox', steps: [
   { drag: { text: '휴대폰 사진 백업', dx: 200, release: true }, noSettle: true }, // lift the finger; go on at once

@@ -160,7 +160,7 @@ async function takeShot(browser, baseUrl, shot, options) {
   const log = { consoleErrors: [], pageErrors: [], aborted: [], unknownRoutes: [], mockErrors: [], anthropic: [] };
   api.reset();
   const context = await browser.newContext({
-    viewport: shot.viewport ?? VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul',
+    viewport: shot.viewport ?? VIEWPORT, deviceScaleFactor: shot.deviceScaleFactor ?? 2, isMobile: true, hasTouch: true, locale: 'ko-KR', timezoneId: 'Asia/Seoul',
     colorScheme: dark ? 'dark' : 'light',
   });
   try {
