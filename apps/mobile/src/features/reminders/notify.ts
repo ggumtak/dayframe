@@ -209,7 +209,7 @@ export async function handleReminderAction(response: Response): Promise<void> {
   const outcome = await completeOccurrence(parsed.taskId, parsed.occurrence);
   if (outcome.status === 'failed') {
     await Notifications.scheduleNotificationAsync({
-      content: { title: '완료하지 못했습니다', body: '연결이 없습니다. 앱에서 다시 완료해 주세요.', data: { url: 'dayframe:///task/' + parsed.taskId } },
+      content: { title: '완료하지 못했습니다', body: '인터넷에 연결되어 있지 않습니다. 앱에서 다시 완료해 주세요.', data: { url: 'dayframe:///task/' + parsed.taskId } },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: CHANNEL },
     }).catch(() => {});
     return;
@@ -264,7 +264,7 @@ async function logHabitFromAlert(habitId: string, date: string): Promise<void> {
     await widgetHabitChanged(habitId, date, next.count, progress + next.count - todayCount);
   } catch {
     await Notifications.scheduleNotificationAsync({
-      content: { title: '기록하지 못했습니다', body: '연결이 없습니다. 앱에서 다시 기록해 주세요.', data: { url: 'dayframe:///habit/' + habitId } },
+      content: { title: '기록하지 못했습니다', body: '인터넷에 연결되어 있지 않습니다. 앱에서 다시 기록해 주세요.', data: { url: 'dayframe:///habit/' + habitId } },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1, channelId: CHANNEL },
     }).catch(() => {});
   }

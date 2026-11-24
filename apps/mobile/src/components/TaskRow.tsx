@@ -104,7 +104,7 @@ export const TaskRow = memo(function TaskRow({
       accessibilityRole={selectable ? 'checkbox' : 'button'}
       accessibilityState={selectable ? { checked: !!selected } : undefined}
       accessibilityLabel={task.title}
-      accessibilityHint={selectable ? '눌러서 선택 전환' : '눌러서 자세히 보기'}
+      accessibilityHint={selectable ? '눌러서 선택 또는 해제' : '눌러서 자세히 보기'}
       onPress={() => {
         if (selectable && onToggleSelect) {
           haptic.tap();

@@ -9,6 +9,7 @@ import { useProjects, useSections, useTaskActions } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { deviceTimeZone, type PlainDate, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import type { Priority, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { elevation, priorityColor, radius, space, useTheme } from '@/theme';
@@ -92,7 +93,7 @@ export function BatchBar({
     haptic.tap();
     for (const task of selected) actions.update(task.id, { priority });
     setSheet(null);
-    showToast(`${count}개 할 일을 P${priority}(으)로 바꿨습니다.`);
+    showToast(`${count}개 할 일의 우선순위를 ‘${priority === 1 ? '가장 높음' : priority === 2 ? '높음' : priority === 3 ? '보통' : '없음'}’으로 바꿨습니다.`);
     onCancel();
   };
 
@@ -103,7 +104,7 @@ export function BatchBar({
       if (!task.parent_task_id) actions.update(task.id, { project_id: projectId, section_id: sectionId });
     }
     setSheet(null);
-    showToast(`${count}개 할 일을 ${label}(으)로 옮겼습니다.`);
+    showToast(`${count}개 할 일을 ${label}${josa(label, '으로/로')} 옮겼습니다.`);
     onCancel();
   };
 
@@ -126,7 +127,7 @@ export function BatchBar({
             <Txt variant="smallStrong" tone="muted">{count === totalCount ? '선택 해제' : '전체 선택'}</Txt>
           </Pressable>
           <Pressable hitSlop={8} onPress={onCancel} style={{ marginLeft: space.md }}>
-            <Txt variant="smallStrong">완료</Txt>
+            <Txt variant="smallStrong">닫기</Txt>
           </Pressable>
         </View>
         <View style={[styles.actions, { borderTopColor: colors.border, opacity: count ? 1 : 0.45 }]} pointerEvents={count ? 'auto' : 'none'}>
@@ -153,13 +154,13 @@ export function BatchBar({
         {([1, 2, 3, 4] as Priority[]).map((p) => (
           <Row
             key={p} icon="flag"
-            label={p === 1 ? 'P1 · 긴급' : p === 2 ? 'P2 · 높음' : p === 3 ? 'P3 · 보통' : 'P4 · 없음'}
+            label={p === 1 ? '가장 높음' : p === 2 ? '높음' : p === 3 ? '보통' : '없음'}
             trailing={<Icon name="chevron-right" size={16} color={priorityColor(colors, p)} />}
             onPress={() => batchPriority(p)} />
         ))}
       </Sheet>
 
-      <Sheet visible={sheet === 'move'} onClose={() => setSheet(null)} title={`${count}개 프로젝트 이동`}>
+      <Sheet visible={sheet === 'move'} onClose={() => setSheet(null)} title={`${count}개를 옮길 목록`}>
         <ScrollView style={{ maxHeight: 380 }}>
           <Row icon="inbox" label="미분류" onPress={() => batchMove(null, null, '미분류')} />
           {(projects ?? []).map((project) => {
@@ -182,7 +183,7 @@ export function BatchBar({
 
       <Sheet visible={sheet === 'delete'} onClose={() => setSheet(null)} title={`${count}개 할 일을 삭제할까요?`}>
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          선택한 할 일 {count}개와 연결된 하위 작업이 모두 삭제되며 되돌릴 수 없습니다.
+          선택한 할 일 {count}개와 하위 작업이 모두 삭제됩니다. 되돌릴 수 없습니다.
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button label={`${count}개 삭제`} kind="danger" onPress={batchDelete} />

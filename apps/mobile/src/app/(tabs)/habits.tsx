@@ -95,8 +95,8 @@ export default function Habits() {
 
               <Card style={{ gap: space.sm, paddingVertical: space.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }}>이번 주 루틴 달성</Txt>
-                  <Txt variant="caption" tone="faint">요일 도트를 눌러 바로 기록 수정</Txt>
+                  <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }}>이번 주 습관 달성</Txt>
+                  <Txt variant="caption" tone="faint">요일 점을 눌러 기록 수정</Txt>
                 </View>
                 <View style={styles.weekBars}>
                   {weeklySummary.map((bar) => {

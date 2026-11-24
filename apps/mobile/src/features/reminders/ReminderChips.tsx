@@ -84,9 +84,9 @@ export function TaskReminderPicker({ taskId, allDay, dueAt, timezone, repeats = 
           <Txt variant="small" tone="muted" style={{ flex: 1 }}>{preview}</Txt>
         </View>
       ) : null}
-      {!settings.enabled ? <Txt variant="small" tone="muted">설정 → 알림과 위젯에서 할 일 알림이 꺼져 있습니다.</Txt> : null}
+      {!settings.enabled ? <Txt variant="small" tone="muted">할 일 알림이 꺼져 있습니다. 설정 → 알림에서 켤 수 있습니다.</Txt> : null}
       {settings.enabled && allDayBlocked ? (
-        <Txt variant="small" tone="muted">설정 → 알림과 위젯에서 종일 할 일의 알림 시각을 정하면 당일·하루 전 알림을 고를 수 있습니다.</Txt>
+        <Txt variant="small" tone="muted">설정 → 알림에서 종일 할 일의 알림 시각을 정하면 당일·하루 전 알림을 고를 수 있습니다.</Txt>
       ) : null}
     </View>
   );
@@ -145,7 +145,7 @@ export function HabitReminderChips({ habitId }: { habitId: string }) {
         ))}
       </View>
       <Txt variant="small" tone="muted">
-        {own ? '매일 ' + timeLabel(own) + '에 알려 줍니다. 그날 목표를 채우면 울리지 않고, 알림의 [기록하기]로 바로 기록할 수 있습니다.' : '정해 두면 매일 그 시간에 알려 줍니다.'}
+        {own ? '매일 ' + timeLabel(own) + '에 알려 줍니다. 그날 목표를 채우면 울리지 않고, 알림의 ‘기록하기’로 바로 기록할 수 있습니다.' : '정해 두면 매일 그 시간에 알려 줍니다.'}
       </Txt>
     </View>
   );

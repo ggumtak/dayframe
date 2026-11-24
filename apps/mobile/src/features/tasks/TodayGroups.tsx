@@ -19,13 +19,13 @@ export function OverdueStrip({ count, onSpread, onMoveToday }: { count: number; 
       <Txt variant="smallStrong" tone="danger" style={{ flex: 1 }} accessibilityRole="header">지연 {count}개</Txt>
       {onSpread ? (
         <Pressable
-          accessibilityRole="button" accessibilityLabel="일정 분산 정리" hitSlop={8}
+          accessibilityRole="button" accessibilityLabel="여러 날에 나눠 잡기" hitSlop={8}
           onPress={() => {
             haptic.tap();
             onSpread();
           }}
           style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-          <Txt variant="smallStrong" tone="accent">분산 정리</Txt>
+          <Txt variant="smallStrong" tone="accent">나눠 잡기</Txt>
         </Pressable>
       ) : null}
       <Pressable
@@ -65,7 +65,7 @@ const GroupCard = memo(function GroupCard({ group, model, folded, selectedIds, o
         <Txt variant="bodyStrong" numberOfLines={1} style={{ flexShrink: 1 }}>{name}</Txt>
         <Txt variant="small" tone="faint">{count}</Txt>
         <View style={{ flex: 1 }} />
-        {group.overdue.length ? <Txt variant="caption" tone="danger">지연 {group.overdue.length}</Txt> : null}
+        {group.overdue.length ? <Txt variant="caption" tone="danger">지연 {group.overdue.length}개</Txt> : null}
         <Icon name={folded ? 'chevron-right' : 'chevron-down'} size={18} color={colors.textMuted} />
       </Pressable>
       {folded ? null : (

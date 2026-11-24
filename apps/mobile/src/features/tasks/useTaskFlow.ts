@@ -4,6 +4,7 @@ import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
 import { hideTasks, nextDueAfterComplete, nextPosition, unhideTasks, useTaskActions, withDescendants } from '@/data/tasks';
 import { dueMinutes, formatDue, instantFor, type PlainDate, sameInstant, today } from '@/lib/dates';
+import { josa } from '@/lib/josa';
 import type { Task, TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 
@@ -64,7 +65,7 @@ export function useTaskFlow() {
     const message = !task.recurrence_rule
       ? '완료했습니다.'
       : completedChildren.length > 0
-        ? (when ? `다음 일정: ${when} (하위 ${completedChildren.length}개 초기화)` : `완료! 하위 작업 ${completedChildren.length}개를 초기화했습니다.`)
+        ? (when ? `다음 일정: ${when} (하위 작업 ${completedChildren.length}개 다시 열림)` : `완료했습니다. 하위 작업 ${completedChildren.length}개를 다시 열었습니다.`)
         : (when ? `다음 일정: ${when}` : '완료했습니다. 다음 일정으로 넘어갑니다.');
     showToast(message, {
       actionLabel: '실행 취소', onAction: () => uncomplete(task, task.due_at),
@@ -160,8 +161,8 @@ export function useTaskFlow() {
       });
     });
     showToast(allChildren.length
-      ? `‘${task.title}’와 하위 작업 ${allChildren.length}개를 복제했습니다.`
-      : `‘${task.title}’을 복제했습니다.`);
+      ? `‘${task.title}’${josa(task.title, '와/과')} 하위 작업 ${allChildren.length}개를 복제했습니다.`
+      : `‘${task.title}’${josa(task.title, '을/를')} 복제했습니다.`);
     return newId;
   }, [actions]);
 

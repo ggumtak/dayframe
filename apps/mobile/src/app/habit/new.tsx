@@ -114,7 +114,7 @@ export default function NewHabit() {
               </Txt>
               <IconButton name="plus" label="목표 늘리기" onPress={() => setTarget(Math.min(max, target + 1))} style={{ backgroundColor: colors.surfaceMuted }} />
             </View>
-            <Txt variant="small" tone="faint">주기와 목표는 기록의 일관성을 위해 만든 뒤에는 바꿀 수 없습니다.</Txt>
+            <Txt variant="small" tone="faint">기록이 어긋나지 않도록 주기와 목표는 만든 뒤에 바꿀 수 없습니다.</Txt>
           </View>
 
           <Button label="습관 만들기" onPress={save} disabled={!ready} />

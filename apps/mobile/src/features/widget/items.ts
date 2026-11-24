@@ -87,10 +87,10 @@ function clock(hour: number, minute: number): string {
   return (hour < 12 ? '오전 ' : '오후 ') + (hour % 12 === 0 ? 12 : hour % 12) + ':' + String(minute).padStart(2, '0');
 }
 
-/** "11월 21일 토요일" in the device's own zone. */
+/** "11월 21일 (토)" in the device's own zone. */
 export function widgetDate(now: number, timeZone: string): string {
   const date = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(timeZone);
-  return date.month + '월 ' + date.day + '일 ' + '월화수목금토일'[date.dayOfWeek - 1] + '요일';
+  return date.month + '월 ' + date.day + '일 (' + '월화수목금토일'[date.dayOfWeek - 1] + ')';
 }
 
 export type UpcomingRow = { kind: 'day'; key: string; label: string; count: number } | ({ kind: 'task' } & WidgetRow);

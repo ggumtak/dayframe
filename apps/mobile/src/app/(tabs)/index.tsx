@@ -24,6 +24,7 @@ import { UpdateBanner } from '@/features/update/UpdateBanner';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, formatTime, instantFor, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import { usePersistentState } from '@/lib/persist';
 import type { Task, TaskPatch } from '@/lib/shared';
 import { bySmartRank } from '@/lib/smart';
@@ -36,7 +37,7 @@ type TodaySort = 'schedule' | 'smart' | 'priority';
 
 const sortLabels: Record<TodaySort, string> = {
   schedule: '일정순',
-  smart: '스마트 추천순',
+  smart: '추천순',
   priority: '우선순위순',
 };
 
@@ -101,8 +102,8 @@ export default function Today() {
   const progressRatio = totalToday > 0 ? done.length / totalToday : 0;
 
   const summary = overdue.length && due.length
-    ? `지연 ${overdue.length} · 오늘 ${due.length}`
-    : remaining ? `${remaining}개 남음` : done.length ? `${done.length}개 완료` : '남은 일 없음';
+    ? `지연 ${overdue.length}개 · 오늘 ${due.length}개`
+    : remaining ? `${remaining}개 남음` : done.length ? `${done.length}개 완료` : '남은 할 일 없음';
 
   const selectedTasks = useMemo(
     () => (selectedIds ? allVisibleToday.filter((t) => selectedIds.has(t.id)) : []),
@@ -131,7 +132,7 @@ export default function Today() {
   const moveOverdue = () => {
     haptic.success();
     flow.rescheduleOverdue();
-    showToast(`지연된 ${overdue.length}개를 오늘로 옮겼습니다.`);
+    showToast(`지연된 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
   };
 
   const openPlanning = () => {
@@ -169,7 +170,7 @@ export default function Today() {
       recurrence_local_time: task.recurrence_local_time,
     };
     flow.reschedule(task, today(task.timezone), minutes);
-    showToast(`‘${task.title}’을 ${formatTime(minutes)}(으)로 옮겼습니다.`, {
+    showToast(`‘${task.title}’${josa(task.title, '을/를')} ${formatTime(minutes)}${josa(formatTime(minutes), '으로/로')} 옮겼습니다.`, {
       actionLabel: '실행 취소',
       onAction: () => flow.update(task.id, prevPatch),
     });
@@ -201,7 +202,7 @@ export default function Today() {
         },
       });
     });
-    showToast('체험 체크리스트를 추가했습니다! 눌러서 펼쳐 보세요.');
+    showToast('체험 체크리스트를 넣었습니다. 눌러서 펼쳐 보세요.');
   };
 
   const showOnboarding = !isLoading && !isError && tasks.length === 0 && done.length === 0 && !onboardingDismissed;
@@ -224,11 +225,11 @@ export default function Today() {
   return (
     <Screen>
       <Header
-        title="오늘" subtitle={`${date.month}월 ${date.day}일 ${weekdayName(date)}요일 · ${summary}`}
+        title="오늘" subtitle={`${date.month}월 ${date.day}일 (${weekdayName(date)}) · ${summary}`}
         right={(
           <View style={{ flexDirection: 'row' }}>
             <IconButton
-              name="compass" label="하루 계획 및 일정 정리"
+              name="compass" label="하루 계획·일정 정리"
               onPress={() => {
                 haptic.tap();
                 setPlanning(true);
@@ -283,7 +284,7 @@ export default function Today() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {isError && tasks.length === 0 ? (
             <EmptyState
-              icon="cloud-off" title="불러오지 못했습니다" message="네트워크 연결을 확인한 뒤 다시 시도해 주세요."
+              icon="cloud-off" title="불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
               action={<Button label="다시 시도" kind="secondary" onPress={refresh} />} />
           ) : showOnboarding ? (
             <View style={{ padding: space.lg, gap: space.md }}>
@@ -298,7 +299,7 @@ export default function Today() {
                   </View>
                 </View>
                 <Txt variant="small" tone="muted">
-                  직접 체험해 볼 수 있는 4단계 샘플 체크리스트를 오늘 목록에 넣어 드릴까요?
+                  직접 따라 해 볼 수 있는 4단계 체험 체크리스트를 오늘 할 일에 넣어 드릴까요?
                 </Txt>
                 <View style={{ flexDirection: 'row', gap: space.sm }}>
                   <Button label="체험 체크리스트 넣기" icon="check-square" onPress={createStarterChecklist} style={{ flex: 1, minHeight: 42 }} />
@@ -335,13 +336,13 @@ export default function Today() {
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
                         {overdue.length >= 2 ? (
                           <Pressable
-                            accessibilityRole="button" accessibilityLabel="일정 분산 정리" hitSlop={8}
+                            accessibilityRole="button" accessibilityLabel="여러 날에 나눠 잡기" hitSlop={8}
                             onPress={() => {
                               haptic.tap();
                               setPlanning(true);
                             }}
                             style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-                            <Txt variant="smallStrong" tone="accent">분산 정리</Txt>
+                            <Txt variant="smallStrong" tone="accent">나눠 잡기</Txt>
                           </Pressable>
                         ) : null}
                         <Pressable
@@ -399,7 +400,7 @@ export default function Today() {
                 key={option}
                 icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : 'flag'}
                 label={sortLabels[option]}
-                detail={option === 'smart' ? '긴급도 · 우선순위 · 진행률 반영' : undefined}
+                detail={option === 'smart' ? '긴급도 · 우선순위 · 진행률' : undefined}
                 trailing={sort === option ? <Icon name="check" size={18} color={colors.accent} /> : undefined}
                 onPress={() => {
                   haptic.tap();
@@ -436,7 +437,7 @@ export default function Today() {
                 </>
               ) : null}
               <Row
-                icon="share-2" label="오늘 목록 공유"
+                icon="share-2" label="오늘 할 일 공유"
                 onPress={() => {
                   closeOptions();
                   shareToday();

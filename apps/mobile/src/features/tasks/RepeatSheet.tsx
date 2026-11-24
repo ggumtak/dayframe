@@ -25,8 +25,8 @@ const WEEKDAYS: { code: DayCode; label: string }[] = [
 const repeatOptions: { rule: string | null; label: string; detail?: string }[] = [
   { rule: null, label: '반복 없음' },
   { rule: 'FREQ=DAILY', label: '매일' },
-  { rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: '평일', detail: '월–금' },
-  { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', label: '주말', detail: '토–일' },
+  { rule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: '평일', detail: '월~금' },
+  { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', label: '주말', detail: '토~일' },
   { rule: 'FREQ=WEEKLY', label: '매주' },
   { rule: 'FREQ=WEEKLY;INTERVAL=2', label: '격주' },
   { rule: 'FREQ=MONTHLY', label: '매월' },
@@ -135,7 +135,7 @@ function RepeatPickerContent({
           ]} />
         <Txt variant="caption" tone="muted">
           {mode === 'completion'
-            ? '실제로 완료한 날부터 다음 주기를 계산합니다. (예: 필터 교체, 청소, 미용실)'
+            ? '실제로 완료한 날을 기준으로 다음 날짜를 정합니다. (예: 필터 교체, 청소, 미용실)'
             : '원래 정해진 날짜·요일에 맞춰 반복합니다. (예: 주간 회의, 월세 납부)'}
         </Txt>
       </View>

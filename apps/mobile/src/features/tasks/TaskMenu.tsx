@@ -8,6 +8,7 @@ import { useProjects, useSections, useSubtaskProgress, useTagNames, useTaskActio
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { describeRecurrence, formatDue, formatDurationMinutes, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import type { Priority, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, useTheme } from '@/theme';
@@ -114,7 +115,7 @@ function TaskMenuContent({
               selected={active}
               onPress={() => run(() => {
                 actions.update(task.id, { duration_minutes: mins });
-                showToast(mins ? `소요시간을 ${formatDurationMinutes(mins)}(으)로 설정했습니다.` : '소요시간을 지웠습니다.');
+                showToast(mins ? `소요 시간을 ${formatDurationMinutes(mins)}${josa(formatDurationMinutes(mins), '으로/로')} 정했습니다.` : '소요 시간을 지웠습니다.');
               })}
               style={{ flex: 1, justifyContent: 'center' }} />
           );
@@ -125,7 +126,7 @@ function TaskMenuContent({
         {!task.parent_task_id && projects?.length ? (
           <>
             <Row
-              icon="folder" label="프로젝트 옮기기" detail={projectName ? '#' + projectName : '미분류'}
+              icon="folder" label="목록 옮기기" detail={projectName ? '#' + projectName : '미분류'}
               trailing={<Icon name={movingProject ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textFaint} />}
               onPress={() => setMovingProject((open) => !open)} />
             {movingProject ? (
@@ -143,7 +144,7 @@ function TaskMenuContent({
                     key={project.id} icon="hash" label={project.name} selected={task.project_id === project.id}
                     onPress={() => run(() => {
                       actions.update(task.id, { project_id: project.id, section_id: null });
-                      showToast(`#${project.name} 프로젝트로 옮겼습니다.`);
+                      showToast(`#${project.name} 목록으로 옮겼습니다.`);
                     })} />
                 ))}
               </ScrollView>
@@ -169,7 +170,7 @@ function TaskMenuContent({
           </ScrollView>
         ) : null}
         {onStartSelect && !task.parent_task_id ? (
-          <Row icon="check-square" label="여러 개 선택" detail="일괄 편집" onPress={() => run(() => onStartSelect(task))} />
+          <Row icon="check-square" label="여러 개 선택" detail="한꺼번에 바꾸기" onPress={() => run(() => onStartSelect(task))} />
         ) : null}
         {task.parent_task_id ? null : (
           <Row icon="corner-down-right" label="하위 작업 추가" onPress={() => run(() => quickAdd.open({ parentTaskId: task.id }))} />
@@ -192,7 +193,7 @@ function TaskMenuContent({
             },
           }))} />
         <Row
-          icon="clipboard" label={openSubs.length + doneSubs.length > 0 ? '체크리스트 복사 (Markdown)' : '제목 복사'}
+          icon="clipboard" label={openSubs.length + doneSubs.length > 0 ? '체크리스트 복사' : '제목 복사'}
           onPress={() => run(() => {
             const payload = openSubs.length + doneSubs.length > 0
               ? toMarkdownChecklist(task, openSubs, doneSubs)

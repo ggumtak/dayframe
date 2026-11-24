@@ -41,7 +41,7 @@ test('the snapshot drops finished and far-off tasks but keeps tomorrow for after
   assert.equal('completed_at' in kept[0], false);
   // After midnight in Seoul, tomorrow's task becomes today's.
   assert.deepEqual(widgetRows(kept, Date.parse('2026-11-21T16:00:00Z')).map((row) => row.title), ['tomorrow']);
-  assert.equal(widgetDate(now, 'Asia/Seoul'), '11월 21일 토요일');
+  assert.equal(widgetDate(now, 'Asia/Seoul'), '11월 21일 (토)');
 });
 
 test('the upcoming widget groups the next seven days under day headings', () => {

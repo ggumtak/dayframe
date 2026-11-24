@@ -41,14 +41,14 @@ export const builtinTemplates: ChecklistTemplate[] = [
     title: '회의 준비 · 정리',
     icon: 'users',
     builtin: true,
-    items: ['안건 및 자료 사전 공유', '핵심 질문 3가지 정리', '회의록 작성', '결정 사항 · 액션 아이템 등록'],
+    items: ['안건·자료 미리 공유', '핵심 질문 3가지 정리', '회의록 작성', '결정 사항 · 할 일 정리'],
   },
   {
     id: 'builtin-weekly-review',
-    title: '주간 회고 (GTD)',
+    title: '주간 돌아보기',
     icon: 'compass',
     builtin: true,
-    items: ['미분류 항목 전부 정리하기', '지연된 할 일 재조정 또는 삭제', '다음 주 달력 일정 확인', '이번 주 완료한 일 돌아보기', '다음 주 핵심 목표 3가지 정하기'],
+    items: ['미분류 할 일 모두 정리하기', '지연된 할 일 다시 잡거나 지우기', '다음 주 달력 일정 확인', '이번 주 완료한 일 돌아보기', '다음 주 핵심 목표 3가지 정하기'],
   },
   {
     id: 'builtin-deploy',

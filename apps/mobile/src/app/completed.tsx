@@ -10,6 +10,7 @@ import { keys } from '@/data/keys';
 import { useProjects, useTagNames, useTaskActions } from '@/data/tasks';
 import { api } from '@/lib/api';
 import { deviceTimeZone, formatDate, formatTime, Temporal, today } from '@/lib/dates';
+import { josa } from '@/lib/josa';
 import { searchTasks } from '@/lib/search';
 import type { Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
@@ -53,7 +54,7 @@ export default function Completed() {
   const reopen = (task: Task) => {
     setRemoved((current) => new Set(current).add(task.id));
     actions.reopen(task);
-    showToast(`‘${task.title}’을 다시 할 일로 되돌렸습니다.`);
+    showToast(`‘${task.title}’${josa(task.title, '을/를')} 다시 열었습니다.`);
   };
 
   const confirmDelete = () => {
@@ -71,7 +72,7 @@ export default function Completed() {
       <Header title="완료한 일" subtitle={total > 0 ? `${total}개` : undefined} left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       {query.isPending ? <Loading /> : query.isError ? (
         <EmptyState
-          icon="cloud-off" title="불러오지 못했습니다" message="완료한 일은 서버에서 불러옵니다. 네트워크를 확인해 주세요."
+          icon="cloud-off" title="불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
           action={<Button label="다시 시도" kind="secondary" onPress={() => void query.refetch()} />} />
       ) : (
         <>
@@ -103,7 +104,7 @@ export default function Completed() {
                   const project = task.project_id ? names.get(task.project_id) : undefined;
                   return (
                     <View key={task.id} style={styles.row}>
-                      <Checkbox checked color={colors.success} onPress={() => reopen(task)} label={task.title + ' 다시 할 일로 되돌리기'} />
+                      <Checkbox checked color={colors.success} onPress={() => reopen(task)} label={task.title + ' 다시 열기'} />
                       <View style={[styles.body, { borderBottomColor: colors.border }]}>
                         <View style={{ flex: 1, gap: 2 }}>
                           <Txt tone="muted" numberOfLines={2}>{task.title}</Txt>
@@ -129,7 +130,7 @@ export default function Completed() {
 
       <Sheet visible={!!deleting} onClose={() => setDeleting(null)} title="완료 기록을 삭제할까요?">
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          ‘{deleting?.title}’ 기록이 영구적으로 지워집니다.
+          ‘{deleting?.title}’ 기록을 완전히 지웁니다. 되돌릴 수 없습니다.
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button label="삭제" kind="danger" onPress={confirmDelete} />

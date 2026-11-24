@@ -62,7 +62,7 @@ const config: ExpoConfig = {
     // previewImage is what the home screen's widget picker shows; redraw with scripts/widget-previews.mjs.
     ['react-native-android-widget', {
       widgets: [{
-        name: 'Today', previewImage: './assets/widgets/today.png', label: '오늘 할 일', description: '오늘과 지연된 할 일을 보고 바로 완료합니다.',
+        name: 'Today', previewImage: './assets/widgets/today.png', label: '오늘 할 일', description: '오늘 할 일과 지연된 할 일을 보고 바로 완료합니다.',
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         // The app redraws the widget whenever tasks change; this only catches the day rolling over.
         updatePeriodMillis: 1800000,
@@ -71,7 +71,7 @@ const config: ExpoConfig = {
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Calendar', previewImage: './assets/widgets/calendar.png', label: '달력', description: '이번 달 달력에 일정이 있는 날을 표시하고, 누르면 그 날을 엽니다.',
+        name: 'Calendar', previewImage: './assets/widgets/calendar.png', label: '달력', description: '일정이 있는 날을 이번 달 달력에 표시합니다. 날짜를 누르면 그날을 엽니다.',
         minWidth: '250dp', minHeight: '250dp', targetCellWidth: 4, targetCellHeight: 4, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {

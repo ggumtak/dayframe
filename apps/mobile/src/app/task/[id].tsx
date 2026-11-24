@@ -21,15 +21,16 @@ import { toMarkdownChecklist, useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { errorMessage } from '@/lib/api';
 import { describeRecurrence, deviceTimeZone, dueBucket, formatDue, formatDurationMinutes, isPastDue, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import { analyzeTask, type Priority, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityColor, radius, space, type, useTheme } from '@/theme';
 
 const priorities: { value: Priority; label: string }[] = [
-  { value: 1, label: 'P1 · 긴급' },
-  { value: 2, label: 'P2 · 높음' },
-  { value: 3, label: 'P3 · 보통' },
-  { value: 4, label: 'P4 · 없음' },
+  { value: 1, label: '가장 높음' },
+  { value: 2, label: '높음' },
+  { value: 3, label: '보통' },
+  { value: 4, label: '없음' },
 ];
 
 export default function TaskDetail() {
@@ -46,7 +47,7 @@ export default function TaskDetail() {
     return (
       <Screen>
         <EmptyState
-          icon="check-circle" title="할 일을 찾을 수 없습니다" message="이미 완료했거나 삭제된 항목입니다."
+          icon="check-circle" title="할 일을 찾을 수 없습니다" message="이미 완료했거나 삭제한 할 일입니다."
           action={<Button label="돌아가기" kind="secondary" onPress={() => router.back()} />} />
       </Screen>
     );
@@ -233,14 +234,14 @@ function TaskEditor({ task }: { task: Task }) {
     });
     setSheet(null);
     haptic.success();
-    showToast(`‘${title.trim() || task.title}’을 체크리스트 템플릿으로 저장했습니다.`);
+    showToast(`‘${title.trim() || task.title}’${josa(title.trim() || task.title, '을/를')} 체크리스트 템플릿으로 저장했습니다.`);
   };
 
   const copyMarkdown = () => {
     setSheet(null);
     const md = toMarkdownChecklist(task, subtasks, completedSubtasks);
     void Clipboard.setStringAsync(md)
-      .then(() => showToast('체크리스트를 마크다운으로 복사했습니다.'))
+      .then(() => showToast('체크리스트를 복사했습니다.'))
       .catch(() => {});
   };
 
@@ -252,7 +253,7 @@ function TaskEditor({ task }: { task: Task }) {
         <IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />
         {parent ? (
           <Pressable
-            accessibilityRole="button" accessibilityLabel={'상위 작업 ' + parent.title + ' 열기'}
+            accessibilityRole="button" accessibilityLabel={'상위 할 일 ' + parent.title + ' 열기'}
             onPress={() => router.replace({ pathname: '/task/[id]', params: { id: parent.id } })}
             style={({ pressed }) => [styles.crumb, { opacity: pressed ? 0.6 : 1 }]}>
             <Icon name="corner-left-up" size={14} color={colors.textMuted} />
@@ -260,7 +261,7 @@ function TaskEditor({ task }: { task: Task }) {
           </Pressable>
         ) : (
           <Pressable
-            accessibilityRole="button" accessibilityLabel="프로젝트·섹션 변경"
+            accessibilityRole="button" accessibilityLabel="목록·섹션 바꾸기"
             onPress={() => setSheet('project')}
             style={({ pressed }) => [styles.crumb, { opacity: pressed ? 0.6 : 1 }]}>
             <Icon name={projectName ? (projMeta?.icon ?? 'hash') : 'inbox'} size={14} color={projMeta?.color ?? colors.textMuted} />
@@ -315,7 +316,7 @@ function TaskEditor({ task }: { task: Task }) {
               color={!due ? undefined : isPastDue(task) ? colors.danger : dueBucket(task) === 'today' ? colors.success : colors.accent}
               onPress={() => setSheet('schedule')} />
             <Chip
-              icon="clock" label={durationLabel ?? '소요시간'}
+              icon="clock" label={durationLabel ?? '소요 시간'}
               selected={!!durationLabel} color={durationLabel ? colors.accent : undefined}
               onPress={() => setSheet('duration')} />
             {repeat || due ? (
@@ -336,7 +337,7 @@ function TaskEditor({ task }: { task: Task }) {
               <View style={styles.nextRepeatRow}>
                 <Icon name="corner-down-right" size={12} color={colors.textFaint} />
                 <Txt variant="caption" tone="faint">
-                  지금 완료 시 다음 일정: {nextRepeatPreview}
+                  지금 완료하면 다음 일정: {nextRepeatPreview}
                 </Txt>
               </View>
             ) : null}
@@ -453,10 +454,10 @@ function TaskEditor({ task }: { task: Task }) {
         visible={sheet === 'repeat'} currentRule={task.recurrence_rule} currentMode={task.recurrence_mode}
         onClose={() => setSheet(null)} onSelect={applyRepeat} />
 
-      <Sheet visible={sheet === 'duration'} onClose={() => setSheet(null)} title="예상 소요시간">
+      <Sheet visible={sheet === 'duration'} onClose={() => setSheet(null)} title="예상 소요 시간">
         <View style={{ gap: space.md }}>
           <Txt variant="small" tone="muted">
-            타임라인 블록 크기에 반영되며, 이 할 일로 집중 타이머를 열면 자동으로 시간이 맞춰집니다.
+            타임라인에서 블록 길이가 되고, 이 할 일로 집중을 시작하면 타이머도 이 시간에 맞춰집니다.
           </Txt>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
             <Chip
@@ -481,7 +482,7 @@ function TaskEditor({ task }: { task: Task }) {
               onPress={() => applyDuration(task.duration_minutes === null ? 15 : Math.max(5, task.duration_minutes - 5))}
               style={{ backgroundColor: colors.surfaceMuted, width: 36, height: 36 }} />
             <Txt variant="bodyStrong" tone={task.duration_minutes === null ? 'faint' : 'default'} style={{ minWidth: 82, textAlign: 'center' }}>
-              {task.duration_minutes !== null ? formatDurationMinutes(task.duration_minutes) : '미설정'}
+              {task.duration_minutes !== null ? formatDurationMinutes(task.duration_minutes) : '없음'}
             </Txt>
             <IconButton
               name="plus" label="5분 늘리기" size={18}
@@ -519,7 +520,7 @@ function TaskEditor({ task }: { task: Task }) {
         })}
       </Sheet>
 
-      <Sheet visible={sheet === 'project'} onClose={() => setSheet(null)} title="프로젝트 · 섹션">
+      <Sheet visible={sheet === 'project'} onClose={() => setSheet(null)} title="목록 · 섹션">
         <ScrollView style={{ maxHeight: 380 }}>
           <Row
             icon="inbox" label="미분류"
@@ -581,16 +582,16 @@ function TaskEditor({ task }: { task: Task }) {
         </View>
       </Sheet>
 
-      <Sheet visible={sheet === 'more'} onClose={() => setSheet(null)} title="할 일 작업">
+      <Sheet visible={sheet === 'more'} onClose={() => setSheet(null)} title="더 보기">
         <Row
           icon="copy" label="할 일 복제" detail={totalSubtasks > 0 ? `하위 작업 ${totalSubtasks}개 포함` : undefined}
           onPress={() => {
             setSheet(null);
             flow.duplicate(task, { openSubtasks: subtasks, completedSubtasks, tagNames: attachedTags.map((t) => t.name) });
           }} />
-        <Row icon="clipboard" label="체크리스트 복사 (Markdown)" onPress={copyMarkdown} />
+        <Row icon="clipboard" label="체크리스트 복사" onPress={copyMarkdown} />
         <Row
-          icon="bookmark" label="체크리스트 템플릿으로 저장" detail="재사용 목록"
+          icon="bookmark" label="체크리스트 템플릿으로 저장" detail="다음에 다시 쓰기"
           onPress={saveAsTemplate} />
         {completedSubtasks.length > 0 ? (
           <Row

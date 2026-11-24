@@ -15,7 +15,7 @@ export default function Appearance() {
 
   return (
     <Screen>
-      <Header title="외관" left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
+      <Header title="테마" left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl * 2 }}>
         <Preview />
 
@@ -95,7 +95,7 @@ function Preview() {
           </Txt>
           <View style={styles.previewMeta}>
             <Icon name="calendar" size={12} color={colors.schedule} />
-            <Txt variant="small" style={{ color: colors.schedule }}>오늘 18:00</Txt>
+            <Txt variant="small" style={{ color: colors.schedule }}>오늘 오후 6:00</Txt>
           </View>
         </View>
       </View>

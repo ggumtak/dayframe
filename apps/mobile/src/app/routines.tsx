@@ -52,7 +52,7 @@ export default function Routines() {
 
   const open = useCallback((routine: Routine) => {
     if (owned.has(routineKey(routine.name))) {
-      showToast('이미 습관에 있습니다. 습관 탭에서 관리할 수 있습니다.');
+      showToast('이미 추가한 습관입니다. 습관 탭에서 볼 수 있습니다.');
       return;
     }
     router.push({

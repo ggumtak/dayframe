@@ -203,7 +203,7 @@ export default function Upcoming() {
               }}
               style={{ width: 32, height: 32 }} />
             <Txt variant="smallStrong" tone="muted" style={{ flex: 1, textAlign: 'center' }}>
-              {weekStartDay.year !== now.year ? `${weekStartDay.year}년 ` : ''}{weekStartDay.month}월 {weekStartDay.day}일 – {weekLastDay.month}월 {weekLastDay.day}일
+              {weekStartDay.year !== now.year ? `${weekStartDay.year}년 ` : ''}{weekStartDay.month}월 {weekStartDay.day}일 ~ {weekLastDay.month}월 {weekLastDay.day}일
             </Txt>
             {weekOffset !== 0 ? (
               <Pressable
@@ -274,7 +274,7 @@ export default function Upcoming() {
               {weekOffset === 0 && !selected && overdue.length > 0 ? (
                 <View>
                   <FoldHeader
-                    title="지연됨" count={overdue.length} detail={overdueOpen ? '접기' : '펼쳐서 확인'} detailTone="danger"
+                    title="지연됨" count={overdue.length} detail={overdueOpen ? '접기' : '펼치기'} detailTone="danger"
                     open={overdueOpen} onToggle={() => setOverdueOpen((open) => !open)} label="지연된 할 일" />
                   {overdueOpen ? <TaskList tasks={overdue} /> : null}
                 </View>
@@ -310,12 +310,12 @@ export default function Upcoming() {
   );
 }
 
-/** "오늘 · 11월 23일 월", "내일 · 11월 24일 화", "수요일 · 11월 25일", or the plain date when further away. */
+/** "오늘 · 11월 23일 (월)", "내일 · 11월 24일 (화)", "수요일 · 11월 25일", or the plain date when further away. */
 function dayTitle(date: Temporal.PlainDate, now: Temporal.PlainDate): string {
   const label = formatDate(date, now);
   if (/^\d/.test(label)) return label;
   const day = `${date.month}월 ${date.day}일`;
-  return label.endsWith('요일') ? `${label} · ${day}` : `${label} · ${day} ${weekdayName(date)}`;
+  return label.endsWith('요일') ? `${label} · ${day}` : `${label} · ${day} (${weekdayName(date)})`;
 }
 
 function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
@@ -363,7 +363,7 @@ function Preview({ task, date }: { task: Task; date: Temporal.PlainDate }) {
         <Txt tone="muted" numberOfLines={1}>{task.title}</Txt>
         <Txt variant="small" tone="faint">
           {(at ? (at.hour < 12 ? '오전 ' : '오후 ') + (at.hour % 12 || 12) + ':' + String(at.minute).padStart(2, '0') + ' · ' : '')
-            + (task.recurrence_mode === 'completion' ? '완료 후 반복 예상 · ' : '반복 예정 · ') + date.month + '/' + date.day}
+            + (task.recurrence_mode === 'completion' ? '완료 후 반복 예상 · ' : '반복 예정 · ') + date.month + '월 ' + date.day + '일'}
         </Txt>
       </View>
     </Pressable>
@@ -435,7 +435,7 @@ function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected,
       </View>
       <View style={[styles.monthBar, { borderTopColor: colors.border }]}>
         <Txt variant="small" tone="muted" style={{ flex: 1 }}>
-          {selected ? '날짜를 다시 누르면 이번 달 전체 · + 는 이 날에 추가' : `${month.month}월 일정 ${total}개 · 좌우로 밀어 월 이동`}
+          {selected ? '날짜를 다시 누르면 이번 달 전체 · +로 이날에 추가' : `${month.month}월 일정 ${total}개 · 옆으로 밀어 달 이동`}
         </Txt>
         {selected ? <AddButton label={title(picked!)} onPress={() => onAdd(picked!)} /> : null}
       </View>
@@ -452,7 +452,7 @@ function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected,
             {entry.real.length ? <TaskList tasks={entry.real} hideDate /> : null}
             {entry.previews.map((task) => <Preview key={task.id} task={task} date={date} />)}
             {entry.real.length + entry.previews.length === 0 ? (
-              <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.sm }}>이 날은 할 일이 없습니다.</Txt>
+              <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.sm }}>이날은 할 일이 없습니다.</Txt>
             ) : null}
           </View>
         );

@@ -36,8 +36,8 @@ interface UpdateValue {
 }
 
 const messages: Record<UpdateFailure, string> = {
-  untrusted: '이 릴리스에는 설치 파일이 없습니다. 잠시 후 다시 확인해 주세요.',
-  download: '다운로드하지 못했습니다. 네트워크를 확인하고 다시 시도해 주세요.',
+  untrusted: '이 버전에는 설치 파일이 없습니다. 잠시 후 다시 확인해 주세요.',
+  download: '다운로드하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.',
   'wrong-app': '다른 앱의 설치 파일이어서 설치를 중단했습니다.',
   'wrong-signer': '서명이 현재 앱과 달라 덮어쓸 수 없습니다. 기존 앱을 삭제한 뒤 새로 설치해야 합니다.',
   'not-newer': '내려받은 파일이 현재 버전보다 새롭지 않습니다.',

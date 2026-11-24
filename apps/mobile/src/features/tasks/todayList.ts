@@ -188,7 +188,7 @@ export function buildShareText({ date, overdue, due, doneTitles, projectName }: 
     if (project) text += ' · ' + project;
     return text;
   };
-  const lines = [`${date.month}월 ${date.day}일 ${weekdayNames[date.dayOfWeek - 1]}요일 할 일`];
+  const lines = [`${date.month}월 ${date.day}일 (${weekdayNames[date.dayOfWeek - 1]}) 할 일`];
   for (const task of overdue) lines.push(line(task, true));
   for (const task of due) lines.push(line(task, false));
   if (doneTitles.length) {

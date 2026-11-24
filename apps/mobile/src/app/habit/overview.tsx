@@ -100,7 +100,7 @@ const MiniMonth = memo(function MiniMonth({ habit, logs, meta, cells, todayKey }
   });
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={`${habit.name}, 이 달 ${met}일 달성, 자세히 보기`}
+      accessibilityRole="button" accessibilityLabel={`${habit.name}, 이달 ${met}일 달성, 자세히 보기`}
       onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
       style={({ pressed }) => [styles.miniWrap, pressed && { opacity: 0.7 }]}>
       <Card style={styles.miniCard}>
@@ -164,7 +164,7 @@ export default function HabitOverview() {
 
   const sunday = days[6];
   const weekLabel = weekOffset === 0 ? '이번 주'
-    : `${monday.month}월 ${monday.day}일 – ${sunday.month === monday.month ? '' : sunday.month + '월 '}${sunday.day}일`;
+    : `${monday.month}월 ${monday.day}일 ~ ${sunday.month === monday.month ? '' : sunday.month + '월 '}${sunday.day}일`;
   const monthLabel = month.year === now.year ? `${month.month}월` : `${month.year}년 ${month.month}월`;
 
   return (

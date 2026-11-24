@@ -13,6 +13,7 @@ import {
   describeRecurrence, dueDate, dueMinutes, formatDue, formatDurationMinutes, formatTime, instantFor, type PlainDate, Temporal, today,
 } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import { analyzeTask, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { radius, space, type, useTheme } from '@/theme';
@@ -26,7 +27,7 @@ const PLACEHOLDER = '⁣';
 const timePresets: { minutes: number | null; label: string }[] = [
   { minutes: null, label: '종일' },
   { minutes: 9 * 60, label: '오전 9시' },
-  { minutes: 12 * 60, label: '오후 12시' },
+  { minutes: 12 * 60, label: '낮 12시' },
   { minutes: 15 * 60, label: '오후 3시' },
   { minutes: 18 * 60, label: '오후 6시' },
   { minutes: 21 * 60, label: '오후 9시' },
@@ -85,7 +86,7 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
       const { task: parsed, tokens } = analyzeTask({ text: when + ' ' + PLACEHOLDER, timezone: task.timezone });
       const leftover = parsed.title.replace(PLACEHOLDER, '').trim();
       if (leftover) return { error: `‘${leftover}’ 부분을 이해하지 못했습니다.` };
-      if (!parsed.due_at && !parsed.duration_minutes) return { error: '날짜, 시간 또는 소요시간을 찾지 못했습니다.' };
+      if (!parsed.due_at && !parsed.duration_minutes) return { error: '날짜나 시간, 소요 시간을 찾지 못했습니다.' };
 
       const hasDateToken = tokens.some((token) => token.kind === 'date');
       const hasTimeToken = tokens.some((token) => token.kind === 'time');
@@ -152,7 +153,7 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
     };
     actions.update(task.id, parsedText.patch);
     haptic.success();
-    showToast(`일정을 ‘${parsedText.label}’(으)로 변경했습니다.`, {
+    showToast(`일정을 ‘${parsedText.label}’${josa(parsedText.label, '으로/로')} 바꿨습니다.`, {
       actionLabel: '실행 취소',
       onAction: () => actions.update(task.id, prevPatch),
     });
@@ -240,7 +241,7 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
                       <Txt variant="smallStrong" tone="accent">{formatTime(minutes)}</Txt>
                     </Pressable>
                     <IconButton
-                      name="plus" label="15분 뒤로" size={14}
+                      name="plus" label="15분 미루기" size={14}
                       onPress={() => nudgeMinutes(15)}
                       style={{ backgroundColor: colors.surfaceMuted, width: 26, height: 26 }} />
                   </View>
@@ -256,7 +257,7 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
                   <Txt
                     variant="small" tone={typedMinutes !== null ? 'accent' : timeText.trim() ? 'danger' : 'muted'}
                     style={{ flex: 1 }} accessibilityLiveRegion="polite">
-                    {typedMinutes !== null ? formatTime(typedMinutes) : timeText.trim() ? '00:00–23:59 사이로 입력해 주세요' : '24시간 기준, 예: 1730'}
+                    {typedMinutes !== null ? formatTime(typedMinutes) : timeText.trim() ? '00:00~23:59 사이로 입력해 주세요' : '24시간 기준, 예: 1730'}
                   </Txt>
                   <Button label="확인" onPress={applyTypedTime} disabled={typedMinutes === null} style={{ minHeight: 42 }} />
                 </View>

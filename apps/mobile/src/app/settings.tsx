@@ -52,7 +52,7 @@ export default function Settings() {
             <LinkRow
               icon="sidebar" label="탭 바" href="/tab-bar"
               detail={hidden.length ? `탭 ${visibleTabs(tabBar).length}개 · ${hidden.length}개 숨김` : `탭 ${visibleTabs(tabBar).length}개`} />
-            <LinkRow icon="droplet" label="외관" href="/appearance" detail={`${MODE_LABELS[mode]} · ${accentPalette(accent).label}`} />
+            <LinkRow icon="droplet" label="테마" href="/appearance" detail={`${MODE_LABELS[mode]} · ${accentPalette(accent).label}`} />
           </Card>
         </Group>
 
@@ -62,7 +62,7 @@ export default function Settings() {
             options={[{ value: 'today', label: '오늘에 넣기', icon: 'sun' }, { value: 'none', label: '목록에만', icon: 'list' }]} />
           <Txt variant="small" tone="muted">
             {newTaskDate === 'today'
-              ? '날짜를 적지 않은 할 일도 오늘 탭에 바로 보입니다. AI로 추가한 할 일도 같습니다. 추가 창의 ‘오늘 ×’를 누르면 그 할 일만 날짜 없이 넣습니다.'
+              ? '날짜를 적지 않은 할 일도 오늘 탭에 바로 보입니다. AI로 추가한 할 일도 마찬가지입니다. 추가 창의 ‘오늘 ×’를 누르면 그 할 일만 날짜 없이 넣습니다.'
               : '날짜를 적지 않은 할 일은 목록 탭에만 들어갑니다. 오늘 탭에서 추가할 때는 오늘 날짜가 붙습니다.'}
           </Txt>
         </Group>
@@ -91,7 +91,7 @@ export default function Settings() {
 
         <Group title="계정">
           <Card style={styles.list}>
-            <Row icon="github" label="소스와 릴리스" detail={env.githubRepo} onPress={() => void Linking.openURL('https://github.com/' + env.githubRepo + '/releases')} />
+            <Row icon="github" label="버전 기록" detail={env.githubRepo} onPress={() => void Linking.openURL('https://github.com/' + env.githubRepo + '/releases')} />
             <Row icon="log-out" label="로그아웃" tone="danger" onPress={() => setConfirm(true)} />
           </Card>
         </Group>
@@ -99,7 +99,7 @@ export default function Settings() {
 
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="로그아웃할까요?">
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          이 기기에 저장된 데이터가 지워집니다. 아직 서버에 보내지 못한 오프라인 변경 사항이 있다면 함께 사라집니다.
+          이 기기에 저장된 내용을 지웁니다. 오프라인일 때 바꾼 내용이 아직 저장되지 않았다면 함께 사라집니다.
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button

@@ -97,7 +97,7 @@ test('buildShareText lists open tasks with time and list, then what was done', (
     projectName: (id) => ({ w: '회사', h: '집' } as Record<string, string>)[id],
   });
   assert.equal(text, [
-    '11월 23일 월요일 할 일',
+    '11월 23일 (월) 할 일',
     '☐ 보고서 마무리 (지연) · 회사',
     '☐ 운동 · 오후 3:00',
     '☐ 장보기 · 집',
@@ -112,6 +112,6 @@ test('buildShareText returns null when there is nothing to share, and omits the 
   assert.equal(buildShareText({ date, overdue: [], due: [], doneTitles: [], projectName: () => undefined }), null);
   assert.equal(
     buildShareText({ date, overdue: [], due: [makeTask('a')], doneTitles: [], projectName: () => undefined }),
-    '11월 23일 월요일 할 일\n☐ a',
+    '11월 23일 (월) 할 일\n☐ a',
   );
 });

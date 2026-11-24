@@ -152,11 +152,11 @@ export default function HabitDetail() {
         <Card style={{ paddingVertical: space.xs }}>
           {habit.archived_at ? (
             <Row
-              icon="rotate-ccw" label="보관 해제 (다시 활성화)" detail="습관 목록으로 복원"
+              icon="rotate-ccw" label="보관 해제" detail="습관 목록으로 되돌리기"
               onPress={() => {
                 haptic.success();
                 actions.unarchive(habit.id);
-                showToast(`‘${habit.name}’ 습관을 다시 활성화했습니다.`);
+                showToast(`‘${habit.name}’ 습관을 보관 해제했습니다.`);
                 router.back();
               }} />
           ) : (
@@ -205,7 +205,7 @@ export default function HabitDetail() {
       </Sheet>
 
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="습관을 삭제할까요?">
-        <Txt tone="muted" style={{ marginBottom: space.lg }}>모든 기록이 함께 지워지며 되돌릴 수 없습니다. 기록을 남기려면 보관을 선택하세요.</Txt>
+        <Txt tone="muted" style={{ marginBottom: space.lg }}>모든 기록이 함께 지워지고 되돌릴 수 없습니다. 기록을 남기려면 ‘보관하기’를 쓰세요.</Txt>
         <View style={{ gap: space.sm }}>
           <Button
             label="삭제" kind="danger"

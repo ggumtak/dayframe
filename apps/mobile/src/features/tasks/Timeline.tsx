@@ -134,7 +134,7 @@ function DraggableBlock({
   const shownStart = previewMinutes ?? start;
   const end = (shownStart + (task.duration_minutes ?? DEFAULT_BLOCK_MINUTES)) % 1440;
   const rangeLabel = task.duration_minutes
-    ? `${formatTime(shownStart)} – ${formatTime(end)} · ${formatDurationMinutes(task.duration_minutes)}`
+    ? `${formatTime(shownStart)} ~ ${formatTime(end)} · ${formatDurationMinutes(task.duration_minutes)}`
     : formatTime(shownStart);
 
   return (
@@ -152,7 +152,7 @@ function DraggableBlock({
         ]}>
         <Pressable
           accessibilityRole="button" accessibilityLabel={rangeLabel + ' ' + task.title}
-          accessibilityHint={onRescheduleTime ? '길게 눌러 위아래로 시간 이동' : undefined}
+          accessibilityHint={onRescheduleTime ? '길게 눌러 위아래로 끌면 시간이 바뀝니다' : undefined}
           onPress={() => router.push({ pathname: '/task/[id]', params: { id: task.id } })}
           style={[
             styles.blockInner,
@@ -360,8 +360,8 @@ export function Timeline({
       <Sheet visible={!!picked} onClose={() => setPicked(null)} title="집중 기록">
         {picked ? (
           <View style={{ gap: space.sm }}>
-            <Txt tone="muted">{formatTime(picked.start) + ' – ' + formatTime(picked.end) + ' · ' + (picked.spent < 1 ? '1분 미만' : picked.spent + '분')}</Txt>
-            <Txt variant="small" tone="faint" style={{ marginBottom: space.md }}>타임라인의 파란 막대는 끝낸 집중 시간입니다. 시험으로 켠 기록이라면 지워도 됩니다.</Txt>
+            <Txt tone="muted">{formatTime(picked.start) + ' ~ ' + formatTime(picked.end) + ' · ' + (picked.spent < 1 ? '1분 미만' : picked.spent + '분')}</Txt>
+            <Txt variant="small" tone="faint" style={{ marginBottom: space.md }}>타임라인의 막대는 마친 집중 시간입니다. 잠깐 시험해 본 기록이라면 지워도 됩니다.</Txt>
             <Button
               label="이 기록 삭제" kind="danger" icon="trash-2"
               onPress={() => {

@@ -135,7 +135,7 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
                         habitId: habit.id, date: targetDate, status: met ? null : 'completed', count: met ? 0 : weekly ? 1 : habit.target_count,
                       });
                       if (!item.equals(day)) {
-                        showToast(`${item.month}월 ${item.day}일 기록을 ${met ? '지웠습니다.' : '체크했습니다.'}`, {
+                        showToast(`${item.month}월 ${item.day}일 기록을 ${met ? '지웠습니다.' : '남겼습니다.'}`, {
                           actionLabel: '실행 취소',
                           onAction: () => actions.setLog({ habitId: habit.id, date: targetDate, status: prevStatus, count: prevCount }),
                         });
@@ -153,14 +153,14 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
             </View>
             <Txt variant="small" tone={strength.missedYesterday ? 'default' : 'muted'} style={strength.missedYesterday ? { color: colors.warning } : undefined}>
               {strength.missedYesterday
-                ? '어제 놓쳤어요 · 이틀 연속 빠지지 않게 오늘 체크!'
+                ? '어제 놓침 · 이틀 연속 빠지지 않게 오늘은 꼭'
                 : (weekly ? `이번 주 ${progress}/${habit.target_count}회` : habit.target_count > 1 ? `오늘 ${progress}/${habit.target_count}회` : done ? '오늘 완료' : '오늘 아직')
                   + (todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : '')}
             </Txt>
           </View>
           <CheckIn
             progress={progress} target={habit.target_count} done={done} onPress={checkIn} onLongPress={() => setMenu(true)}
-            label={habit.name + (done ? ' 완료 취소' : ' 체크')} />
+            label={habit.name + (done ? ' 기록 취소' : ' 기록')} />
         </Card>
       </Pressable>
       <Sheet visible={menu} onClose={() => setMenu(false)} title={habit.name}>

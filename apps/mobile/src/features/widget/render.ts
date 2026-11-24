@@ -138,7 +138,7 @@ async function checkInHabit(id: string): Promise<void> {
     externalChange();
   } catch {
     // Put the figures back so the widget never shows a check the server does not have.
-    await update((current) => ({ ...current, notice: '연결이 없어 기록하지 못했습니다', habits: current.habits?.map((item) => (item.id === id ? habit : item)) }));
+    await update((current) => ({ ...current, notice: '오프라인이라 기록하지 못했습니다', habits: current.habits?.map((item) => (item.id === id ? habit : item)) }));
   }
 }
 
@@ -178,7 +178,7 @@ async function startFocus(minutes: number): Promise<void> {
       await start();
     }
   } catch (error) {
-    await update((current) => ({ ...current, notice: error instanceof ApiFailure ? '시작하지 못했습니다. 앱에서 확인해 주세요' : '연결이 없어 시작하지 못했습니다' }));
+    await update((current) => ({ ...current, notice: error instanceof ApiFailure ? '시작하지 못했습니다. 앱에서 확인해 주세요' : '오프라인이라 시작하지 못했습니다' }));
     return;
   }
   await update((current) => ({
@@ -198,7 +198,7 @@ async function stopFocus(id: string): Promise<void> {
       ? { status: 'completed', ended_at: new Date(end).toISOString() }
       : { status: 'cancelled', ended_at: new Date().toISOString() });
   } catch {
-    await update((current) => ({ ...current, notice: '연결이 없어 멈추지 못했습니다' }));
+    await update((current) => ({ ...current, notice: '오프라인이라 멈추지 못했습니다' }));
     return;
   }
   await cancelAlert('focus');
@@ -218,7 +218,7 @@ export const widgetTaskHandler: WidgetTaskHandler = async ({ widgetInfo, widgetA
       const before = await readSnapshot();
       renderWidget(drawWidget(name, { ...before, notice: null, tasks: before.tasks.filter((task) => task.id !== id) }));
       const outcome = await completeOccurrence(id, occurrence);
-      if (outcome.status === 'failed') await update((current) => ({ ...current, notice: '연결이 없어 완료하지 못했습니다' }));
+      if (outcome.status === 'failed') await update((current) => ({ ...current, notice: '오프라인이라 완료하지 못했습니다' }));
       else {
         await widgetTaskChanged(id, outcome.task);
         await cancelOccurrence(id, occurrence);

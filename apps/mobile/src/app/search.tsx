@@ -12,6 +12,7 @@ import { TaskList } from '@/features/tasks/TaskList';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, dueDate, formatDate, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
+import { josa } from '@/lib/josa';
 import { searchTasks } from '@/lib/search';
 import type { Tag } from '@/lib/shared';
 import { isStaleTask } from '@/lib/smart';
@@ -26,7 +27,7 @@ const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
   overdue: '지연된 할 일',
   today: '오늘 할 일',
   week: '이번 주 예정',
-  p1: '우선순위 P1',
+  p1: '우선순위가 가장 높은 할 일',
   repeating: '반복 할 일',
   checklist: '하위 작업이 있는 체크리스트',
   stale: '14일 이상 오래된 할 일',
@@ -158,7 +159,7 @@ export default function Search() {
     }
     haptic.success();
     tagActions.rename(renamingTag.id, trimmed);
-    showToast(`태그 이름을 @${trimmed}(으)로 바꿨습니다.`);
+    showToast(`태그 이름을 @${trimmed}${josa(trimmed, '으로/로')} 바꿨습니다.`);
     setRenamingTag(null);
   };
 
@@ -172,7 +173,7 @@ export default function Search() {
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={() => recordRecent(query)}
-            autoFocus placeholder={quickFilter ? `${filterLabels[quickFilter]} 안에서 검색...` : '제목, 초성(ㅈㅂㄱ), #프로젝트, @태그, p1'}
+            autoFocus placeholder={quickFilter ? `${filterLabels[quickFilter]} 안에서 검색...` : '제목, 초성(ㅈㅂㄱ), #목록, @태그, p1'}
             accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
             style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 15, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
@@ -200,7 +201,7 @@ export default function Search() {
               onPress={() => setIncludeCompleted((prev) => !prev)} />
           ) : null}
           {quickFilter && !query.trim() ? (
-            <Txt variant="caption" tone="faint">검색어나 #프로젝트를 추가로 입력해 좁힐 수 있습니다</Txt>
+            <Txt variant="caption" tone="faint">검색어나 #목록을 더 입력해 좁힐 수 있습니다</Txt>
           ) : null}
         </View>
       ) : null}
@@ -226,7 +227,7 @@ export default function Search() {
               ) : null}
 
               <View style={{ gap: space.sm }}>
-                <Txt variant="section" tone="muted">스마트 필터</Txt>
+                <Txt variant="section" tone="muted">빠른 필터</Txt>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                   <Chip
                     icon="alert-circle" label={`지연됨${counts.overdue ? ' ' + counts.overdue : ''}`}
@@ -238,7 +239,7 @@ export default function Search() {
                     icon="calendar" label={`이번 주${counts.week ? ' ' + counts.week : ''}`}
                     onPress={() => setQuickFilter('week')} />
                   <Chip
-                    icon="flag" label={`P1 긴급${counts.p1 ? ' ' + counts.p1 : ''}`}
+                    icon="flag" label={`가장 높음${counts.p1 ? ' ' + counts.p1 : ''}`}
                     color={counts.p1 ? colors.danger : undefined} onPress={() => setQuickFilter('p1')} />
                   <Chip
                     icon="repeat" label={`반복${counts.repeating ? ' ' + counts.repeating : ''}`}
@@ -259,7 +260,7 @@ export default function Search() {
 
               {projects?.length ? (
                 <View style={{ gap: space.sm }}>
-                  <Txt variant="section" tone="muted">프로젝트별 검색</Txt>
+                  <Txt variant="section" tone="muted">목록별 보기</Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                     {projects.map((project) => (
                       <Chip
@@ -333,7 +334,7 @@ export default function Search() {
                           onPress={() => {
                             haptic.tap();
                             taskActions.reopen(task);
-                            showToast(`‘${task.title}’을 다시 열었습니다.`);
+                            showToast(`‘${task.title}’${josa(task.title, '을/를')} 다시 열었습니다.`);
                           }}
                           label={task.title + ' 다시 열기'} />
                         <View style={[styles.completedBody, { borderBottomColor: colors.border }]}>
@@ -350,9 +351,9 @@ export default function Search() {
             </>
           ) : (
             <EmptyState
-              icon="search" title={quickFilter && !query.trim() ? `${filterLabels[quickFilter]}이 없습니다` : '찾는 할 일이 없습니다'}
+              icon="search" title={quickFilter && !query.trim() ? `${filterLabels[quickFilter]}${josa(filterLabels[quickFilter], '이/가')} 없습니다` : '찾는 할 일이 없습니다'}
               message={query.trim()
-                ? (includeCompleted ? '다른 키워드나 초성으로 검색해 보세요.' : '위의 ‘완료한 일 포함’을 켜면 완료 기록까지 함께 찾습니다.')
+                ? (includeCompleted ? '다른 검색어나 초성으로 찾아보세요.' : '위의 ‘완료한 일 포함’을 켜면 완료 기록까지 함께 찾습니다.')
                 : undefined}
               action={quickFilter && !query.trim() ? (
                 <Button label="필터 해제" kind="secondary" onPress={() => setQuickFilter(null)} />
@@ -373,7 +374,7 @@ export default function Search() {
             setManagingTag(null);
           }} />
         <Row
-          icon="trash-2" label="태그 삭제" tone="danger" detail="할 일은 유지됩니다"
+          icon="trash-2" label="태그 삭제" tone="danger" detail="할 일은 남습니다"
           onPress={() => {
             if (!managingTag) return;
             const removed = managingTag.name;
