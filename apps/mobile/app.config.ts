@@ -8,7 +8,7 @@ const config: ExpoConfig = {
   name: 'Dayframe',
   slug: 'dayframe',
   version,
-  orientation: 'portrait',
+  orientation: 'default',
   icon: './assets/images/icon.png',
   scheme: 'dayframe',
   userInterfaceStyle: 'automatic',
