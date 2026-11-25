@@ -5,7 +5,7 @@ import '@/data/habits';
 import '@/data/tasks';
 
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationTheme } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider as NavigationTheme, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -17,6 +17,7 @@ import { ToastHost } from '@/components/ToastHost';
 import { EmptyState } from '@/components/ui';
 import { persistOptions, queryClient, resumeWrites } from '@/data/client';
 import { SessionProvider, useSession } from '@/data/session';
+import { FocusRuntimeProvider, MINI_BAR_HEIGHT, useFocusStatus } from '@/features/focus/runtime';
 import { CommandPalette, GlobalShortcuts, KeyboardProvider, ShortcutHelpSheet } from '@/features/keyboard';
 import { QuickAddProvider, TAB_BAR_HEIGHT, useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BackgroundSync } from '@/features/reminders/BackgroundSync';
@@ -43,6 +44,7 @@ function Routes({ signedIn }: { signedIn: boolean }) {
         <Stack.Screen name="habit/overview" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="appearance" />
+        <Stack.Screen name="personalization" options={{ title: '맞춤 설정' }} />
         <Stack.Screen name="tab-bar" />
         <Stack.Screen name="ai" />
         <Stack.Screen name="ai-key" />
@@ -65,12 +67,20 @@ function Routes({ signedIn }: { signedIn: boolean }) {
 
 function SignedInToast() {
   const { fabHidden } = useQuickAdd();
+  const { isActive } = useFocusStatus();
+  const segments = useSegments() as readonly string[];
   const { column } = useLayout();
-  // Lifts above BatchBar when multi-select hides the FAB, and leaves room for the FAB otherwise; on a tablet it
-  // stays inside the centred column.
+  const inTabs = segments[0] === '(tabs)';
+  const onFocusTab = inTabs && segments[1] === 'focus';
+  const miniBarOffset = inTabs && isActive && !onFocusTab ? MINI_BAR_HEIGHT : 0;
+  // Lifts above BatchBar when multi-select hides the FAB, and leaves room for the FAB and focus mini-bar otherwise;
+  // on a tablet it stays inside the centred column.
   return (
     <ToastHost
-      bottomOffset={fabHidden ? TAB_BAR_HEIGHT + 92 : TAB_BAR_HEIGHT} rightInset={column.inset + (fabHidden ? 0 : 70)} leftInset={column.inset} />
+      bottomOffset={(fabHidden ? TAB_BAR_HEIGHT + 92 : TAB_BAR_HEIGHT) + miniBarOffset}
+      rightInset={column.inset + (fabHidden ? 0 : 70)}
+      leftInset={column.inset}
+    />
   );
 }
 
@@ -103,12 +113,14 @@ function App() {
         {signedIn ? (
           <KeyboardProvider>
             <QuickAddProvider>
-              <Routes signedIn />
-              <BackgroundSync />
-              <SignedInToast />
-              <GlobalShortcuts />
-              <CommandPalette />
-              <ShortcutHelpSheet />
+              <FocusRuntimeProvider>
+                <Routes signedIn />
+                <BackgroundSync />
+                <SignedInToast />
+                <GlobalShortcuts />
+                <CommandPalette />
+                <ShortcutHelpSheet />
+              </FocusRuntimeProvider>
             </QuickAddProvider>
           </KeyboardProvider>
         ) : (

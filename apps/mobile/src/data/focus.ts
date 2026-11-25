@@ -1,6 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
-import { api } from '@/lib/api';
+import { api, ApiFailure } from '@/lib/api';
 import { uuid } from '@/lib/ids';
 import type { FocusSession } from '@/lib/shared';
 
@@ -21,7 +21,17 @@ export interface StartFocusVars {
 
 queryClient.setMutationDefaults(writes.startFocus, {
   scope,
-  mutationFn: (vars: StartFocusVars) => api.startFocus(vars),
+  mutationFn: async (vars: StartFocusVars) => {
+    try {
+      return await api.startFocus(vars);
+    } catch (error) {
+      // The ID already exists when an earlier attempt reached the server but its reply was lost.
+      if (!(error instanceof ApiFailure && error.status === 409)) throw error;
+      const existing = (await api.focusSessions()).find((session) => session.id === vars.id);
+      if (!existing) throw error;
+      return existing;
+    }
+  },
   onMutate: async (vars: StartFocusVars) => {
     await hold(keys.focus);
     const draft: FocusSession = {
@@ -30,6 +40,7 @@ queryClient.setMutationDefaults(writes.startFocus, {
     };
     editSessions((sessions) => [draft, ...sessions.filter((session) => session.id !== vars.id)]);
   },
+  onSuccess: (session: FocusSession) => editSessions((sessions) => sessions.map((item) => (item.id === session.id ? session : item))),
   onSettled: () => settle(keys.focus),
 });
 
@@ -42,6 +53,16 @@ queryClient.setMutationDefaults(writes.finishFocus, {
     await hold(keys.focus);
     editSessions((sessions) => sessions.map((session) => (session.id === vars.id
       ? { ...session, status: vars.status, ended_at: vars.ended_at } : session)));
+  },
+  onSettled: () => settle(keys.focus),
+});
+
+queryClient.setMutationDefaults(writes.deleteFocus, {
+  scope,
+  mutationFn: (id: string) => api.deleteFocus(id),
+  onMutate: async (id: string) => {
+    await hold(keys.focus);
+    queryClient.setQueryData<FocusSession[]>(keys.focus, (sessions) => sessions?.filter((session) => session.id !== id));
   },
   onSettled: () => settle(keys.focus),
 });
@@ -60,13 +81,5 @@ export function useFocusActions() {
 
 /** Removes a focus record, such as a test round, from the timeline and the day's totals. */
 export function useDeleteFocus() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: api.deleteFocus,
-    onMutate: async (id: string) => {
-      await hold(keys.focus);
-      client.setQueryData<FocusSession[]>(keys.focus, (sessions) => sessions?.filter((session) => session.id !== id));
-    },
-    onSettled: () => settle(keys.focus),
-  });
+  return useMutation<void, Error, string>({ mutationKey: writes.deleteFocus, scope });
 }

@@ -5,7 +5,8 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { Task } from '../../lib/shared';
 import {
-  buildShareText, createTodayReuser, deriveToday, groupByPriority, groupByProject, groupByTimeOfDay, INBOX_GROUP, splitToday,
+  buildShareText, createTodayReuser, deriveToday, groupByPriority, groupByProject, groupByTimeOfDay, INBOX_GROUP,
+  partitionDailyFocus, planAutoTimeSlots, splitToday,
 } from './todayList.ts';
 
 const nowMs = Date.parse('2026-11-23T03:00:00Z'); // Monday 2026-11-23 12:00 KST
@@ -137,4 +138,65 @@ test('groupByTimeOfDay and groupByPriority bucket Today tasks cleanly', () => {
     ['! 보통', [], ['pm']],
     ['우선순위 없음', [], ['eve']],
   ]);
+});
+
+test('splitToday respects dayStartHour for night-owl users past midnight', () => {
+  // 2026-11-23T16:30:00Z is 2026-11-24 01:30 KST.
+  const lateNightMs = Date.parse('2026-11-23T16:30:00Z');
+  const nov23 = makeTask('nov23', { due_at: '2026-11-22T15:00:00Z', all_day: true }); // 11-23 KST
+  const nov24 = makeTask('nov24', { due_at: '2026-11-23T15:00:00Z', all_day: true }); // 11-24 KST
+
+  // With dayStartHour=0, 11-23 is overdue and 11-24 is today.
+  const normal = splitToday([nov23, nov24], byDue, lateNightMs, 0);
+  assert.deepEqual(normal.overdue.map((t) => t.id), ['nov23']);
+  assert.deepEqual(normal.due.map((t) => t.id), ['nov24']);
+
+  // With dayStartHour=3, 01:30 KST still counts as 11-23, so nov23 is today and nov24 is upcoming.
+  const nightOwl = splitToday([nov23, nov24], byDue, lateNightMs, 3);
+  assert.deepEqual(nightOwl.overdue.map((t) => t.id), []);
+  assert.deepEqual(nightOwl.due.map((t) => t.id), ['nov23']);
+});
+
+test('partitionDailyFocus isolates MIT and Evening tasks without duplicating them in daytime lists', () => {
+  const o1 = makeTask('o1');
+  const o2 = makeTask('o2');
+  const d1 = makeTask('d1');
+  const d2 = makeTask('d2');
+  const d3 = makeTask('d3');
+
+  const result = partitionDailyFocus([o1, o2], [d1, d2, d3], ['d2', 'o1', 'missing'], ['o1', 'd3']);
+  assert.deepEqual(result.mitTasks.map((t) => t.id), ['d2', 'o1']);
+  // o1 is already pinned as MIT so it is not duplicated in Evening.
+  assert.deepEqual(result.eveningTasks.map((t) => t.id), ['d3']);
+  assert.deepEqual(result.restOverdue.map((t) => t.id), ['o2']);
+  assert.deepEqual(result.restDue.map((t) => t.id), ['d1']);
+});
+
+test('planAutoTimeSlots packs unscheduled tasks by priority around existing timed blocks', () => {
+  const low = makeTask('low', { priority: 4, duration_minutes: 30, position: 1024 });
+  const high = makeTask('high', { priority: 1, duration_minutes: 60, position: 2048 });
+  const mid = makeTask('mid', { priority: 2, duration_minutes: null, position: 3072 });
+
+  // Now is 09:40 (580); next 30-min slot is 10:00 (600). Block exists 10:00–11:00 (600..660).
+  const plan = planAutoTimeSlots([low, high, mid], [{ start: 600, duration: 60 }], 580);
+  assert.deepEqual(
+    plan.map((item) => [item.task.id, item.minutes, item.duration]),
+    [
+      ['high', 660, 60], // 11:00–12:00
+      ['mid', 720, 30], // 12:00–12:30
+      ['low', 750, 30], // 12:30–13:00
+    ],
+  );
+});
+
+test('buildShareText supports 24h timeFormat', () => {
+  const text = buildShareText({
+    date: Temporal.PlainDate.from('2026-11-23'),
+    overdue: [],
+    due: [makeTask('운동', { due_at: '2026-11-23T06:00:00Z' })], // 15:00 KST
+    doneTitles: [],
+    projectName: () => undefined,
+    timeFormat: '24h',
+  });
+  assert.equal(text, '11월 23일 (월) 할 일\n☐ 운동 · 15:00');
 });

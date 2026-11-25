@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 
@@ -7,13 +7,28 @@ import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 export default function Add() {
   const quickAdd = useQuickAdd();
   const params = useLocalSearchParams<{ text?: string; projectId?: string; dueToday?: string }>();
+  const quickAddRef = useRef(quickAdd);
+  useEffect(() => {
+    quickAddRef.current = quickAdd;
+  }, [quickAdd]);
+
   useEffect(() => {
     router.replace('/');
-    quickAdd.open({
-      dueToday: params.dueToday !== '0',
-      ...(params.projectId ? { projectId: params.projectId } : {}),
-      ...(params.text ? { initialText: params.text } : {}),
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const raf = requestAnimationFrame(() => {
+      timer = setTimeout(() => {
+        timer = null;
+        quickAddRef.current.open({
+          dueToday: params.dueToday !== '0',
+          ...(params.projectId ? { projectId: params.projectId } : {}),
+          ...(params.text ? { initialText: params.text } : {}),
+        });
+      }, 120);
     });
-  }, [quickAdd, params.text, params.projectId, params.dueToday]);
+    return () => {
+      cancelAnimationFrame(raf);
+      if (timer) clearTimeout(timer);
+    };
+  }, [params.text, params.projectId, params.dueToday]);
   return null;
 }

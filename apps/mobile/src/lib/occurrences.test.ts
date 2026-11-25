@@ -6,15 +6,18 @@ import { Temporal } from '@js-temporal/polyfill';
 import { countByDate, datePhrase, occurrenceDates } from './occurrences.ts';
 
 // A stand-in for the backend's recurrence engine (tested in the root suite), kept local so this app test
-// needs only the app's own packages: weekly rules step to the next listed weekday, monthly ones by a month.
+// needs only the app's own packages: daily, weekly, and monthly rules step cleanly with optional INTERVAL.
 const nextOccurrence = (rule: string, timezone: string, _anchor: string, after: Temporal.Instant) => {
   const at = after.toZonedDateTimeISO(timezone);
-  if (rule.startsWith('FREQ=MONTHLY')) return at.add({ months: 1 }).toInstant().toString();
+  const interval = Number(/INTERVAL=(\d+)/.exec(rule)?.[1] ?? 1);
+  if (rule.startsWith('FREQ=DAILY')) return at.add({ days: interval }).toInstant().toString();
+  if (rule.startsWith('FREQ=MONTHLY')) return at.add({ months: interval }).toInstant().toString();
   const days = /BYDAY=([A-Z,]+)/.exec(rule)?.[1].split(',');
   if (!rule.startsWith('FREQ=WEEKLY') || !days) throw new Error('unsupported rule');
   const names = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
-  for (let step = 1; step <= 7; step++) {
+  for (let step = 1; step <= interval * 7 + 7; step++) {
     const next = at.add({ days: step });
+    if (interval > 1 && Math.floor((step + at.dayOfWeek - 1) / 7) % interval !== 0) continue;
     if (days.includes(names[next.dayOfWeek - 1])) return next.toInstant().toString();
   }
   throw new Error('no weekday');
@@ -42,6 +45,40 @@ test('an occurrence moved before its slot does not show that slot again', () => 
   const moved = { ...base, due_at: '2026-11-24T10:00:00Z', occurrence_at: '2026-11-25T10:00:00Z', recurrence_rule: 'FREQ=WEEKLY;BYDAY=MO,WE' };
   assert.deepEqual(occurrenceDates(moved, ...nov, nextOccurrence).map(String), ['2026-11-24', '2026-11-30']);
   assert.deepEqual(occurrenceDates({ ...moved, occurrence_at: null }, ...nov, nextOccurrence).map(String), ['2026-11-24', '2026-11-25', '2026-11-30']);
+});
+
+test('daily and weekly repeats fast-forward into distant months and span a full 365-day year', () => {
+  const daily = { ...base, due_at: '2026-11-24T00:00:00Z', recurrence_rule: 'FREQ=DAILY' };
+  const fullYear = occurrenceDates(
+    daily,
+    Temporal.PlainDate.from('2027-01-01'),
+    Temporal.PlainDate.from('2027-12-31'),
+    nextOccurrence,
+  );
+  assert.equal(fullYear.length, 365);
+  assert.equal(String(fullYear[0]), '2027-01-01');
+  assert.equal(String(fullYear[364]), '2027-12-31');
+
+  // Distant month view (July 2027, 7+ months after due_at) preserves exact interval phase.
+  const everyThreeDays = { ...base, due_at: '2026-11-24T00:00:00Z', recurrence_rule: 'FREQ=DAILY;INTERVAL=3' };
+  const july = occurrenceDates(
+    everyThreeDays,
+    Temporal.PlainDate.from('2027-07-01'),
+    Temporal.PlainDate.from('2027-07-10'),
+    nextOccurrence,
+  );
+  // 2026-11-24 -> 2027-07-01 is 219 days (219 % 3 === 0), so 2027-07-01, 04, 07, 10 match.
+  assert.deepEqual(july.map(String), ['2027-07-01', '2027-07-04', '2027-07-07', '2027-07-10']);
+
+  // Weekly rule far in the future still lands on the right weekdays.
+  const weekly = { ...base, due_at: '2026-11-23T10:00:00Z', recurrence_rule: 'FREQ=WEEKLY;BYDAY=MO,WE,FR' };
+  const distantWeek = occurrenceDates(
+    weekly,
+    Temporal.PlainDate.from('2027-09-01'),
+    Temporal.PlainDate.from('2027-09-07'),
+    nextOccurrence,
+  );
+  assert.deepEqual(distantWeek.map(String), ['2027-09-01', '2027-09-03', '2027-09-06']);
 });
 
 test('the entry bar is prefilled with words the parser reads back as that date', () => {

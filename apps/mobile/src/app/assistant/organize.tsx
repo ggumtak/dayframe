@@ -15,9 +15,19 @@ import { PRIORITY_LABEL } from '@/features/ai/labels';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { parseTimeInput, timeInputText } from '@/features/tasks/timeInput';
 import { deviceTimeZone, formatDate, formatDurationMinutes, formatTime, instantFor, Temporal, today } from '@/lib/dates';
+import type { Priority } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityMark } from '@/features/tasks/priority';
 import { fontFamily, radius, space, useTheme } from '@/theme';
+
+const PRIORITY_OPTIONS: readonly { value: Priority; label: string }[] = [
+  { value: 4, label: '없음' },
+  { value: 3, label: '! 보통' },
+  { value: 2, label: '!! 높음' },
+  { value: 1, label: '!!! 가장 높음' },
+];
+
+const DURATION_PRESETS: readonly number[] = [15, 30, 45, 60, 90, 120];
 
 interface Draft extends OrganizedTask {
   key: number;
@@ -48,8 +58,8 @@ function DraftRow({ draft, now, onToggle, onEdit }: { draft: Draft; now: Tempora
           ) : null}
           <Txt variant="caption" tone="muted">{meta.join(' · ')}</Txt>
         </View>
-        {draft.subtasks.map((sub) => (
-          <View key={sub} style={styles.sub}>
+        {draft.subtasks.map((sub, idx) => (
+          <View key={`${sub}-${idx}`} style={styles.sub}>
             <View style={[styles.subDot, { borderColor: colors.textFaint }]} />
             <Txt variant="small" tone="muted" style={{ flex: 1 }}>{sub}</Txt>
           </View>
@@ -60,35 +70,39 @@ function DraftRow({ draft, now, onToggle, onEdit }: { draft: Draft; now: Tempora
   );
 }
 
-function EditSheet({ draft, lists, now, onClose, onSave }: {
-  draft: Draft | null; lists: string[]; now: Temporal.PlainDate; onClose: () => void; onSave: (draft: Draft) => void;
+function EditSheetForm({ draft, lists, now, onClose, onSave }: {
+  draft: Draft; lists: string[]; now: Temporal.PlainDate; onClose: () => void; onSave: (draft: Draft) => void;
 }) {
   const { colors } = useTheme();
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState<string | null>(null);
-  const [time, setTime] = useState('');
-  const [list, setList] = useState<string | null>(null);
-  const [opened, setOpened] = useState<number | null>(null);
-  if (draft && opened !== draft.key) {
-    setOpened(draft.key);
-    setTitle(draft.title);
-    setDate(draft.date);
-    setTime(draft.minutes !== null ? timeInputText(draft.minutes) : '');
-    setList(draft.list);
-  }
+  const [title, setTitle] = useState(draft.title);
+  const [date, setDate] = useState<string | null>(draft.date);
+  const [time, setTime] = useState(draft.minutes !== null ? timeInputText(draft.minutes) : '');
+  const [list, setList] = useState<string | null>(draft.list);
+  const [priority, setPriority] = useState<Priority>(draft.priority);
+  const [durationMinutes, setDurationMinutes] = useState<number | null>(draft.durationMinutes);
+
   const minutes = time.trim() ? parseTimeInput(time) : null;
   const timeBad = !!time.trim() && minutes === null;
   const days = [0, 1, 2, 3, 4, 5, 6].map((offset) => now.add({ days: offset }));
   const custom = date && !days.some((day) => day.toString() === date) ? parseIsoDate(date) : null;
+  const customDuration = durationMinutes !== null && !DURATION_PRESETS.includes(durationMinutes) ? durationMinutes : null;
 
   const save = () => {
-    if (!draft || !title.trim() || timeBad) return;
-    onSave({ ...draft, title: title.trim(), date: minutes !== null && !date ? now.toString() : date, minutes, list });
+    if (!title.trim() || timeBad) return;
+    onSave({
+      ...draft,
+      title: title.trim(),
+      date: minutes !== null && !date ? now.toString() : date,
+      minutes,
+      list,
+      priority,
+      durationMinutes,
+    });
     onClose();
   };
 
   return (
-    <Sheet visible={!!draft} onClose={onClose} title="할 일 수정">
+    <>
       <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 520 }} contentContainerStyle={{ gap: space.md, paddingBottom: space.sm }}>
         <TextInput
           value={title} onChangeText={setTitle} accessibilityLabel="제목" placeholder="할 일 제목" placeholderTextColor={colors.textFaint}
@@ -107,6 +121,26 @@ function EditSheet({ draft, lists, now, onClose, onSave }: {
           placeholderTextColor={colors.textFaint} keyboardType="numbers-and-punctuation"
           style={[styles.input, { backgroundColor: colors.surfaceMuted, color: colors.text, fontFamily, borderColor: timeBad ? colors.danger : 'transparent' }]} />
         {timeBad ? <Txt variant="small" tone="danger">시간 형식이 올바르지 않습니다. 19:00처럼 입력해 주세요.</Txt> : null}
+        <Txt variant="smallStrong" tone="muted">우선순위</Txt>
+        <View style={styles.chips}>
+          {PRIORITY_OPTIONS.map((option) => (
+            <Chip key={option.value} label={option.label} selected={priority === option.value} onPress={() => setPriority(option.value)} />
+          ))}
+        </View>
+        <Txt variant="smallStrong" tone="muted">소요 시간</Txt>
+        <View style={styles.chips}>
+          <Chip label="없음" selected={durationMinutes === null} onPress={() => setDurationMinutes(null)} />
+          {customDuration !== null ? (
+            <Chip label={formatDurationMinutes(customDuration)} selected onPress={() => {}} />
+          ) : null}
+          {DURATION_PRESETS.map((preset) => (
+            <Chip
+              key={preset}
+              label={formatDurationMinutes(preset)}
+              selected={durationMinutes === preset}
+              onPress={() => setDurationMinutes(preset)} />
+          ))}
+        </View>
         <Txt variant="smallStrong" tone="muted">목록</Txt>
         <View style={styles.chips}>
           <Chip label="미분류" selected={!list} onPress={() => setList(null)} />
@@ -117,6 +151,16 @@ function EditSheet({ draft, lists, now, onClose, onSave }: {
         <Button label="취소" kind="secondary" onPress={onClose} style={{ flex: 1 }} />
         <Button label="저장" onPress={save} disabled={!title.trim() || timeBad} style={{ flex: 2 }} />
       </View>
+    </>
+  );
+}
+
+function EditSheet({ draft, lists, now, onClose, onSave }: {
+  draft: Draft | null; lists: string[]; now: Temporal.PlainDate; onClose: () => void; onSave: (draft: Draft) => void;
+}) {
+  return (
+    <Sheet visible={!!draft} onClose={onClose} title="할 일 수정">
+      {draft ? <EditSheetForm key={draft.key} draft={draft} lists={lists} now={now} onClose={onClose} onSave={onSave} /> : null}
     </Sheet>
   );
 }

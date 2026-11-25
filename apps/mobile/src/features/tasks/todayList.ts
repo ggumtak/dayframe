@@ -53,8 +53,15 @@ function dueParts(task: Task): { date: Temporal.PlainDate | null; minutes: numbe
   return parts;
 }
 
-export function splitToday(tasks: readonly Task[], compare: (a: Task, b: Task) => number, nowMs: number): { overdue: Task[]; due: Task[] } {
+export function splitToday(
+  tasks: readonly Task[],
+  compare: (a: Task, b: Task) => number,
+  nowMs: number,
+  dayStartHour = 0,
+): { overdue: Task[]; due: Task[] } {
   const now = Temporal.Instant.fromEpochMilliseconds(nowMs);
+  const shift = Math.max(0, Math.min(5, Math.round(dayStartHour)));
+  const effectiveNow = shift > 0 ? now.subtract({ hours: shift }) : now;
   const todayByZone = new Map<string, Temporal.PlainDate>();
   const buckets = new Map<string, 'overdue' | 'today'>();
   for (const task of tasks) {
@@ -63,7 +70,7 @@ export function splitToday(tasks: readonly Task[], compare: (a: Task, b: Task) =
     let todayDate = todayByZone.get(task.timezone);
     if (!todayDate) {
       try {
-        todayDate = now.toZonedDateTimeISO(task.timezone).toPlainDate();
+        todayDate = effectiveNow.toZonedDateTimeISO(task.timezone).toPlainDate();
       } catch {
         continue;
       }
@@ -173,18 +180,124 @@ export function groupByPriority(overdue: readonly Task[], due: readonly Task[]):
   return groups;
 }
 
+export function buildTodayGroups(
+  overdue: readonly Task[],
+  due: readonly Task[],
+  projectIds: readonly string[],
+  grouping: TodayGrouping = 'project',
+): TodayGroup[] {
+  if (grouping === 'time') return groupByTimeOfDay(overdue, due);
+  if (grouping === 'priority') return groupByPriority(overdue, due);
+  if (grouping === 'none') return [];
+  return groupByProject(overdue, due, projectIds);
+}
+
+export interface DailyFocusPartition {
+  mitTasks: Task[];
+  eveningTasks: Task[];
+  restOverdue: Task[];
+  restDue: Task[];
+}
+
+/** Separates pinned Top 3 MITs and "오늘 저녁" tasks from the main daytime list without duplicating rows. */
+export function partitionDailyFocus(
+  overdue: readonly Task[],
+  due: readonly Task[],
+  mitIds: readonly string[],
+  eveningIds: readonly string[],
+): DailyFocusPartition {
+  if (!mitIds.length && !eveningIds.length) {
+    return { mitTasks: [], eveningTasks: [], restOverdue: [...overdue], restDue: [...due] };
+  }
+  const byId = new Map<string, Task>();
+  for (const task of overdue) byId.set(task.id, task);
+  for (const task of due) byId.set(task.id, task);
+
+  const mitSet = new Set<string>();
+  const mitTasks: Task[] = [];
+  for (const id of mitIds) {
+    if (mitSet.has(id)) continue;
+    const task = byId.get(id);
+    if (task) {
+      mitSet.add(id);
+      mitTasks.push(task);
+    }
+  }
+
+  const eveningSet = new Set<string>();
+  for (const id of eveningIds) {
+    if (!mitSet.has(id) && byId.has(id)) eveningSet.add(id);
+  }
+
+  const eveningTasks: Task[] = [];
+  const restOverdue: Task[] = [];
+  const restDue: Task[] = [];
+  for (const task of overdue) {
+    if (mitSet.has(task.id)) continue;
+    if (eveningSet.has(task.id)) eveningTasks.push(task);
+    else restOverdue.push(task);
+  }
+  for (const task of due) {
+    if (mitSet.has(task.id)) continue;
+    if (eveningSet.has(task.id)) eveningTasks.push(task);
+    else restDue.push(task);
+  }
+
+  return { mitTasks, eveningTasks, restOverdue, restDue };
+}
+
+export interface AutoSlotAssignment {
+  task: Task;
+  minutes: number;
+  duration: number;
+}
+
+/**
+ * Local zero-AI-key slot packer: assigns unscheduled (all-day) today tasks into open 30-min-aligned slots
+ * after `nowMinutes` without overlapping existing timed blocks.
+ */
+export function planAutoTimeSlots(
+  allDayTasks: readonly Task[],
+  existingBlocks: readonly { start: number; duration: number }[],
+  nowMinutes: number,
+  options: { defaultDuration?: number; stepMinutes?: number; endOfDayMinutes?: number } = {},
+): AutoSlotAssignment[] {
+  if (!allDayTasks.length) return [];
+  const defaultDuration = options.defaultDuration ?? 30;
+  const step = options.stepMinutes ?? 30;
+  const endOfDay = options.endOfDayMinutes ?? 23 * 60 + 30;
+  const occupied = existingBlocks.map((b) => ({ start: b.start, duration: Math.max(15, b.duration) }));
+  const startFloor = Math.max(0, Math.ceil((nowMinutes + 5) / step) * step);
+  const ordered = [...allDayTasks].sort(
+    (a, b) => a.priority - b.priority || a.position - b.position || (a.id < b.id ? -1 : 1),
+  );
+  const assignments: AutoSlotAssignment[] = [];
+  for (const task of ordered) {
+    const duration = Math.max(15, task.duration_minutes ?? defaultDuration);
+    const maxStart = Math.min(endOfDay, 24 * 60 - duration);
+    let placedAt: number | null = null;
+    for (let slot = startFloor; slot <= maxStart; slot += step) {
+      const overlaps = occupied.some((b) => slot < b.start + b.duration && slot + duration > b.start);
+      if (!overlaps) {
+        placedAt = slot;
+        break;
+      }
+    }
+    if (placedAt !== null) {
+      occupied.push({ start: placedAt, duration });
+      assignments.push({ task, minutes: placedAt, duration });
+    }
+  }
+  return assignments;
+}
+
 export function deriveToday(
   tasks: readonly Task[], compare: (a: Task, b: Task) => number, projectIds: readonly string[], nowMs: number,
   grouping: TodayGrouping = 'project',
+  dayStartHour = 0,
 ): TodayData {
-  const { overdue, due } = splitToday(tasks, compare, nowMs);
-  const groups = grouping === 'time'
-    ? groupByTimeOfDay(overdue, due)
-    : grouping === 'priority'
-      ? groupByPriority(overdue, due)
-      : grouping === 'none'
-        ? []
-        : groupByProject(overdue, due, projectIds);
+  const { overdue, due } = splitToday(tasks, compare, nowMs, dayStartHour);
+  const groups = buildTodayGroups(overdue, due, projectIds, grouping);
   return { overdue, due, groups };
 }
 
@@ -231,25 +344,27 @@ export function createTodayReuser(): (next: TodayData) => TodayData {
   };
 }
 
-function clock(minutes: number): string {
+function clock(minutes: number, timeFormat: '12h' | '24h' = '12h'): string {
   const hour = Math.floor(minutes / 60);
   const minute = minutes % 60;
+  if (timeFormat === '24h') return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
   return (hour < 12 ? '오전' : '오후') + ' ' + (hour % 12 === 0 ? 12 : hour % 12) + ':' + String(minute).padStart(2, '0');
 }
 
-export function buildShareText({ date, overdue, due, doneTitles, projectName }: {
+export function buildShareText({ date, overdue, due, doneTitles, projectName, timeFormat = '12h' }: {
   date: Temporal.PlainDate;
   overdue: readonly Task[];
   due: readonly Task[];
   doneTitles: readonly string[];
   projectName: (projectId: string) => string | undefined;
+  timeFormat?: '12h' | '24h';
 }): string | null {
   if (!overdue.length && !due.length && !doneTitles.length) return null;
   const line = (task: Task, late: boolean) => {
     let text = '☐ ' + task.title;
     if (late) text += ' (기한 지남)';
     const minutes = late ? null : dueParts(task).minutes;
-    if (minutes !== null) text += ' · ' + clock(minutes);
+    if (minutes !== null) text += ' · ' + clock(minutes, timeFormat);
     const project = task.project_id ? projectName(task.project_id) : undefined;
     if (project) text += ' · ' + project;
     return text;

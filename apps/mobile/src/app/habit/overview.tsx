@@ -4,10 +4,14 @@ import { Pressable, ScrollView, StyleSheet, View, type ViewStyle } from 'react-n
 
 import { EmptyHabits } from '@/components/art';
 import { Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Screen, Segmented, Txt } from '@/components/ui';
-import { useHabitDetails, useHabits } from '@/data/habits';
-import { type DayState, dayState, earliestStart, logsByDate, monthCells, outsideHabit, weekDates } from '@/features/habits/goal';
+import { useHabitActions, useHabitDetails, useHabits } from '@/data/habits';
+import { type DayState, dayState, earliestStart, logsByDate, outsideHabit, weekDates } from '@/features/habits/goal';
+import { showHabitUndoToast } from '@/features/habits/HabitCard';
+import type { StartOfWeek } from '@/features/settings/prefs';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, type PlainDate, Temporal, today, weekdayName, weekStart } from '@/lib/dates';
+import { deviceTimeZone, logicalToday, type PlainDate, Temporal, weekdayLabels, weekdayName, weekStart } from '@/lib/dates';
+import { haptic } from '@/lib/haptics';
 import { gridColumns } from '@/lib/layout';
 import { useLayout } from '@/lib/layoutContext';
 import type { Habit, HabitLog } from '@/lib/shared';
@@ -15,8 +19,17 @@ import { type Colors, radius, space, useTheme } from '@/theme';
 
 type Mode = 'week' | 'month';
 const NO_LOGS: HabitLog[] = [];
-const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const stateLabel: Record<DayState, string> = { met: '달성', partial: '일부 달성', skipped: '건너뜀', frozen: '쉬어감', empty: '기록 없음' };
+
+/** Builds a month grid padded to whole weeks respecting `startOfWeek`. */
+function overviewMonthCells(month: Temporal.PlainYearMonth, startOfWeek: StartOfWeek): (PlainDate | null)[] {
+  const first = month.toPlainDate({ day: 1 });
+  const lead = startOfWeek === 'sunday' ? first.dayOfWeek % 7 : first.dayOfWeek - 1;
+  const cells: (PlainDate | null)[] = Array.from({ length: lead }, () => null);
+  for (let day = 1; day <= month.daysInMonth; day += 1) cells.push(month.toPlainDate({ day }));
+  while (cells.length % 7) cells.push(null);
+  return cells;
+}
 
 /**
  * The colours of a day cell: one accent ramp for every habit, built once per theme. Habits are told apart by name,
@@ -26,55 +39,91 @@ const cellCache = new WeakMap<Colors, Record<DayState, string>>();
 function cellColors(colors: Colors): Record<DayState, string> {
   let fills = cellCache.get(colors);
   if (!fills) {
-    fills = { met: colors.accent, partial: colors.accentRamp[1], skipped: colors.border, frozen: colors.border, empty: colors.surfaceMuted };
+    fills = {
+      met: colors.accent,
+      partial: colors.accentRamp[1],
+      skipped: 'transparent',
+      frozen: colors.accentSoft,
+      empty: colors.surfaceMuted,
+    };
     cellCache.set(colors, fills);
   }
   return fills;
 }
 
+function cellBorderStyle(colors: Colors, state: DayState, outside: boolean, isToday: boolean): ViewStyle | null {
+  if (isToday) return { borderWidth: 1.5, borderColor: colors.text };
+  if (outside) return null;
+  if (state === 'skipped') return { borderWidth: 1, borderStyle: 'dashed', borderColor: colors.control };
+  if (state === 'frozen') return { borderWidth: 1, borderColor: colors.accentRamp[1] };
+  return null;
+}
+
 function Mark({ state, size }: { state: DayState; size: number }) {
   const { colors } = useTheme();
-  if (state === 'frozen') return <Icon name="pause" size={size} color={colors.textMuted} />;
+  if (state === 'frozen') return <Icon name="pause" size={size} color={colors.accentText} />;
   if (state === 'skipped') return <Icon name="minus" size={size} color={colors.textMuted} />;
   return null;
 }
 
-/** One habit's week: seven cells, Monday first. */
-const WeekRow = memo(function WeekRow({ habit, logs, days, todayKey }: {
-  habit: Habit; logs: HabitLog[]; days: PlainDate[]; todayKey: string;
+/** One habit's week: seven interactive cells respecting `startOfWeek`. */
+const WeekRow = memo(function WeekRow({ habit, logs, days, todayKey, onToggle }: {
+  habit: Habit;
+  logs: HabitLog[];
+  days: PlainDate[];
+  todayKey: string;
+  onToggle: (habit: Habit, date: PlainDate, log: HabitLog | undefined, state: DayState) => void;
 }) {
   const { colors } = useTheme();
   const byDate = useMemo(() => logsByDate(logs), [logs]);
   const fills = cellColors(colors);
   const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   return (
-    <Pressable
-      accessibilityRole="button" accessibilityLabel={habit.name + ' 자세히 보기'}
-      onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
-      style={({ pressed }) => [styles.weekRow, pressed && { opacity: 0.7 }]}>
-      <View style={styles.weekName}>
+    <View style={styles.weekRow}>
+      <Pressable
+        accessibilityRole="button" accessibilityLabel={habit.name + ' 자세히 보기'}
+        onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
+        style={({ pressed }) => [styles.weekName, pressed && { opacity: 0.65 }]}>
         <Txt variant="smallStrong" numberOfLines={1} style={{ flex: 1 }}>{habit.name}</Txt>
-      </View>
+      </Pressable>
       <View style={styles.weekCells}>
         {days.map((date) => {
-          const state = dayState(habit, byDate.get(date.toString()));
+          const key = date.toString();
+          const log = byDate.get(key);
+          const state = dayState(habit, log);
           const outside = outsideHabit(habit, date, now);
+          const isToday = key === todayKey;
           return (
-            <View
-              key={date.toString()} accessibilityLabel={outside ? `${date.month}월 ${date.day}일` : `${date.month}월 ${date.day}일 ${stateLabel[state]}`}
-              style={[styles.weekCell, { backgroundColor: outside ? fills.empty : fills[state], opacity: outside ? 0.35 : 1 }]}>
+            <Pressable
+              key={key}
+              disabled={outside}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityState={{ selected: state === 'met', disabled: outside }}
+              accessibilityLabel={outside
+                ? `${date.month}월 ${date.day}일`
+                : `${habit.name} ${date.month}월 ${date.day}일 ${stateLabel[state]}, ${state === 'met' ? '기록 지우기' : '기록하기'}`}
+              onPress={() => onToggle(habit, date, log, state)}
+              style={({ pressed }) => [
+                styles.weekCell,
+                {
+                  backgroundColor: outside ? fills.empty : fills[state],
+                  opacity: outside ? 0.35 : pressed ? 0.65 : 1,
+                },
+                cellBorderStyle(colors, state, outside, isToday),
+              ]}>
               {outside ? null : <Mark state={state} size={10} />}
-            </View>
+            </Pressable>
           );
         })}
       </View>
-    </Pressable>
+    </View>
   );
 });
 
 /** One habit's month as a small grid, for the monthly view (two columns on a phone, three or four on a tablet). */
-const MiniMonth = memo(function MiniMonth({ habit, logs, cells, todayKey, width }: {
-  habit: Habit; logs: HabitLog[]; cells: (PlainDate | null)[]; todayKey: string; width: ViewStyle;
+const MiniMonth = memo(function MiniMonth({ habit, logs, cells, weekdays, todayKey, width }: {
+  habit: Habit; logs: HabitLog[]; cells: (PlainDate | null)[]; weekdays: readonly string[]; todayKey: string; width: ViewStyle;
 }) {
   const { colors } = useTheme();
   const byDate = useMemo(() => logsByDate(logs), [logs]);
@@ -88,13 +137,15 @@ const MiniMonth = memo(function MiniMonth({ habit, logs, cells, todayKey, width 
   }, [cells, habit, now, byDate]);
   const rendered = days.map((day, index) => {
     if (!day) return <View key={'blank' + index} style={styles.miniCell} />;
+    const isToday = day.key === todayKey;
     return (
       <View
         key={day.key}
-        style={[styles.miniCell, {
-          backgroundColor: day.outside ? fills.empty : fills[day.state], opacity: day.outside ? 0.35 : 1,
-          borderWidth: day.key === todayKey ? 1 : 0, borderColor: colors.text,
-        }]}>
+        style={[
+          styles.miniCell,
+          { backgroundColor: day.outside ? fills.empty : fills[day.state], opacity: day.outside ? 0.35 : 1 },
+          cellBorderStyle(colors, day.state, day.outside, isToday),
+        ]}>
         {day.outside ? null : <Mark state={day.state} size={7} />}
       </View>
     );
@@ -107,11 +158,11 @@ const MiniMonth = memo(function MiniMonth({ habit, logs, cells, todayKey, width 
       <Card style={styles.miniCard}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Txt variant="smallStrong" numberOfLines={1} style={{ flex: 1 }}>{habit.name}</Txt>
-          <Txt variant="caption" tone="faint">{met}일</Txt>
+          <Txt variant="caption" tone="faint" tabular>{met}일</Txt>
         </View>
         <View importantForAccessibility="no-hide-descendants">
           <View style={styles.miniHead}>
-            {WEEKDAYS.map((name) => <Txt key={name} variant="caption" tone="faint" style={styles.miniDay}>{name}</Txt>)}
+            {weekdays.map((name) => <Txt key={name} variant="caption" tone="faint" style={styles.miniDay}>{name}</Txt>)}
           </View>
           <View style={styles.miniGrid}>{rendered}</View>
         </View>
@@ -129,7 +180,7 @@ function Stepper({ label, onPrev, onNext, canPrev, canNext, prevLabel, nextLabel
       <View style={{ opacity: canPrev ? 1 : 0.3 }} pointerEvents={canPrev ? 'auto' : 'none'}>
         <IconButton name="chevron-left" label={prevLabel} onPress={onPrev} color={colors.textMuted} />
       </View>
-      <Txt variant="bodyStrong" style={{ flex: 1, textAlign: 'center' }} accessibilityLiveRegion="polite">{label}</Txt>
+      <Txt variant="bodyStrong" tabular style={{ flex: 1, textAlign: 'center' }} accessibilityLiveRegion="polite">{label}</Txt>
       <View style={{ opacity: canNext ? 1 : 0.3 }} pointerEvents={canNext ? 'auto' : 'none'}>
         <IconButton name="chevron-right" label={nextLabel} onPress={onNext} color={colors.textMuted} />
       </View>
@@ -137,9 +188,11 @@ function Stepper({ label, onPrev, onNext, canPrev, canNext, prevLabel, nextLabel
   );
 }
 
-/** 기록 한눈에 보기: every active habit's record side by side, by week or by month. Read-only. */
+/** 기록 한눈에 보기: every active habit's record side by side, by week (interactive) or by month. */
 export default function HabitOverview() {
+  const prefs = usePersonalPrefs();
   const { data, isLoading } = useHabits();
+  const actions = useHabitActions();
   useMinute();
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
   const details = useHabitDetails(habits);
@@ -150,7 +203,7 @@ export default function HabitOverview() {
   const columns = column.maxWidth === undefined ? 2 : gridColumns(column.width - 2 * space.lg, landscape ? 150 : 200, 3, 4, space.sm);
   const miniWidth = useMemo(() => ({ width: `${(100 - (columns - 1) * 3) / columns}%` } as const), [columns]);
 
-  const todayKey = today(deviceTimeZone()).toString();
+  const todayKey = logicalToday(deviceTimeZone(), prefs.dayStartHour).toString();
   const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   // Logs come back in full from a habit's start (the API pages through all of them), so the oldest start
   // date is as far back as there is anything to show.
@@ -159,17 +212,38 @@ export default function HabitOverview() {
   // Offsets from the current week and month, so the view follows the date when it rolls over.
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
-  const monday = useMemo(() => weekStart(now).subtract({ weeks: weekOffset }), [now, weekOffset]);
-  const days = useMemo(() => weekDates(monday), [monday]);
+  const firstDay = useMemo(() => weekStart(now, prefs.startOfWeek).subtract({ weeks: weekOffset }), [now, weekOffset, prefs.startOfWeek]);
+  const days = useMemo(() => weekDates(firstDay), [firstDay]);
   const month = useMemo(() => now.toPlainYearMonth().subtract({ months: monthOffset }), [now, monthOffset]);
-  const cells = useMemo(() => monthCells(month), [month]);
-  const canPrevWeek = Temporal.PlainDate.compare(monday, weekStart(first)) > 0;
+  const cells = useMemo(() => overviewMonthCells(month, prefs.startOfWeek), [month, prefs.startOfWeek]);
+  const weekdays = useMemo(() => weekdayLabels(prefs.startOfWeek), [prefs.startOfWeek]);
+  const canPrevWeek = Temporal.PlainDate.compare(firstDay, weekStart(first, prefs.startOfWeek)) > 0;
   const canPrevMonth = Temporal.PlainYearMonth.compare(month, first.toPlainYearMonth()) > 0;
 
-  const sunday = days[6];
+  const lastDay = days[6];
   const weekLabel = weekOffset === 0 ? '이번 주'
-    : `${monday.month}월 ${monday.day}일 ~ ${sunday.month === monday.month ? '' : sunday.month + '월 '}${sunday.day}일`;
+    : `${firstDay.month}월 ${firstDay.day}일 ~ ${lastDay.month === firstDay.month ? '' : lastDay.month + '월 '}${lastDay.day}일`;
   const monthLabel = month.year === now.year ? `${month.month}월` : `${month.year}년 ${month.month}월`;
+
+  const toggleWeekCell = (habit: Habit, date: PlainDate, log: HabitLog | undefined, state: DayState) => {
+    const key = date.toString();
+    const prevStatus = log?.status ?? null;
+    const prevCount = log?.count ?? 0;
+    const met = state === 'met';
+    const weekly = habit.cadence === 'weekly';
+    if (met) haptic.light();
+    else haptic.success();
+    actions.setLog({
+      habitId: habit.id,
+      date: key,
+      status: met ? null : 'completed',
+      count: met ? 0 : weekly ? 1 : habit.target_count,
+    });
+    const dateText = key === todayKey ? '오늘' : `${date.month}월 ${date.day}일`;
+    showHabitUndoToast(`‘${habit.name}’ ${dateText} 기록을 ${met ? '지웠습니다.' : '남겼습니다.'}`, () => {
+      actions.setLog({ habitId: habit.id, date: key, status: prevStatus, count: prevCount });
+    });
+  };
 
   return (
     <Screen>
@@ -191,7 +265,7 @@ export default function HabitOverview() {
               <View style={styles.weekCells}>
                 {days.map((date) => (
                   <Txt
-                    key={date.toString()} variant="caption" tone={date.toString() === todayKey ? 'default' : 'faint'}
+                    key={date.toString()} variant="caption" tabular tone={date.toString() === todayKey ? 'default' : 'faint'}
                     style={[styles.weekHead, date.toString() === todayKey && { fontWeight: '700' }]}>
                     {weekdayName(date)}{'\n'}{date.day}
                   </Txt>
@@ -200,9 +274,18 @@ export default function HabitOverview() {
             </View>
             {habits.map((habit) => (
               <WeekRow
-                key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} days={days} todayKey={todayKey} />
+                key={habit.id}
+                habit={habit}
+                logs={details.get(habit.id)?.logs ?? NO_LOGS}
+                days={days}
+                todayKey={todayKey}
+                onToggle={toggleWeekCell}
+              />
             ))}
           </Card>
+          <Txt variant="caption" tone="faint" style={{ textAlign: 'center' }}>
+            날짜 칸을 눌러 바로 기록을 켜고 끌 수 있습니다
+          </Txt>
           <Legend />
         </ScrollView>
       ) : (
@@ -214,8 +297,14 @@ export default function HabitOverview() {
           <View style={styles.grid}>
             {habits.map((habit) => (
               <MiniMonth
-                key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} cells={cells} todayKey={todayKey}
-                width={miniWidth} />
+                key={habit.id}
+                habit={habit}
+                logs={details.get(habit.id)?.logs ?? NO_LOGS}
+                cells={cells}
+                weekdays={weekdays}
+                todayKey={todayKey}
+                width={miniWidth}
+              />
             ))}
             {/* Fills the last row, so its cards keep their columns instead of spreading apart. */}
             {Array.from({ length: (columns - (habits.length % columns)) % columns }, (_, index) => (
@@ -231,17 +320,24 @@ export default function HabitOverview() {
 
 function Legend() {
   const { colors } = useTheme();
-  const items = [
-    { label: '달성', color: colors.accent },
-    { label: '일부 달성', color: colors.accentRamp[1] },
-    { label: '건너뜀·쉬어감', color: colors.border },
-    { label: '기록 없음', color: colors.surfaceMuted },
+  const fills = cellColors(colors);
+  const items: { state: DayState; label: string }[] = [
+    { state: 'met', label: '달성' },
+    { state: 'partial', label: '일부 달성' },
+    { state: 'frozen', label: '쉬어감' },
+    { state: 'skipped', label: '건너뜀' },
+    { state: 'empty', label: '기록 없음' },
   ];
   return (
     <View style={styles.legend}>
       {items.map((item) => (
-        <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: item.color }} />
+        <View key={item.state} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View
+            style={[
+              { width: 10, height: 10, borderRadius: 3, backgroundColor: fills[item.state] },
+              cellBorderStyle(colors, item.state, false, false),
+            ]}
+          />
           <Txt variant="caption" tone="faint">{item.label}</Txt>
         </View>
       ))}
@@ -252,7 +348,7 @@ function Legend() {
 const styles = StyleSheet.create({
   stepper: { flexDirection: 'row', alignItems: 'center' },
   weekRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 6 },
-  weekName: { width: 96, flexDirection: 'row', alignItems: 'center' },
+  weekName: { width: 96, flexDirection: 'row', alignItems: 'center', minHeight: 30 },
   weekCells: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
   weekCell: { flex: 1, aspectRatio: 1, maxWidth: 30, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   weekHead: { flex: 1, maxWidth: 30, textAlign: 'center', fontSize: 10, lineHeight: 13 },

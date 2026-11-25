@@ -12,6 +12,8 @@ import { mixHex } from './color.ts';
 const lightBase = {
   background: '#FFFFFF',
   surface: '#FFFFFF',
+  /** Elevated sheets, toasts and floating chrome. */
+  surfaceElevated: '#FFFFFF',
   /** Inputs, neutral chips and secondary buttons, pressed rows, empty progress cells. */
   surfaceMuted: '#F3F5F8',
   /** Hairlines and dividers (decorative, exempt from 3:1). */
@@ -39,6 +41,7 @@ export type BaseColors = typeof lightBase;
 const darkBase: BaseColors = {
   background: '#15171A',
   surface: '#1D2024',
+  surfaceElevated: '#23272D',
   surfaceMuted: '#272B31',
   border: '#31353C',
   control: '#7A8290',

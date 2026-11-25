@@ -35,12 +35,17 @@ test('a year counts one-offs and every repeat inside it, and nothing outside it'
   assert.equal(next.size, 13);
 });
 
-test('repeats are expanded with the month view step limit, so both views show the same days', () => {
-  // 62 daily steps from 24 November reach 24 January; the month view stops on the same day.
+test('daily repeats cover every day of a full 365-day year and leap year without truncating', () => {
   const daily = { ...base, id: 'walk', due_at: '2026-11-24T00:00:00Z', recurrence_rule: 'FREQ=DAILY' };
-  const counts = yearCounts([daily], 2027, nextOccurrence);
-  assert.equal(counts.size, 24);
-  assert.equal(counts.get('2027-01-24'), 1);
+  const counts2027 = yearCounts([daily], 2027, nextOccurrence);
+  assert.equal(counts2027.size, 365);
+  assert.equal(counts2027.get('2027-01-01'), 1);
+  assert.equal(counts2027.get('2027-12-31'), 1);
+  // Leap year 2028 has 366 days.
+  const counts2028 = yearCounts([daily], 2028, nextOccurrence);
+  assert.equal(counts2028.size, 366);
+  assert.equal(counts2028.get('2028-02-29'), 1);
+  assert.equal(counts2028.get('2028-12-31'), 1);
   assert.equal(yearCounts([daily], 2026, nextOccurrence).size, 38);
   assert.equal(yearCounts([daily], 2025, nextOccurrence).size, 0);
 });
@@ -60,7 +65,9 @@ test('the summary names the total and the busiest month, the earliest on a tie',
   assert.equal(summarizeYear(new Map(), 2028)[1].levels.length, 29);
 });
 
-test('month grids start on Monday', () => {
+test('month grids start on Monday by default and support Sunday-first', () => {
   assert.equal(leadingBlanks(2026, 6), 0); // 2026-06-01 is a Monday
   assert.equal(leadingBlanks(2026, 11), 6); // 2026-11-01 is a Sunday
+  assert.equal(leadingBlanks(2026, 6, 'sunday'), 1);
+  assert.equal(leadingBlanks(2026, 11, 'sunday'), 0);
 });

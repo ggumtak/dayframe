@@ -13,7 +13,7 @@ import { planSchema, type RawPlan } from '@/features/ai/schemas';
 import { nowContext } from '@/features/ai/time';
 import { useAiRequest } from '@/features/ai/useAiRequest';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
-import { deviceTimeZone, formatDurationMinutes, formatTime, instantFor, Temporal, today } from '@/lib/dates';
+import { deviceTimeZone, formatDurationMinutes, formatTime, instantFor, Temporal } from '@/lib/dates';
 import type { TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { priorityMark } from '@/features/tasks/priority';
@@ -44,18 +44,21 @@ export default function Plan() {
   const [plan, setPlan] = useState<CheckedPlan | null>(null);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
 
-  const nowInstant = Temporal.Now.instant();
-  const now = nowContext(nowInstant, zone);
-  const candidates = useMemo(() => collectCandidates(tasks ?? [], Temporal.Now.instant()), [tasks]);
-  const span = planWindow(prefs.dayStart, prefs.dayEnd, now.minutes);
+  const [nowInstant, setNowInstant] = useState(() => Temporal.Now.instant());
+  const now = useMemo(() => nowContext(nowInstant, zone), [nowInstant, zone]);
+  const candidates = useMemo(() => collectCandidates(tasks ?? [], nowInstant), [tasks, nowInstant]);
+  const span = useMemo(() => planWindow(prefs.dayStart, prefs.dayEnd, now.minutes), [prefs.dayStart, prefs.dayEnd, now.minutes]);
 
-  const propose = async () => {
-    if (!span || !candidates.length) return;
-    const asked = candidates;
-    const askedWindow = span;
+  const propose = async (refresh = false) => {
+    const instant = refresh ? Temporal.Now.instant() : nowInstant;
+    if (refresh) setNowInstant(instant);
+    const currentNow = refresh ? nowContext(instant, zone) : now;
+    const asked = refresh ? collectCandidates(tasks ?? [], instant) : candidates;
+    const askedWindow = refresh ? planWindow(prefs.dayStart, prefs.dayEnd, currentNow.minutes) : span;
+    if (!askedWindow || !asked.length) return;
     setSkipped(new Set());
     const result = await request.run((signal) => runAi({
-      feature: 'plan', system: PLAN_SYSTEM, user: planUser(now, askedWindow, asked),
+      feature: 'plan', system: PLAN_SYSTEM, user: planUser(currentNow, askedWindow, asked),
       schema: planSchema(asked.map((candidate) => candidate.id)), effort: 'medium', signal,
     }));
     if (result) setPlan(checkPlan(result.data, asked, askedWindow));
@@ -66,7 +69,7 @@ export default function Plan() {
 
   const apply = () => {
     if (!changing.length) return;
-    const date = today(zone);
+    const date = nowInstant.toZonedDateTimeISO(zone).toPlainDate();
     const undo: (() => void)[] = [];
     for (const block of changing) {
       const { task } = block.candidate;
@@ -104,17 +107,17 @@ export default function Plan() {
 
   const footer = state.status === 'loading' || state.status === 'error' || !candidates.length || !span ? undefined : preview ? (
     <View style={{ flexDirection: 'row', gap: space.sm }}>
-      <Button label="다시 만들기" kind="secondary" icon="refresh-cw" onPress={() => void propose()} style={{ flex: 1 }} />
+      <Button label="다시 만들기" kind="secondary" icon="refresh-cw" onPress={() => void propose(true)} style={{ flex: 1 }} />
       <Button label={changing.length ? `적용 (${changing.length})` : '변경할 항목 없음'} icon="check" disabled={!changing.length} onPress={apply} style={{ flex: 1.4 }} />
     </View>
   ) : (
-    <Button label="계획 세우기" icon="zap" onPress={() => void propose()} />
+    <Button label="계획 세우기" icon="zap" onPress={() => void propose(false)} />
   );
 
   let body;
   if (isPending) body = <Loading />;
   else if (state.status === 'loading') body = <AiLoading message="오늘 남은 시간에 할 일을 배치하고 있습니다" onCancel={request.cancel} />;
-  else if (state.status === 'error') body = <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void propose()} />;
+  else if (state.status === 'error') body = <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void propose(true)} />;
   else if (preview) {
     body = (
       <>

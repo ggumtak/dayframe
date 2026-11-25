@@ -5,9 +5,11 @@ import Animated, { FadeIn, FadeOut, LayoutAnimationConfig } from 'react-native-r
 import { Checkbox } from '@/components/Checkbox';
 import { FoldHeader, Icon, Txt } from '@/components/ui';
 import type { DoneToday as Done } from '@/data/tasks';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
 import { deviceTimeZone, formatTime, Temporal } from '@/lib/dates';
+import { haptic } from '@/lib/haptics';
 import { usePersistentState } from '@/lib/persist';
-import { fontFamily, space, type, useTheme } from '@/theme';
+import { space, type, useTheme } from '@/theme';
 
 import { useTaskFlow } from './useTaskFlow';
 
@@ -21,6 +23,7 @@ const isFold = (value: string): value is Fold => value === 'open' || value === '
 export function DoneToday({ items }: { items: Done[] }) {
   const { colors } = useTheme();
   const flow = useTaskFlow();
+  const { timeFormat } = usePersonalPrefs();
   const [fold, setFold] = usePersistentState<Fold>('dayframe-today-done', 'closed', isFold);
   if (!items.length) return null;
   const open = fold === 'open';
@@ -45,11 +48,17 @@ export function DoneToday({ items }: { items: Done[] }) {
                   if (undoable) flow.uncomplete(task, completion.occurrence_due_at);
                 }} />
             </View>
-            <View style={[styles.body, { borderBottomColor: colors.border }]}>
+            <Pressable
+              accessibilityRole="button" accessibilityLabel={task.title + ' 자세히 보기'}
+              onPress={() => {
+                haptic.tap();
+                router.push({ pathname: '/task/[id]', params: { id: task.id } });
+              }}
+              style={({ pressed }) => [styles.body, { borderBottomColor: colors.border, opacity: pressed ? 0.65 : 1 }]}>
               <Text numberOfLines={1} style={[type.body as TextStyle, styles.title, { color: colors.textFaint }]}>{task.title}</Text>
               {task.recurrence_rule ? <Icon name="repeat" size={12} color={colors.textFaint} /> : null}
-              <Text style={[styles.time, { color: colors.textFaint }]}>{formatTime(at.hour * 60 + at.minute)}</Text>
-            </View>
+              <Txt variant="meta" tone="faint" tabular>{formatTime(at.hour * 60 + at.minute, timeFormat)}</Txt>
+            </Pressable>
           </View>
         );
           })}
@@ -74,7 +83,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   title: { flex: 1, textDecorationLine: 'line-through' },
-  time: { fontFamily, fontSize: 12, lineHeight: 16 },
   allLink: {
     flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: space.lg, paddingVertical: space.md,
   },

@@ -19,8 +19,17 @@ export type PillPalette = Record<PillKind, { background: string; foreground: str
  * when tokens exist on single-paragraph text; automatically falls back to a standard visible `<TextInput>`
  * for plain text or multi-line pastes so long checklists scroll cleanly without overlay drift.
  */
-export function HighlightInput({ value, tokens, palette, disableHighlight, onFocus, ref, ...props }: Omit<TextInputProps, 'style' | 'onFocus'> & {
-  value: string; tokens: TaskToken[]; palette: PillPalette; disableHighlight?: boolean; onFocus?: () => void; ref?: Ref<TextInputInstance>;
+export function HighlightInput({
+  value, tokens, palette, disableHighlight, multilineEnter, onFocus, onSelectionChange, onSubmitEditing, ref, ...props
+}: Omit<TextInputProps, 'style' | 'onFocus'> & {
+  value: string;
+  tokens: TaskToken[];
+  palette: PillPalette;
+  disableHighlight?: boolean;
+  /** When true (e.g. Checklist Capture Mode), pressing Enter inserts a newline instead of submitting. */
+  multilineEnter?: boolean;
+  onFocus?: () => void;
+  ref?: Ref<TextInputInstance>;
 }) {
   const { colors } = useTheme();
   const useOverlay = !disableHighlight && tokens.length > 0 && !value.includes('\n');
@@ -44,13 +53,27 @@ export function HighlightInput({ value, tokens, palette, disableHighlight, onFoc
         </Text>
       ) : null}
       <TextInput
-        ref={ref} value={value} multiline submitBehavior="submit" returnKeyType="done" autoCapitalize="none" autoCorrect={false}
-        placeholderTextColor={colors.textFaint} selectionColor={colors.accentSoft} cursorColor={colors.text}
+        ref={ref}
+        value={value}
+        multiline
+        submitBehavior={multilineEnter ? 'newline' : 'submit'}
+        returnKeyType={multilineEnter ? 'default' : 'done'}
+        autoCapitalize="none"
+        autoCorrect={false}
+        placeholderTextColor={colors.textFaint}
+        selectionColor={colors.accentSoft}
+        cursorColor={colors.text}
         // The drawn highlight layer only works in place: never hand the text to Android's full-screen landscape editor.
-        underlineColorAndroid="transparent" disableFullscreenUI {...props} onFocus={onFocus}
+        underlineColorAndroid="transparent"
+        disableFullscreenUI
+        {...props}
+        onFocus={onFocus}
+        onSelectionChange={onSelectionChange}
+        onSubmitEditing={multilineEnter ? undefined : onSubmitEditing}
         style={[
           styles.text,
           styles.input,
+          multilineEnter && styles.inputTall,
           { color: useOverlay ? 'transparent' : colors.text },
           Platform.select({ web: { caretColor: colors.text } as object, default: {} }),
         ]} />
@@ -70,5 +93,8 @@ const styles = StyleSheet.create({
     position: 'relative', zIndex: 1, minHeight: LINE_HEIGHT, maxHeight: LINE_HEIGHT * 5,
     backgroundColor: 'transparent', borderWidth: 0,
     ...Platform.select({ web: { outlineStyle: 'none' } as object, default: {} }),
+  },
+  inputTall: {
+    maxHeight: LINE_HEIGHT * 7,
   },
 });

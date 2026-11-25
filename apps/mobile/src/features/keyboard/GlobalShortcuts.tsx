@@ -1,12 +1,14 @@
 import { type Href, router, useSegments } from 'expo-router';
 import { useCallback } from 'react';
 
+import { queryClient } from '@/data/client';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
 import { type TabName, visibleTabs } from '@/features/settings/tabBar';
 import { useTabBarConfig } from '@/features/settings/tabBarStore';
 import { haptic } from '@/lib/haptics';
 import { emitTabReselect } from '@/lib/tabScroll';
-import { triggerActiveToastAction } from '@/lib/toast';
+import { showToast, triggerActiveToastAction } from '@/lib/toast';
 
 import { useKeyboard, useKeyHandler } from './manager';
 import { matchesCombo } from './normalize';
@@ -31,6 +33,7 @@ export function GlobalShortcuts() {
   const segments: string[] = useSegments();
   const quickAdd = useQuickAdd();
   const tabConfig = useTabBarConfig();
+  const { singleKeyShortcuts } = usePersonalPrefs();
   const { togglePalette, toggleHelp, blurActiveInput } = useKeyboard();
 
   const navigateToTab = useCallback(
@@ -84,11 +87,29 @@ export function GlobalShortcuts() {
         return false;
       }
 
-      // Single-key and navigation shortcuts when not editing and no modal sheet is open.
+      // Always active outside text inputs: help (?), modifier undo (Ctrl/Cmd+Z), and back (Escape).
       if (matchesCombo(event, '?')) {
         if (!event.repeat) toggleHelp();
         return true;
       }
+      if (matchesCombo(event, 'mod+z')) {
+        if (!event.repeat && triggerActiveToastAction()) {
+          haptic.tap();
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'escape')) {
+        if (!router.canGoBack()) return false;
+        if (!event.repeat) router.back();
+        return true;
+      }
+
+      // Single-key shortcuts respect the user's personalization setting.
+      if (!singleKeyShortcuts) {
+        return false;
+      }
+
       if (matchesCombo(event, 'q')) {
         if (!event.repeat) quickAdd.open();
         return true;
@@ -123,22 +144,25 @@ export function GlobalShortcuts() {
         if (!event.repeat) navigateToTab(digit);
         return true;
       }
-      if (matchesCombo(event, 'u') || matchesCombo(event, 'mod+z')) {
+      if (matchesCombo(event, 'u')) {
         if (!event.repeat && triggerActiveToastAction()) {
           haptic.tap();
           return true;
         }
         return false;
       }
-      if (matchesCombo(event, 'escape')) {
-        if (!router.canGoBack()) return false;
-        if (!event.repeat) router.back();
+      if (matchesCombo(event, 'r')) {
+        if (!event.repeat) {
+          haptic.tap();
+          void queryClient.invalidateQueries();
+          showToast('새로고침했습니다');
+        }
         return true;
       }
 
       return false;
     },
-    [blurActiveInput, navigateToTab, quickAdd, segments, toggleHelp, togglePalette],
+    [blurActiveInput, navigateToTab, quickAdd, segments, singleKeyShortcuts, toggleHelp, togglePalette],
   );
 
   useKeyHandler(handleKey, { priority: KEY_PRIORITY.global });

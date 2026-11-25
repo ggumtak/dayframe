@@ -48,6 +48,8 @@ export interface WidgetSnapshot {
   calendar?: Record<string, number>;
   /** Months away from the current one that the calendar widget shows. */
   calendarOffset?: number;
+  /** Currently tapped day ("YYYY-MM-DD") shown in the Calendar widget's inline agenda strip. */
+  calendarSelectedDate?: string | null;
   /** A short note for the header, such as a failed completion. */
   notice?: string | null;
 }
@@ -313,3 +315,93 @@ export function calendarGrid(now: number, timeZone: string, offset: number, coun
   const weeks = Array.from({ length: cells.length / 7 }, (_, row) => cells.slice(row * 7, row * 7 + 7));
   return { title: (month.year === today.year ? '' : month.year + '년 ') + month.month + '월', weeks };
 }
+
+/** Formats "YYYY-MM-DD" as "11월 26일 (목)" for the Calendar widget's selected-day header. */
+export function calendarDateLabel(dateIso: string): string {
+  try {
+    const date = Temporal.PlainDate.from(dateIso);
+    return `${date.month}월 ${date.day}일 (${'월화수목금토일'[date.dayOfWeek - 1]})`;
+  } catch {
+    return dateIso;
+  }
+}
+
+function clockForFormat(hour: number, minute: number, timeFormat: '12h' | '24h' = '12h'): string {
+  if (timeFormat === '24h') {
+    return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
+  }
+  return clock(hour, minute);
+}
+
+/** Tasks falling on `dateIso` (including future repeat previews when `nextOccurrenceFn` is supplied). */
+export function calendarDateRows(
+  tasks: WidgetTask[],
+  dateIso: string,
+  now: number,
+  nextOccurrenceFn?: NextOccurrence,
+  timeFormat: '12h' | '24h' = '12h',
+): WidgetRow[] {
+  let targetDate: Temporal.PlainDate;
+  try {
+    targetDate = Temporal.PlainDate.from(dateIso);
+  } catch {
+    return [];
+  }
+  const normalizedIso = targetDate.toString();
+  const rows: (WidgetRow & { sort: number; preview: number })[] = [];
+  for (const task of tasks) {
+    if (!task.due_at) continue;
+    const due = Temporal.Instant.from(task.due_at).toZonedDateTimeISO(task.timezone);
+    const dueKey = due.toPlainDate().toString();
+    const timed = !task.all_day;
+    const sort = timed ? due.hour * 60 + due.minute : -1;
+    if (dueKey === normalizedIso) {
+      const today = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(task.timezone).toPlainDate();
+      const overdueDay = Temporal.PlainDate.compare(due.toPlainDate(), today) < 0;
+      const overdue = overdueDay || (timed && Date.parse(task.due_at) < now);
+      const meta = buildWidgetMeta(task);
+      rows.push({
+        id: task.id,
+        title: task.title,
+        when: timed ? clockForFormat(due.hour, due.minute, timeFormat) : '',
+        overdue,
+        overdueDay,
+        priority: task.priority,
+        occurrence: task.due_at,
+        completable: true,
+        ...(meta ? { meta } : {}),
+        sort,
+        preview: 0,
+      });
+      continue;
+    }
+    if (nextOccurrenceFn && task.recurrence_rule && task.recurrence_mode !== 'completion') {
+      const occTask = {
+        ...task,
+        recurrence_anchor_at: task.recurrence_anchor_at ?? null,
+        recurrence_local_time: task.recurrence_local_time ?? null,
+      };
+      const matches = occurrenceDates(occTask, targetDate, targetDate, nextOccurrenceFn)
+        .some((d) => d.toString() === normalizedIso);
+      if (matches) {
+        const meta = buildWidgetMeta(task, true);
+        rows.push({
+          id: task.id + '@' + normalizedIso,
+          title: task.title,
+          when: timed ? clockForFormat(due.hour, due.minute, timeFormat) : '',
+          overdue: false,
+          priority: task.priority,
+          occurrence: task.due_at,
+          completable: false,
+          ...(meta ? { meta } : {}),
+          sort,
+          preview: 1,
+        });
+      }
+    }
+  }
+  return rows
+    .sort((a, b) => a.sort - b.sort || a.priority - b.priority || a.preview - b.preview)
+    .map(({ sort: _sort, preview: _preview, ...row }) => row);
+}
+

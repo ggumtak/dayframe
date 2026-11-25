@@ -4,10 +4,13 @@ import { Pressable, RefreshControl, type ScrollViewInstance, Share, StyleSheet, 
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { EmptyToday, OfflineArt } from '@/components/art';
-import { Button, Card, Chip, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
+import { AllDoneArt } from '@/components/art/Illustrations';
+import {
+  Button, Card, Chip, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, SectionTitle, Segmented, Sheet, Txt,
+} from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
-import { byPriority, bySchedule, useDoneToday, useProjects, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
+import { byPosition, byPriority, bySchedule, useDoneToday, useProjects, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
 import { AI_ROUTES } from '@/features/ai';
 import { TodayHabits } from '@/features/habits/TodayHabits';
 import {
@@ -15,23 +18,26 @@ import {
   useScreenContext, useScreenFocused, useTaskShortcuts,
 } from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
+import { TODAY_HABITS_POSITIONS, type TodayHabitsPosition } from '@/features/settings/prefs';
+import { setPersonalPrefs, usePersonalPrefs } from '@/features/settings/prefsStore';
 import { BatchBar } from '@/features/tasks/BatchBar';
 import { DoneToday } from '@/features/tasks/DoneToday';
 import { EisenhowerView } from '@/features/tasks/EisenhowerView';
+import { useDailyFocus } from '@/features/tasks/mitStore';
 import { dismissOnboarding, STARTER_CHECKLIST, useOnboardingDismissed } from '@/features/tasks/onboarding';
 import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
-import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
-import { TaskList } from '@/features/tasks/TaskList';
-import { TaskMenu } from '@/features/tasks/TaskMenu';
+import { TaskListSheets, TaskRows, useTaskListModel } from '@/features/tasks/TaskList';
 import { Timeline } from '@/features/tasks/Timeline';
 import { useTodayFoldedGroups } from '@/features/tasks/todayFold';
 import { OverdueStrip, TodayGroups } from '@/features/tasks/TodayGroups';
-import { buildShareText, createTodayReuser, deriveToday, type TodayGrouping } from '@/features/tasks/todayList';
+import {
+  buildShareText, buildTodayGroups, createTodayReuser, deriveToday, partitionDailyFocus, type TodayGrouping,
+} from '@/features/tasks/todayList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { UpdateBanner } from '@/features/update/UpdateBanner';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, formatTime, instantFor, today, weekdayName } from '@/lib/dates';
+import { deviceTimeZone, dueMinutes, formatDurationMinutes, formatTime, instantFor, logicalToday, Temporal, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { PANE_FRAME_MAX } from '@/lib/layout';
@@ -41,15 +47,16 @@ import type { Task, TaskPatch } from '@/lib/shared';
 import { bySmartRank } from '@/lib/smart';
 import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
-import { space, useTheme } from '@/theme';
+import { radius, space, useTheme } from '@/theme';
 
 type TodayView = 'list' | 'timeline' | 'matrix';
-type TodaySort = 'schedule' | 'smart' | 'priority';
+type TodaySort = 'schedule' | 'smart' | 'priority' | 'manual';
 
 const sortLabels: Record<TodaySort, string> = {
   schedule: '일정순',
   smart: '추천순',
   priority: '우선순위순',
+  manual: '직접 정렬',
 };
 
 const groupLabels: Record<TodayGrouping, string> = {
@@ -59,15 +66,32 @@ const groupLabels: Record<TodayGrouping, string> = {
   none: '그룹 없음',
 };
 
+const habitPositionLabels: Record<TodayHabitsPosition, string> = {
+  top: '위',
+  bottom: '아래',
+  hidden: '숨김',
+};
+
 const isTodayView = (value: string): value is TodayView => value === 'list' || value === 'timeline' || value === 'matrix';
 const isTodaySort = (value: string): value is TodaySort => value in sortLabels;
 const isTodayGrouping = (value: string): value is TodayGrouping => value in groupLabels;
 const taskId = (task: Task) => task.id;
 
+function snapshotSchedule(task: Task): TaskPatch {
+  return {
+    due_at: task.due_at,
+    all_day: task.all_day,
+    recurrence_rule: task.recurrence_rule,
+    recurrence_mode: task.recurrence_mode,
+    recurrence_local_time: task.recurrence_local_time,
+  };
+}
+
 export default function Today() {
   const { colors } = useTheme();
   const isFocused = useScreenFocused();
   useScreenContext('today', isFocused);
+  const prefs = usePersonalPrefs();
   const { tasks, roots, isLoading, isError, refetch } = useTaskIndex();
   const { progress: subtaskProgress } = useSubtaskProgress();
   const { data: sessions } = useFocusSessions();
@@ -76,6 +100,7 @@ export default function Today() {
   const onboardingDismissed = useOnboardingDismissed();
   const flow = useTaskFlow();
   const quickAdd = useQuickAdd();
+  const { model: listModel, sheets: listSheets } = useTaskListModel();
 
   const [view, setView] = usePersistentState<TodayView>('dayframe-today-view', 'list', isTodayView);
   const { twoPane } = useLayout();
@@ -84,22 +109,29 @@ export default function Today() {
   const [grouping, setGrouping] = usePersistentState<TodayGrouping>('dayframe-today-group', 'project', isTodayGrouping);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [planInitialTab, setPlanInitialTab] = useState<'overdue' | 'suggest' | undefined>(undefined);
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
-  const [kbdSchedule, setKbdSchedule] = useState<Task | null>(null);
-  const [kbdMenu, setKbdMenu] = useState<Task | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const scrollRef = useRef<ScrollViewInstance>(null);
   useTabScrollTop('index', scrollRef);
   const { data: projects } = useProjects();
-  const foldedGroups = useTodayFoldedGroups();
 
   const minute = useMinute();
   const timeZone = deviceTimeZone();
-  const date = today(timeZone);
+  const nowInstant = useMemo(() => Temporal.Instant.fromEpochMilliseconds(minute * 60_000), [minute]);
+  const date = useMemo(() => logicalToday(timeZone, prefs.dayStartHour, nowInstant), [timeZone, prefs.dayStartHour, nowInstant]);
+  const todayIso = date.toString();
+  const zonedNow = useMemo(() => nowInstant.toZonedDateTimeISO(timeZone), [nowInstant, timeZone]);
+  const nowMinutes = zonedNow.hour * 60 + zonedNow.minute;
+  const nowHour = zonedNow.hour;
+
+  const foldedGroups = useTodayFoldedGroups(todayIso);
+  const dailyFocus = useDailyFocus(todayIso);
   useScreenDefaults({ dueToday: true });
 
   const smartNowMs = sort === 'smart' ? minute * 60_000 : 0;
   const compare = useMemo(() => {
+    if (sort === 'manual') return byPosition;
     if (sort === 'priority') return byPriority;
     if (sort === 'schedule') return bySchedule;
     const context = { subtaskProgress, nowMs: smartNowMs };
@@ -109,19 +141,32 @@ export default function Today() {
 
   const [reuseToday] = useState(createTodayReuser);
   const { overdue, due, groups } = useMemo(
-    () => reuseToday(deriveToday(tasks, compare, projectIds, minute * 60_000, grouping)),
-    [reuseToday, tasks, compare, projectIds, minute, grouping],
+    () => reuseToday(deriveToday(tasks, compare, projectIds, minute * 60_000, grouping, prefs.dayStartHour)),
+    [reuseToday, tasks, compare, projectIds, minute, grouping, prefs.dayStartHour],
   );
   const allVisibleToday = useMemo(() => [...overdue, ...due], [overdue, due]);
   const grouped = grouping !== 'none';
 
+  const { mitTasks, eveningTasks, restOverdue, restDue } = useMemo(
+    () => partitionDailyFocus(overdue, due, dailyFocus.mitIds, dailyFocus.eveningIds),
+    [overdue, due, dailyFocus.mitIds, dailyFocus.eveningIds],
+  );
+
+  const displayGroups = useMemo(() => {
+    if (!grouped) return [];
+    if (mitTasks.length === 0 && eveningTasks.length === 0) return groups;
+    return buildTodayGroups(restOverdue, restDue, projectIds, grouping);
+  }, [grouped, mitTasks.length, eveningTasks.length, groups, restOverdue, restDue, projectIds, grouping]);
+
   const visibleListTasks = useMemo(() => {
     if (mainView !== 'list') return [];
-    if (!grouped) return allVisibleToday;
-    return groups.flatMap((group) => (
-      !selectedIds && foldedGroups.has(group.key) ? [] : [...group.overdue, ...group.due]
-    ));
-  }, [mainView, grouped, allVisibleToday, groups, selectedIds, foldedGroups]);
+    const daytime = !grouped
+      ? [...restOverdue, ...restDue]
+      : displayGroups.flatMap((group) => (
+        !selectedIds && foldedGroups.has(group.key) ? [] : [...group.overdue, ...group.due]
+      ));
+    return [...mitTasks, ...daytime, ...eveningTasks];
+  }, [mainView, grouped, restOverdue, restDue, displayGroups, selectedIds, foldedGroups, mitTasks, eveningTasks]);
 
   const cursor = useListCursor(visibleListTasks, taskId, {
     enabled: isFocused && mainView === 'list',
@@ -131,9 +176,39 @@ export default function Today() {
   });
 
   const remaining = overdue.length + due.length;
+  const totalToday = remaining + done.length;
   const summary = remaining || done.length
     ? [remaining ? `${remaining}개 남음` : '', done.length ? `${done.length}개 완료` : ''].filter(Boolean).join(' · ')
     : '할 일 없음';
+
+  const plannedMinutes = useMemo(
+    () => allVisibleToday.reduce((sum, task) => sum + (task.duration_minutes ?? 0), 0),
+    [allVisibleToday],
+  );
+
+  const todayFocusMinutes = useMemo(() => {
+    let total = 0;
+    for (const session of sessions ?? []) {
+      if (session.status !== 'completed' || !session.ended_at) continue;
+      const startInstant = Temporal.Instant.from(session.started_at);
+      const sessionDay = logicalToday(timeZone, prefs.dayStartHour, startInstant);
+      if (Temporal.PlainDate.compare(sessionDay, date) !== 0) continue;
+      total += Math.max(0, startInstant.until(Temporal.Instant.from(session.ended_at)).total('minutes'));
+    }
+    return Math.round(total);
+  }, [sessions, timeZone, prefs.dayStartHour, date]);
+
+  const focusTarget = useMemo(() => {
+    const timed = due
+      .map((task) => ({ task, start: dueMinutes(task) }))
+      .filter((entry): entry is { task: Task; start: number } => entry.start !== null)
+      .sort((a, b) => a.start - b.start);
+    const active = timed.find(({ task, start }) => start <= nowMinutes && nowMinutes < start + (task.duration_minutes ?? 30));
+    if (active) return active.task;
+    if (mitTasks.length > 0) return mitTasks[0];
+    const upcoming = timed.find(({ start }) => start >= nowMinutes);
+    return upcoming?.task ?? null;
+  }, [due, nowMinutes, mitTasks]);
 
   const selectedTasks = useMemo(
     () => (selectedIds ? allVisibleToday.filter((t) => selectedIds.has(t.id)) : []),
@@ -160,14 +235,52 @@ export default function Today() {
   }, [refetch]);
 
   const moveOverdue = useCallback(() => {
+    if (!overdue.length) return;
+    const snapshots = overdue.map((task) => ({ id: task.id, patch: snapshotSchedule(task) }));
     haptic.success();
     flow.rescheduleOverdue();
-    showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
-  }, [flow, overdue.length]);
+    showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`, {
+      actionLabel: '실행 취소',
+      onAction: () => {
+        for (const snap of snapshots) flow.update(snap.id, snap.patch);
+      },
+    });
+  }, [flow, overdue]);
 
-  const openPlanning = useCallback(() => {
+  const deferRemainingToTomorrow = useCallback(() => {
+    if (!allVisibleToday.length) return;
+    const tomorrow = date.add({ days: 1 });
+    const snapshots = allVisibleToday.map((task) => ({ id: task.id, patch: snapshotSchedule(task) }));
+    haptic.success();
+    for (const task of allVisibleToday) {
+      flow.reschedule(task, tomorrow);
+    }
+    showToast(`남은 할 일 ${allVisibleToday.length}개를 내일로 미뤘습니다.`, {
+      actionLabel: '실행 취소',
+      onAction: () => {
+        for (const snap of snapshots) flow.update(snap.id, snap.patch);
+      },
+    });
+  }, [allVisibleToday, date, flow]);
+
+  const openPlanning = useCallback((initialTab?: 'overdue' | 'suggest') => {
     haptic.tap();
+    setPlanInitialTab(initialTab);
     setPlanning(true);
+  }, []);
+
+  const startQuickFocus = useCallback((task: Task) => {
+    haptic.light();
+    router.navigate({
+      pathname: '/focus',
+      params: {
+        taskId: task.id,
+        title: task.title,
+        ...(task.duration_minutes ? { minutes: String(task.duration_minutes), duration: String(task.duration_minutes) } : {}),
+        autostart: '1',
+        at: String(Date.now()),
+      },
+    });
   }, []);
 
   const handleAddSubtask = useCallback((task: Task) => {
@@ -227,15 +340,15 @@ export default function Today() {
     return false;
   }, [twoPane, mainView, setView, openPlanning, overdue.length, moveOverdue, refresh]);
 
-  const todayShortcutsEnabled = isFocused && !planning && !optionsOpen && !kbdSchedule && !kbdMenu;
+  const todayShortcutsEnabled = isFocused && !planning && !optionsOpen && !listSheets.scheduling && !listSheets.menu;
 
   useTaskShortcuts(cursor, {
     enabled: todayShortcutsEnabled && mainView === 'list',
     selecting: !!selectedIds,
     onToggleSelect: toggleSelect,
     onStartSelect: startSelect,
-    onSchedule: setKbdSchedule,
-    onOpenMenu: setKbdMenu,
+    onSchedule: listSheets.setScheduling,
+    onOpenMenu: listSheets.setMenu,
     onAddSubtask: handleAddSubtask,
     onBefore: handleTodayKey,
   });
@@ -251,6 +364,7 @@ export default function Today() {
       date, overdue, due,
       doneTitles: done.map(({ completion }) => completion.task.title),
       projectName: (id) => names.get(id),
+      timeFormat: prefs.timeFormat,
     });
     if (!message) {
       showToast('공유할 할 일이 없습니다.');
@@ -267,15 +381,10 @@ export default function Today() {
   };
 
   const rescheduleOnTimeline = (task: Task, minutes: number) => {
-    const prevPatch: TaskPatch = {
-      due_at: task.due_at,
-      all_day: task.all_day,
-      recurrence_rule: task.recurrence_rule,
-      recurrence_mode: task.recurrence_mode,
-      recurrence_local_time: task.recurrence_local_time,
-    };
-    flow.reschedule(task, today(task.timezone), minutes);
-    showToast(`‘${task.title}’${josa(task.title, '을/를')} ${formatTime(minutes)}${josa(formatTime(minutes), '으로/로')} 옮겼습니다.`, {
+    const prevPatch = snapshotSchedule(task);
+    flow.reschedule(task, date, minutes);
+    const label = formatTime(minutes, prefs.timeFormat);
+    showToast(`‘${task.title}’${josa(task.title, '을/를')} ${label}${josa(label, '으로/로')} 옮겼습니다.`, {
       actionLabel: '실행 취소',
       onAction: () => flow.update(task.id, prevPatch),
     });
@@ -311,27 +420,120 @@ export default function Today() {
   };
 
   const showOnboarding = !isLoading && !isError && tasks.length === 0 && done.length === 0 && !onboardingDismissed;
+  const showHabitsOnToday = hasHabits && prefs.todayHabitsPosition !== 'hidden';
+  const showFocusStrip = prefs.showTodayFocusStrip
+    && mainView === 'list'
+    && !isLoading
+    && !showOnboarding
+    && (remaining > 0 || done.length > 0 || todayFocusMinutes > 0);
+  const showEveningWrapUp = nowHour >= 18 && remaining > 0 && !selectedIds;
 
-  const allDoneCard = (
-    <View style={styles.allDone}>
-      <Icon name="check-circle" size={20} color={done.length ? colors.accentText : colors.textMuted} />
-      <View style={{ flex: 1 }}>
-        <Txt variant="bodyStrong">
-          {done.length ? `오늘 할 일 ${done.length}개를 모두 마쳤습니다` : '오늘 남은 할 일이 없습니다'}
-        </Txt>
-        {done.length ? <Txt variant="small" tone="muted">수고하셨습니다. 다른 할 일도 살펴볼까요?</Txt> : null}
+  const allDoneCard = done.length > 0 ? (
+    <View style={styles.allDoneCelebration}>
+      {prefs.showAllDoneArt ? (
+        <View style={{ marginBottom: space.xs }}>
+          <AllDoneArt size={96} />
+        </View>
+      ) : (
+        <Icon name="check-circle" size={24} color={colors.accentText} />
+      )}
+      <Txt variant="bodyStrong" style={{ textAlign: 'center' }}>
+        오늘 할 일 {done.length}개를 모두 마쳤습니다
+      </Txt>
+      <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>
+        수고하셨습니다. 다른 할 일도 살펴볼까요?
+      </Txt>
+      <View style={styles.allDoneActions}>
+        <Pressable
+          accessibilityRole="button" accessibilityLabel="추천 보기" hitSlop={8}
+          onPress={() => openPlanning('suggest')}
+          style={({ pressed }) => [styles.allDoneLink, { opacity: pressed ? 0.6 : 1 }]}>
+          <Txt variant="smallStrong" tone="accent">추천 보기</Txt>
+        </Pressable>
+        <Txt variant="caption" tone="faint">·</Txt>
+        <Pressable
+          accessibilityRole="button" accessibilityLabel="주간 돌아보기" hitSlop={8}
+          onPress={() => {
+            haptic.tap();
+            router.push(AI_ROUTES.review);
+          }}
+          style={({ pressed }) => [styles.allDoneLink, { opacity: pressed ? 0.6 : 1 }]}>
+          <Txt variant="smallStrong" tone="muted">주간 돌아보기</Txt>
+        </Pressable>
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="추천 보기" hitSlop={8} onPress={() => setPlanning(true)}>
-        <Txt variant="smallStrong" tone="accent">추천 보기</Txt>
+    </View>
+  ) : (
+    <View style={styles.allDone}>
+      <Icon name="check-circle" size={20} color={colors.textMuted} />
+      <View style={{ flex: 1 }}>
+        <Txt variant="bodyStrong">오늘 남은 할 일이 없습니다</Txt>
+      </View>
+      <Pressable
+        accessibilityRole="button" accessibilityLabel="할 일 추가" hitSlop={8}
+        onPress={() => {
+          haptic.tap();
+          quickAdd.open({ dueToday: true });
+        }}
+        style={({ pressed }) => [styles.inlineAddPill, { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.65 : 1 }]}>
+        <Icon name="plus" size={13} color={colors.accentText} />
+        <Txt variant="smallStrong" tone="accent">할 일 추가</Txt>
       </Pressable>
     </View>
   );
 
+  const mitSection = mitTasks.length > 0 ? (
+    <View style={styles.focusSection}>
+      <View style={styles.focusSectionHeader}>
+        <Icon name="star" size={14} color={colors.textMuted} />
+        <Txt variant="section" accessibilityRole="header">오늘의 핵심</Txt>
+        <Txt variant="small" tone="faint" tabular>{mitTasks.length}/3</Txt>
+      </View>
+      <View style={[styles.sectionBorder, { borderTopColor: colors.border }]}>
+        <TaskRows
+          model={listModel} tasks={mitTasks} selectedIds={selectedIds} onToggleSelect={toggleSelect}
+          focusedTaskId={cursor.focusedId} />
+      </View>
+    </View>
+  ) : null;
+
+  const eveningSection = eveningTasks.length > 0 ? (
+    <View style={styles.focusSection}>
+      <View style={styles.focusSectionHeader}>
+        <Icon name="moon" size={14} color={colors.textMuted} />
+        <Txt variant="section" tone="muted" accessibilityRole="header">오늘 저녁</Txt>
+        <Txt variant="small" tone="faint" tabular>{eveningTasks.length}</Txt>
+      </View>
+      <View style={[styles.sectionBorder, { borderTopColor: colors.border }]}>
+        <TaskRows
+          model={listModel} tasks={eveningTasks} hideDate selectedIds={selectedIds} onToggleSelect={toggleSelect}
+          focusedTaskId={cursor.focusedId} />
+      </View>
+    </View>
+  ) : null;
+
+  const eveningWrapUpFooter = showEveningWrapUp ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`남은 할 일 ${remaining}개 내일로 미루기`}
+      onPress={deferRemainingToTomorrow}
+      style={({ pressed }) => [
+        styles.wrapUpFooter,
+        { borderColor: colors.border, backgroundColor: pressed ? colors.surfaceMuted : 'transparent' },
+      ]}>
+      <Icon name="moon" size={14} color={colors.textMuted} />
+      <Txt variant="smallStrong" tone="muted" style={{ flex: 1 }}>남은 일 내일로 미루기</Txt>
+      <Txt variant="caption" tone="faint" tabular>{remaining}개</Txt>
+      <Icon name="arrow-right" size={14} color={colors.textFaint} />
+    </Pressable>
+  ) : null;
+
   const timeline = (
     <Timeline
       tasks={due} sessions={sessions ?? []} timeZone={timeZone} overdueCount={twoPane ? 0 : overdue.length}
+      completedToday={done}
       onComplete={flow.complete} onAddAt={addAt} onRescheduleTime={rescheduleOnTimeline}
-      onPlanOverdue={() => setPlanning(true)}
+      onPlanOverdue={() => openPlanning('overdue')}
+      onMoveOverdueToday={moveOverdue}
       keyboardActive={isFocused && mainView === 'timeline' && !planning && !optionsOpen} />
   );
 
@@ -343,13 +545,15 @@ export default function Today() {
         title="오늘" subtitle={`${date.month}월 ${date.day}일 (${weekdayName(date)}) · ${summary}`}
         right={(
           <View style={{ flexDirection: 'row' }}>
-            <IconButton
-              name="compass" label="하루 계획·일정 정리"
-              onPress={() => {
-                haptic.tap();
-                setPlanning(true);
-              }}
-              color={colors.textMuted} />
+            <View style={{ position: 'relative' }}>
+              <IconButton
+                name="compass" label="하루 계획·일정 정리"
+                onPress={() => openPlanning()}
+                color={colors.textMuted} />
+              {overdue.length > 0 ? (
+                <View pointerEvents="none" style={[styles.headerBadgeDot, { backgroundColor: colors.danger }]} />
+              ) : null}
+            </View>
             <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
             <IconButton
               name="more-vertical" label="보기 옵션"
@@ -379,6 +583,41 @@ export default function Today() {
                 { value: 'matrix', label: '매트릭스', icon: 'grid' },
               ]} />
           </View>
+
+          {showFocusStrip ? (
+            <View style={[styles.focusStrip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.focusStripRow}>
+                <View style={styles.focusStripMeta}>
+                  <Txt variant="smallStrong" tabular>{done.length}/{totalToday}</Txt>
+                  {plannedMinutes > 0 || todayFocusMinutes > 0 ? (
+                    <Txt variant="caption" tone="muted" tabular numberOfLines={1} style={{ flexShrink: 1 }}>
+                      {[
+                        plannedMinutes > 0 ? `예정 ${formatDurationMinutes(plannedMinutes)}` : null,
+                        todayFocusMinutes > 0 ? `집중 ${formatDurationMinutes(todayFocusMinutes)}` : null,
+                      ].filter(Boolean).join(' · ')}
+                    </Txt>
+                  ) : (
+                    <Txt variant="caption" tone="faint" numberOfLines={1}>오늘 진행률</Txt>
+                  )}
+                </View>
+                {focusTarget ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${focusTarget.title} 집중 시작`}
+                    hitSlop={6}
+                    onPress={() => startQuickFocus(focusTarget)}
+                    style={({ pressed }) => [
+                      styles.focusStartPill,
+                      { borderColor: colors.border, backgroundColor: pressed ? colors.surfaceMuted : 'transparent' },
+                    ]}>
+                    <Icon name="play" size={11} color={colors.accentText} />
+                    <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>집중 시작</Txt>
+                  </Pressable>
+                ) : null}
+              </View>
+              <ProgressBar value={totalToday > 0 ? done.length / totalToday : 0} height={3} />
+            </View>
+          ) : null}
 
           {hasCustomViewBar ? (
             <View style={styles.viewPillRow}>
@@ -424,74 +663,88 @@ export default function Today() {
                       <Button label="건너뛰기" kind="secondary" onPress={dismissOnboarding} style={{ minHeight: 42 }} />
                     </View>
                   </Card>
-                  {hasHabits ? <TodayHabits /> : null}
+                  {showHabitsOnToday ? <TodayHabits /> : null}
                 </View>
-              ) : remaining === 0 && done.length === 0 && !hasHabits ? (
+              ) : remaining === 0 && done.length === 0 && !showHabitsOnToday ? (
                 <EmptyState
                   icon="sun" art={<EmptyToday size={EMPTY_ART} />} title="오늘 할 일이 없습니다"
-                  message="아래 + 버튼으로 추가하거나, 하루 계획에서 다른 할 일을 가져올 수 있습니다."
-                  action={<Button label="할 일 추천 보기" kind="secondary" icon="compass" onPress={() => setPlanning(true)} />} />
+                  message="할 일을 바로 추가하거나, 하루 계획에서 다른 할 일을 가져올 수 있습니다."
+                  action={(
+                    <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <Button
+                        label="+ 할 일 추가" kind="secondary"
+                        onPress={() => quickAdd.open({ dueToday: true })} />
+                      <Button
+                        label="할 일 추천 보기" kind="ghost" icon="compass"
+                        onPress={() => openPlanning('suggest')} />
+                    </View>
+                  )} />
               ) : grouped ? (
                 <>
-                  {overdue.length ? (
-                    <OverdueStrip count={overdue.length} onSpread={overdue.length >= 2 ? openPlanning : undefined} onMoveToday={moveOverdue} />
+                  {overdue.length && grouping !== 'time' ? (
+                    <OverdueStrip count={overdue.length} onSpread={overdue.length >= 2 ? () => openPlanning('overdue') : undefined} onMoveToday={moveOverdue} />
                   ) : null}
-                  {groups.length ? (
+                  {!selectedIds && prefs.todayHabitsPosition === 'top' ? <TodayHabits /> : null}
+                  {mitSection}
+                  {displayGroups.length ? (
                     <TodayGroups
-                      groups={groups} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect}
-                      focusedTaskId={cursor.focusedId} />
-                  ) : (
+                      groups={displayGroups} model={listModel} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect}
+                      focusedTaskId={cursor.focusedId} todayIso={todayIso} />
+                  ) : remaining === 0 ? (
                     allDoneCard
-                  )}
-                  {!selectedIds ? <TodayHabits /> : null}
+                  ) : null}
+                  {eveningSection}
+                  {eveningWrapUpFooter}
+                  {!selectedIds && prefs.todayHabitsPosition === 'bottom' ? <TodayHabits /> : null}
                   {!selectedIds ? <DoneToday items={done} /> : null}
                 </>
               ) : (
                 <>
-                  {overdue.length ? (
+                  {!selectedIds && prefs.todayHabitsPosition === 'top' ? <TodayHabits /> : null}
+                  {mitSection}
+                  {restOverdue.length ? (
                     <>
                       <SectionTitle
-                        title="기한 지남" count={overdue.length} tone="danger"
+                        title="기한 지남" count={restOverdue.length} tone="danger"
                         action={(
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
                             {overdue.length >= 2 ? (
                               <Pressable
-                                accessibilityRole="button" accessibilityLabel="여러 날로 일정 나누기" hitSlop={8}
-                                onPress={() => {
-                                  haptic.tap();
-                                  setPlanning(true);
-                                }}
+                                accessibilityRole="button" accessibilityLabel="여러 날에 나누어 배정하기" hitSlop={8}
+                                onPress={() => openPlanning('overdue')}
                                 style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-                                <Txt variant="smallStrong">일정 나누기</Txt>
+                                <Txt variant="smallStrong">일정 분산</Txt>
                               </Pressable>
                             ) : null}
                             <Pressable
                               accessibilityRole="button" accessibilityLabel="기한 지난 할 일 오늘로 옮기기" hitSlop={8} onPress={moveOverdue}
                               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-                              <Txt variant="smallStrong" tone="muted">오늘로 이동</Txt>
+                              <Txt variant="smallStrong" tone="muted">오늘로</Txt>
                             </Pressable>
                           </View>
                         )} />
-                      <TaskList
-                        tasks={overdue} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect}
-                        focusedTaskId={cursor.focusedId} />
+                      <TaskRows
+                        model={listModel} tasks={restOverdue} sortable={sort === 'manual'}
+                        selectedIds={selectedIds} onToggleSelect={toggleSelect} focusedTaskId={cursor.focusedId} />
                     </>
                   ) : null}
-                  {due.length ? (
+                  {restDue.length ? (
                     <>
                       <SectionTitle
-                        title="오늘" count={due.length}
+                        title="오늘" count={restDue.length}
                         action={sort !== 'schedule' ? <Txt variant="caption" tone="muted">{sortLabels[sort]}</Txt> : undefined} />
-                      <TaskList
-                        tasks={due} hideDate selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect}
-                        focusedTaskId={cursor.focusedId} />
+                      <TaskRows
+                        model={listModel} tasks={restDue} hideDate sortable={sort === 'manual'}
+                        selectedIds={selectedIds} onToggleSelect={toggleSelect} focusedTaskId={cursor.focusedId} />
                     </>
-                  ) : overdue.length ? (
-                    <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 할 일이 없습니다.</Txt>
-                  ) : (
+                  ) : remaining === 0 ? (
                     allDoneCard
-                  )}
-                  {!selectedIds ? <TodayHabits /> : null}
+                  ) : restOverdue.length > 0 && mitTasks.length === 0 && eveningTasks.length === 0 ? (
+                    <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 할 일이 없습니다.</Txt>
+                  ) : null}
+                  {eveningSection}
+                  {eveningWrapUpFooter}
+                  {!selectedIds && prefs.todayHabitsPosition === 'bottom' ? <TodayHabits /> : null}
                   {!selectedIds ? <DoneToday items={done} /> : null}
                 </>
               )}
@@ -517,11 +770,10 @@ export default function Today() {
       </View>
 
       <PlanDaySheet
-        visible={planning} onClose={() => setPlanning(false)}
+        visible={planning} onClose={() => setPlanning(false)} initialTab={planInitialTab}
         overdue={overdue} allOpen={tasks} openRoots={roots} subtaskProgress={subtaskProgress} />
 
-      <ScheduleSheet task={kbdSchedule} onClose={() => setKbdSchedule(null)} onPick={flow.reschedule} />
-      <TaskMenu task={kbdMenu} onClose={() => setKbdMenu(null)} onSchedule={setKbdSchedule} onStartSelect={startSelect} />
+      <TaskListSheets sheets={listSheets} onStartSelect={startSelect} />
 
       {optionsOpen ? (
         <Sheet visible onClose={closeOptions} title="보기 옵션">
@@ -543,16 +795,31 @@ export default function Today() {
               <View style={{ gap: 6 }}>
                 <Txt variant="caption" tone="muted">정렬 기준</Txt>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {(['schedule', 'smart', 'priority'] as TodaySort[]).map((option) => (
+                  {(['schedule', 'smart', 'priority', 'manual'] as TodaySort[]).map((option) => (
                     <Chip
                       key={option}
-                      icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : 'flag'}
+                      icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : option === 'priority' ? 'flag' : 'menu'}
                       label={sortLabels[option]}
                       selected={sort === option}
                       onPress={() => setSort(option)} />
                   ))}
                 </View>
               </View>
+              {hasHabits ? (
+                <View style={{ gap: 6 }}>
+                  <Txt variant="caption" tone="muted">오늘의 습관 위치</Txt>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {TODAY_HABITS_POSITIONS.map((position) => (
+                      <Chip
+                        key={position}
+                        icon={position === 'top' ? 'arrow-up' : position === 'bottom' ? 'arrow-down' : 'eye-off'}
+                        label={habitPositionLabels[position]}
+                        selected={prefs.todayHabitsPosition === position}
+                        onPress={() => setPersonalPrefs({ todayHabitsPosition: position })} />
+                    ))}
+                  </View>
+                </View>
+              ) : null}
             </View>
           ) : null}
           {mainView === 'list' && (selectedIds || allVisibleToday.length > 1) ? (
@@ -592,7 +859,37 @@ const styles = StyleSheet.create({
   single: { flex: 1 },
   panes: { flex: 1, flexDirection: 'row' },
   side: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth },
+  headerBadgeDot: { position: 'absolute', top: 7, right: 7, width: 7, height: 7, borderRadius: 4 },
+  focusStrip: {
+    marginHorizontal: space.lg, marginBottom: space.xs, paddingHorizontal: space.md, paddingVertical: 8,
+    borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, gap: 6,
+  },
+  focusStripRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  focusStripMeta: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  focusStartPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, minHeight: 28, borderRadius: radius.pill, borderWidth: 1,
+  },
+  focusSection: { marginTop: space.md },
+  focusSectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, minHeight: 40,
+  },
+  sectionBorder: { borderTopWidth: StyleSheet.hairlineWidth },
   viewPillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: space.lg, paddingBottom: space.xs },
   guideBadge: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   allDone: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.lg },
+  allDoneCelebration: {
+    alignItems: 'center', gap: 6, paddingHorizontal: space.xl, paddingVertical: space.xl,
+  },
+  allDoneActions: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xs },
+  allDoneLink: { paddingVertical: 4, paddingHorizontal: 6 },
+  inlineAddPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: radius.pill,
+    paddingHorizontal: space.md, minHeight: 34,
+  },
+  wrapUpFooter: {
+    flexDirection: 'row', alignItems: 'center', gap: space.sm,
+    marginHorizontal: space.lg, marginTop: space.lg, paddingHorizontal: space.md, minHeight: 42,
+    borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth,
+  },
 });

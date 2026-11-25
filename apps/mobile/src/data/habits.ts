@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { periodProgress, periodStart } from '@/features/habits/goal';
-import { api } from '@/lib/api';
+import { api, ApiFailure } from '@/lib/api';
 import { today } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
 import type { Habit, HabitInput, HabitLog, HabitLogStatus, HabitStats } from '@/lib/shared';
@@ -19,7 +19,17 @@ export type CreateHabitVars = HabitInput & { id: string };
 
 queryClient.setMutationDefaults(writes.createHabit, {
   scope,
-  mutationFn: (vars: CreateHabitVars) => api.createHabit(vars),
+  mutationFn: async (vars: CreateHabitVars) => {
+    try {
+      return await api.createHabit(vars);
+    } catch (error) {
+      // The ID already exists when an earlier attempt reached the server but its reply was lost.
+      if (!(error instanceof ApiFailure && error.status === 409)) throw error;
+      const existing = (await api.habits()).find((habit) => habit.id === vars.id);
+      if (!existing) throw error;
+      return existing;
+    }
+  },
   onMutate: async (vars: CreateHabitVars) => {
     await hold(keys.habits);
     const draft: Habit = {
@@ -27,8 +37,11 @@ queryClient.setMutationDefaults(writes.createHabit, {
       target_count: vars.target_count ?? 1, timezone: vars.timezone,
       start_date: vars.start_date ?? today(vars.timezone).toString(), archived_at: null,
     };
-    queryClient.setQueryData<Habit[]>(keys.habits, (habits) => [draft, ...(habits ?? [])]);
+    queryClient.setQueryData<Habit[]>(keys.habits, (habits) => [draft, ...(habits ?? []).filter((item) => item.id !== vars.id)]);
     queryClient.setQueryData<HabitLog[]>(keys.habitLogs(vars.id), []);
+  },
+  onSuccess: (habit: Habit) => {
+    queryClient.setQueryData<Habit[]>(keys.habits, (habits) => habits?.map((item) => (item.id === habit.id ? habit : item)));
   },
   onSettled: () => settle(keys.habits),
 });

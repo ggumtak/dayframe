@@ -4,8 +4,8 @@ import { test } from 'node:test';
 import { Temporal } from '@js-temporal/polyfill';
 
 import {
-  adjustCalendar, buildWidgetMeta, calendarGrid, focusState, habitToday, snapshotTasks, todayOverview,
-  todayWidgetItems, upcomingRows, widgetDate, widgetRows, type WidgetTask,
+  adjustCalendar, buildWidgetMeta, calendarDateLabel, calendarDateRows, calendarGrid, focusState, habitToday,
+  snapshotTasks, todayOverview, todayWidgetItems, upcomingRows, widgetDate, widgetRows, type WidgetTask,
 } from './items.ts';
 
 // Local stand-in for the backend recurrence engine so this mobile unit test only depends on apps/mobile packages.
@@ -131,3 +131,36 @@ test('adjustCalendar updates cached day counts when tasks are completed from a w
   const nextRepeat = task('회의', '2026-11-22T10:00:00Z', { recurrence_rule: 'FREQ=DAILY' });
   assert.deepEqual(adjustCalendar({ '2026-11-21': 1, '2026-11-22': 1 }, prev, nextRepeat), { '2026-11-22': 1 });
 });
+
+test('calendarDateRows lists real tasks and repeat previews for a selected calendar day', () => {
+  const tasks = snapshotTasks([
+    task('저녁 운동', '2026-11-21T10:00:00Z', { priority: 2 }), // 11/21 19:00 Seoul
+    task('장보기', '2026-11-20T15:00:00Z', { all_day: true }), // 11/21 all-day
+    task('점심 약속', '2026-11-21T03:00:00Z', { priority: 1 }), // 11/21 12:00 Seoul (past)
+    task('영양제', '2026-11-21T00:00:00Z', {
+      recurrence_rule: 'FREQ=DAILY', recurrence_anchor_at: '2026-11-21T00:00:00Z', recurrence_local_time: '09:00:00',
+    }), // 11/21 09:00 Seoul, repeats daily
+    task('내일 회의', '2026-11-22T01:00:00Z', { projectName: '업무' }), // 11/22 10:00 Seoul
+  ], now);
+
+  // Selected today: all-day first, then chronological; overdue flag reflects `now`.
+  const todayRows = calendarDateRows(tasks, '2026-11-21', now, nextOccurrence);
+  assert.deepEqual(todayRows.map((row) => [row.title, row.when, row.overdue, row.completable]), [
+    ['장보기', '', false, true],
+    ['영양제', '오전 9:00', true, true],
+    ['점심 약속', '오후 12:00', true, true],
+    ['저녁 운동', '오후 7:00', false, true],
+  ]);
+
+  // Selected tomorrow: real task + daily repeat preview, respecting 24h time format.
+  const tomorrowRows = calendarDateRows(tasks, '2026-11-22', now, nextOccurrence, '24h');
+  assert.deepEqual(tomorrowRows.map((row) => [row.title, row.when, row.completable, row.meta]), [
+    ['영양제', '09:00', false, '반복 예정'],
+    ['내일 회의', '10:00', true, '#업무'],
+  ]);
+
+  // Invalid date returns empty safely; label formats cleanly.
+  assert.deepEqual(calendarDateRows(tasks, 'not-a-date', now, nextOccurrence), []);
+  assert.equal(calendarDateLabel('2026-11-26'), '11월 26일 (목)');
+});
+

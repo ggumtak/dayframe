@@ -7,14 +7,20 @@ export interface ActiveMention {
   end: number;
 }
 
-/** Detects a trailing `#project` or `@tag` token being typed, so the quick-add bar can suggest matches. */
-export function activeMention(text: string): ActiveMention | null {
-  const match = /(?:^|\s)([#@])([^\s"]*)$/.exec(text);
+/**
+ * Detects a `#project` or `@tag` token being typed at `cursor` (defaults to end of `text`),
+ * so the quick-add bar can suggest matches even when editing mid-sentence.
+ */
+export function activeMention(text: string, cursor: number = text.length): ActiveMention | null {
+  const pos = Math.max(0, Math.min(text.length, cursor));
+  const before = text.slice(0, pos);
+  const match = /(?:^|\s)([#@])([^\s"]*)$/.exec(before);
   if (!match) return null;
   const symbol = match[1];
   const query = match[2];
-  const start = text.length - query.length - 1;
-  return { kind: symbol === '#' ? 'project' : 'tag', query, start, end: text.length };
+  const tail = /^[^\s"]*/.exec(text.slice(pos))?.[0] ?? '';
+  const start = pos - query.length - 1;
+  return { kind: symbol === '#' ? 'project' : 'tag', query, start, end: pos + tail.length };
 }
 
 /** Filters existing project or tag names for `query`, putting prefix matches first. */
@@ -31,11 +37,51 @@ export function matchNames(names: string[], query: string, limit = 8): string[] 
   return [...starts, ...contains].slice(0, limit);
 }
 
-/** Replaces the active `#...` or `@...` fragment with the chosen name, quoting names that contain spaces. */
+function formatMention(prefix: '#' | '@', name: string): string {
+  return /\s/.test(name) ? `${prefix}"${name}"` : `${prefix}${name}`;
+}
+
+/** Replaces the active `#...` or `@...` fragment with the chosen name, quoting names that contain spaces and preserving trailing text. */
 export function applyMention(text: string, mention: ActiveMention, name: string): string {
   const prefix = mention.kind === 'project' ? '#' : '@';
-  const formatted = /\s/.test(name) ? `${prefix}"${name}"` : `${prefix}${name}`;
-  return text.slice(0, mention.start) + formatted + ' ';
+  const formatted = formatMention(prefix, name);
+  const before = text.slice(0, mention.start);
+  const after = text.slice(mention.end);
+  if (!after) return before + formatted + ' ';
+  return before + formatted + (/^\s/.test(after) ? after : ' ' + after);
+}
+
+/** Sets, replaces, or clears a `#project` token in the quick-add bar without creating duplicates. */
+export function applyProject(text: string, name: string | null, tokens: TaskToken[]): string {
+  const existing = tokens.find((token) => token.kind === 'project');
+  const next = name ? formatMention('#', name) : '';
+  if (existing) {
+    const before = text.slice(0, existing.start).replace(/\s+$/, '');
+    const after = text.slice(existing.end).replace(/^\s+/, '');
+    const parts = [before, next, after].filter(Boolean);
+    return parts.join(' ') + (parts.length ? ' ' : '');
+  }
+  if (!next) return text;
+  const trimmed = text.replace(/\s+$/, '');
+  return (trimmed ? trimmed + ' ' : '') + next + ' ';
+}
+
+/** Adds or removes an `@tag` token in the quick-add bar. */
+export function toggleTag(text: string, name: string, tokens: TaskToken[]): string {
+  const target = name.trim().toLowerCase();
+  const hasTag = tokens.some(
+    (token) => token.kind === 'tag' && token.text.replace(/^@"?|"?$/g, '').toLowerCase() === target,
+  );
+  if (hasTag) {
+    return removeTokens(
+      text,
+      tokens,
+      (token) => token.kind === 'tag' && token.text.replace(/^@"?|"?$/g, '').toLowerCase() === target,
+    );
+  }
+  const formatted = formatMention('@', name.trim());
+  const trimmed = text.replace(/\s+$/, '');
+  return (trimmed ? trimmed + ' ' : '') + formatted + ' ';
 }
 
 /** Sets or replaces a `p1`–`p4` priority token in the quick-add bar without creating duplicates. */
@@ -53,15 +99,33 @@ export function applyPriority(text: string, priority: Priority, tokens: TaskToke
   return (trimmed ? trimmed + ' ' : '') + next + ' ';
 }
 
-/** Inserts a date, time, duration, or recurrence shortcut, replacing any existing token of the same kind to avoid parse errors. */
+/**
+ * Inserts a date, time, duration, or recurrence shortcut, replacing any existing token of the same kind to avoid parse errors.
+ * When `cursor` sits on a word boundary inside `text`, inserts at `cursor` rather than forcing the token to the end.
+ */
 export function applyScheduleWord(
-  text: string, word: string, kind: 'date' | 'time' | 'duration' | 'recurrence', tokens: TaskToken[],
+  text: string,
+  word: string,
+  kind: 'date' | 'time' | 'duration' | 'recurrence',
+  tokens: TaskToken[],
+  cursor?: number,
 ): string {
   const existing = tokens.find((token) => token.kind === kind);
   if (existing) {
     const before = text.slice(0, existing.start);
     const after = text.slice(existing.end);
     return before + word + (after.startsWith(' ') || !after ? after || ' ' : ' ' + after);
+  }
+  if (cursor !== undefined) {
+    const pos = Math.max(0, Math.min(text.length, cursor));
+    const leftBoundary = pos === 0 || /\s/.test(text[pos - 1]);
+    const rightBoundary = pos === text.length || /\s/.test(text[pos]);
+    if (pos < text.length && leftBoundary && rightBoundary) {
+      const before = text.slice(0, pos).replace(/\s+$/, '');
+      const after = text.slice(pos).replace(/^\s+/, '');
+      const parts = [before, word, after].filter(Boolean);
+      return parts.join(' ') + (after ? '' : ' ');
+    }
   }
   const trimmed = text.replace(/\s+$/, '');
   return (trimmed ? trimmed + ' ' : '') + word + ' ';

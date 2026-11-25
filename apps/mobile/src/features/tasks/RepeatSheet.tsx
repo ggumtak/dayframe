@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Chip, Icon, IconButton, Row, Segmented, Sheet, Txt } from '@/components/ui';
-import { describeRecurrence, dueMinutes, instantFor, today } from '@/lib/dates';
+import type { TimeFormat } from '@/features/settings/prefs';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
+import { describeRecurrence, deviceTimeZone, dueMinutes, formatDue, instantFor, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { recurrence, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
+import { nextOccurrence, recurrence, type RecurrenceMode, type Task, type TaskPatch } from '@/lib/shared';
 import { radius, space, useTheme } from '@/theme';
 
 import { localTimeString } from './useTaskFlow';
@@ -59,45 +61,91 @@ export function repeatPatch(task: Task, rule: string | null, mode: RecurrenceMod
     };
 }
 
+function previewNextOccurrence(
+  rule: string | null,
+  mode: RecurrenceMode,
+  timezone: string,
+  dueAt: string | null,
+  allDay: boolean,
+  localTime: string | null,
+  timeFormat: TimeFormat,
+): string | null {
+  if (!rule) return null;
+  try {
+    const now = Temporal.Now.instant();
+    const anchorAt = dueAt ?? instantFor(today(timezone), null, timezone);
+    const floor = mode === 'completion'
+      ? now
+      : dueAt && Temporal.Instant.compare(Temporal.Instant.from(dueAt), now) > 0
+        ? Temporal.Instant.from(dueAt)
+        : now;
+    const next = nextOccurrence(rule, timezone, anchorAt, floor, allDay, localTime, mode);
+    return formatDue({ due_at: next, timezone, all_day: allDay }, timeFormat);
+  } catch {
+    return null;
+  }
+}
+
 /** Repeat picker with schedule vs. completion-based recurrence modes, common presets, and a custom RRULE builder. */
 export function RepeatSheet({
-  visible, currentRule, currentMode = 'schedule', onClose, onSelect,
+  visible, currentRule, currentMode = 'schedule', dueAt, timezone, allDay, localTime, onClose, onSelect,
 }: {
   visible: boolean;
   currentRule: string | null;
   currentMode?: RecurrenceMode;
+  dueAt?: string | null;
+  timezone?: string;
+  allDay?: boolean;
+  localTime?: string | null;
   onClose: () => void;
   onSelect: (rule: string | null, mode: RecurrenceMode) => void;
 }) {
   if (!visible) return null;
   return (
     <Sheet visible onClose={onClose} title="반복 설정">
-      <RepeatPicker currentRule={currentRule} currentMode={currentMode} onSelect={onSelect} />
+      <RepeatPicker
+        currentRule={currentRule} currentMode={currentMode}
+        dueAt={dueAt} timezone={timezone} allDay={allDay} localTime={localTime}
+        onSelect={onSelect} />
     </Sheet>
   );
 }
 
 /** The repeat choices without a sheet around them, for screens that show them inside their own sheet. */
-export function RepeatPicker({ currentRule, currentMode = 'schedule', onSelect }: {
+export function RepeatPicker({
+  currentRule, currentMode = 'schedule', dueAt, timezone, allDay, localTime, onSelect,
+}: {
   currentRule: string | null;
   currentMode?: RecurrenceMode;
+  dueAt?: string | null;
+  timezone?: string;
+  allDay?: boolean;
+  localTime?: string | null;
   onSelect: (rule: string | null, mode: RecurrenceMode) => void;
 }) {
   // Keyed by the saved rule so the editor starts over from it whenever it changes.
   return (
     <RepeatPickerContent
-      key={(currentRule ?? 'none') + '|' + currentMode} currentRule={currentRule} currentMode={currentMode} onSelect={onSelect} />
+      key={(currentRule ?? 'none') + '|' + currentMode}
+      currentRule={currentRule} currentMode={currentMode}
+      dueAt={dueAt ?? null} timezone={timezone ?? deviceTimeZone()} allDay={allDay ?? true} localTime={localTime ?? null}
+      onSelect={onSelect} />
   );
 }
 
 function RepeatPickerContent({
-  currentRule, currentMode, onSelect,
+  currentRule, currentMode, dueAt, timezone, allDay, localTime, onSelect,
 }: {
   currentRule: string | null;
   currentMode: RecurrenceMode;
+  dueAt: string | null;
+  timezone: string;
+  allDay: boolean;
+  localTime: string | null;
   onSelect: (rule: string | null, mode: RecurrenceMode) => void;
 }) {
   const { colors } = useTheme();
+  const { timeFormat } = usePersonalPrefs();
   const initialParsed = (() => {
     if (!currentRule) return { frequency: 'WEEKLY' as Freq, interval: 1, weekdays: [] as DayCode[], lastDay: false };
     try {
@@ -118,6 +166,15 @@ function RepeatPickerContent({
 
   const customRule = buildRRule(frequency, interval, weekdays, lastDay);
   const unitLabel = frequency === 'DAILY' ? '일' : frequency === 'WEEKLY' ? '주' : frequency === 'MONTHLY' ? '개월' : '년';
+
+  const presetNextPreview = useMemo(
+    () => previewNextOccurrence(currentRule, mode, timezone, dueAt, allDay, localTime, timeFormat),
+    [currentRule, mode, timezone, dueAt, allDay, localTime, timeFormat],
+  );
+  const customNextPreview = useMemo(
+    () => previewNextOccurrence(customRule, mode, timezone, dueAt, allDay, localTime, timeFormat),
+    [customRule, mode, timezone, dueAt, allDay, localTime, timeFormat],
+  );
 
   const toggleDay = (code: DayCode) => {
     haptic.tap();
@@ -147,18 +204,27 @@ function RepeatPickerContent({
       </View>
 
       {tab === 'presets' ? (
-        <ScrollView style={{ maxHeight: 330 }}>
-          {repeatOptions.map((item) => {
-            const active = currentRule === item.rule && (item.rule === null || currentMode === mode);
-            const label = item.rule && mode === 'completion' ? '완료 후 ' + item.label : item.label;
-            return (
-              <Row
-                key={item.label} icon={item.rule ? 'repeat' : 'slash'} label={label} detail={item.detail}
-                trailing={active ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
-                onPress={() => onSelect(item.rule, item.rule ? mode : 'schedule')} />
-            );
-          })}
-        </ScrollView>
+        <View style={{ gap: space.sm }}>
+          {presetNextPreview ? (
+            <View style={[styles.previewRow, { backgroundColor: colors.surfaceMuted }]}>
+              <Icon name="calendar" size={14} color={colors.textMuted} />
+              <Txt variant="small" tone="muted">다음 반복:</Txt>
+              <Txt variant="smallStrong" tabular>{presetNextPreview}</Txt>
+            </View>
+          ) : null}
+          <ScrollView style={{ maxHeight: 330 }}>
+            {repeatOptions.map((item) => {
+              const active = currentRule === item.rule && (item.rule === null || currentMode === mode);
+              const label = item.rule && mode === 'completion' ? '완료 후 ' + item.label : item.label;
+              return (
+                <Row
+                  key={item.label} icon={item.rule ? 'repeat' : 'slash'} label={label} detail={item.detail}
+                  trailing={active ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
+                  onPress={() => onSelect(item.rule, item.rule ? mode : 'schedule')} />
+              );
+            })}
+          </ScrollView>
+        </View>
       ) : (
         <View style={{ gap: space.md }}>
           <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -180,7 +246,7 @@ function RepeatPickerContent({
               name="minus" label="간격 줄이기" size={18}
               onPress={() => setInterval((n) => Math.max(1, n - 1))}
               style={{ backgroundColor: colors.surfaceMuted, width: 36, height: 36 }} />
-            <Txt variant="bodyStrong" style={{ minWidth: 64, textAlign: 'center' }}>{interval}{unitLabel}마다</Txt>
+            <Txt variant="bodyStrong" tabular style={{ minWidth: 64, textAlign: 'center' }}>{interval}{unitLabel}마다</Txt>
             <IconButton
               name="plus" label="간격 늘리기" size={18}
               onPress={() => setInterval((n) => Math.min(52, n + 1))}
@@ -223,8 +289,13 @@ function RepeatPickerContent({
           ) : null}
 
           <View style={[styles.preview, { backgroundColor: colors.surfaceMuted }]}>
-            <Icon name="repeat" size={15} color={colors.textMuted} />
-            <Txt variant="smallStrong">{describeRecurrence(customRule, mode) ?? customRule}</Txt>
+            <View style={styles.previewLine}>
+              <Icon name="repeat" size={15} color={colors.textMuted} />
+              <Txt variant="smallStrong">{describeRecurrence(customRule, mode) ?? customRule}</Txt>
+            </View>
+            {customNextPreview ? (
+              <Txt variant="meta" tone="muted" tabular>다음 반복: {customNextPreview}</Txt>
+            ) : null}
           </View>
 
           <Button label="반복 적용" onPress={() => onSelect(customRule, mode)} />
@@ -239,8 +310,15 @@ const styles = StyleSheet.create({
   dayBtn: {
     flex: 1, height: 38, borderRadius: radius.md, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
-  preview: {
+  previewRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    borderRadius: radius.md, paddingVertical: 10,
+    borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: space.md,
+  },
+  preview: {
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+    borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: space.md,
+  },
+  previewLine: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
   },
 });
