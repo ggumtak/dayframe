@@ -44,7 +44,7 @@ export default function TaskDetail() {
     return (
       <Screen>
         <EmptyState
-          icon="check-circle" title="할 일을 찾을 수 없습니다" message="이미 완료했거나 삭제한 할 일입니다."
+          icon="check-circle" title="이미 없어진 할 일입니다" message="완료 처리했거나 삭제된 할 일입니다."
           action={<Button label="돌아가기" kind="secondary" onPress={() => router.back()} />} />
       </Screen>
     );
@@ -303,7 +303,7 @@ function TaskEditor({ task }: { task: Task }) {
             </View>
             <TextInput
               value={notes} onChangeText={setNotes} onBlur={saveNotes} multiline maxLength={10000}
-              placeholder="메모 추가..." placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
+              placeholder="메모 추가" placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
               style={[type.body, styles.notes, { color: colors.textMuted }]} />
           </View>
 
@@ -333,14 +333,14 @@ function TaskEditor({ task }: { task: Task }) {
               <View style={styles.nextRepeatRow}>
                 <Icon name="corner-down-right" size={12} color={colors.textFaint} />
                 <Txt variant="caption" tone="faint">
-                  지금 완료하면 다음 일정: {nextRepeatPreview}
+                  완료하면 다음 일정은 {nextRepeatPreview}
                 </Txt>
               </View>
             ) : null}
           </View>
 
           <View style={styles.subtaskHeader}>
-            <Txt variant="section" tone="muted">체크리스트 · 하위 작업</Txt>
+            <Txt variant="section" tone="muted">하위 작업</Txt>
             {totalSubtasks ? (
               <Txt variant="smallStrong" tone="faint">
                 {completedSubtasks.length}/{totalSubtasks}
@@ -349,14 +349,14 @@ function TaskEditor({ task }: { task: Task }) {
             <View style={{ flex: 1 }} />
             {completedSubtasks.length > 0 ? (
               <Pressable
-                accessibilityRole="button" accessibilityLabel="완료한 하위 작업 모두 초기화" hitSlop={8}
+                accessibilityRole="button" accessibilityLabel="완료한 하위 작업 체크 모두 해제" hitSlop={8}
                 onPress={() => {
                   haptic.tap();
                   flow.resetChecklist(completedSubtasks);
                 }}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: pressed ? 0.6 : 1 })}>
                 <Icon name="rotate-ccw" size={12} color={colors.accentText} />
-                <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>모두 초기화</Txt>
+                <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>체크 해제</Txt>
               </Pressable>
             ) : subtasks.length > 1 ? (
               <Txt variant="caption" tone="faint">길게 눌러 순서 변경</Txt>
@@ -373,7 +373,7 @@ function TaskEditor({ task }: { task: Task }) {
                 setSubtaskText(next);
                 if (!next) setSubtaskPlain(false);
               }}
-              placeholder="하위 작업 추가..." placeholderTextColor={colors.textFaint}
+              placeholder="하위 작업 추가" placeholderTextColor={colors.textFaint}
               returnKeyType="done" submitBehavior="submit" onSubmitEditing={addSubtask}
               maxLength={500} accessibilityLabel="하위 작업 추가"
               style={[type.body, { flex: 1, color: colors.text, paddingVertical: 12 }]} />
@@ -388,10 +388,10 @@ function TaskEditor({ task }: { task: Task }) {
           {subtaskPreview ? (
             <View style={[styles.subPreview, { backgroundColor: colors.surfaceMuted }]}>
               <Txt variant="caption" numberOfLines={1} style={{ flex: 1 }}>
-                자동 인식: {subtaskPreview.summary}
+                자동 인식 · {subtaskPreview.summary}
               </Txt>
               <Pressable hitSlop={8} onPress={() => setSubtaskPlain(true)}>
-                <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>제목 그대로</Txt>
+                <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>그대로 입력</Txt>
               </Pressable>
             </View>
           ) : null}
@@ -400,14 +400,14 @@ function TaskEditor({ task }: { task: Task }) {
             <View style={{ marginTop: space.md }}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`완료한 하위 작업 ${completedSubtasks.length}개 ${showCompletedSubs ? '접기' : '보기'}`}
+                accessibilityLabel={`완료한 하위 작업 ${completedSubtasks.length}개 ${showCompletedSubs ? '접기' : '펼치기'}`}
                 onPress={() => {
                   haptic.tap();
                   setShowCompletedSubs((open) => !open);
                 }}
                 style={({ pressed }) => [styles.completedToggle, { opacity: pressed ? 0.6 : 1 }]}>
                 <Icon name={showCompletedSubs ? 'chevron-down' : 'chevron-right'} size={15} color={colors.textFaint} />
-                <Txt variant="smallStrong" tone="muted">완료됨 {completedSubtasks.length}</Txt>
+                <Txt variant="smallStrong" tone="muted">완료한 작업 {completedSubtasks.length}</Txt>
               </Pressable>
               {showCompletedSubs ? completedSubtasks.map((sub) => (
                 <View key={sub.id} style={styles.completedSubRow}>
@@ -417,7 +417,7 @@ function TaskEditor({ task }: { task: Task }) {
                       haptic.tap();
                       flow.reopen(sub);
                     }}
-                    label={sub.title + ' 다시 열기'} />
+                    label={sub.title + ' 완료 취소'} />
                   <View style={[styles.completedSubBody, { borderBottomColor: colors.border }]}>
                     <Text numberOfLines={2} style={[type.body as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
                       {sub.title}
@@ -433,7 +433,7 @@ function TaskEditor({ task }: { task: Task }) {
 
           <View style={styles.footerMeta}>
             <Txt variant="caption" tone="faint">
-              {shortStamp(task.created_at, task.timezone)} 생성 · {shortStamp(task.updated_at, task.timezone)} 수정
+              {shortStamp(task.created_at, task.timezone)} 추가 · {shortStamp(task.updated_at, task.timezone)} 수정
             </Txt>
           </View>
         </ScrollView>
@@ -447,7 +447,7 @@ function TaskEditor({ task }: { task: Task }) {
       <Sheet visible={sheet === 'duration'} onClose={() => setSheet(null)} title="예상 소요 시간">
         <View style={{ gap: space.md }}>
           <Txt variant="small" tone="muted">
-            타임라인에서 블록 길이가 되고, 이 할 일로 집중을 시작하면 타이머도 이 시간에 맞춰집니다.
+            타임라인에 이 시간만큼 표시되고, 집중 타이머도 이 시간으로 맞춰집니다.
           </Txt>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
             <Chip
@@ -560,7 +560,7 @@ function TaskEditor({ task }: { task: Task }) {
                 );
               })}
             </View>
-          ) : <Txt variant="small" tone="muted">아직 만든 태그가 없습니다. 아래에서 바로 추가할 수 있습니다.</Txt>}
+          ) : <Txt variant="small" tone="muted">아직 등록된 태그가 없습니다. 아래에서 새 태그를 추가해 보세요.</Txt>}
           <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
             <TextInput
               value={newTag} onChangeText={setNewTag} placeholder="새 태그 이름" placeholderTextColor={colors.textFaint} maxLength={120}
@@ -584,11 +584,11 @@ function TaskEditor({ task }: { task: Task }) {
         )}
         <Row icon="clipboard" label="체크리스트 복사" onPress={copyMarkdown} />
         <Row
-          icon="bookmark" label="체크리스트 템플릿으로 저장" detail="다음에 다시 쓰기"
+          icon="bookmark" label="체크리스트 템플릿으로 저장" detail="다음에도 바로 불러오기"
           onPress={saveAsTemplate} />
         {completedSubtasks.length > 0 ? (
           <Row
-            icon="rotate-ccw" label="완료한 하위 작업 모두 초기화"
+            icon="rotate-ccw" label="하위 작업 체크 모두 해제"
             onPress={() => {
               setSheet(null);
               flow.resetChecklist(completedSubtasks);

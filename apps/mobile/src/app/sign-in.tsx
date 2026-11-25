@@ -31,7 +31,7 @@ export default function SignIn() {
       if (failure) setError(authMessage(failure));
       else if (!data.session) {
         // The project requires email confirmation before the first sign-in.
-        setNotice('확인 메일을 보냈습니다. 메일의 링크를 누르고 이 앱으로 돌아오면 자동으로 로그인됩니다. 링크를 누른 뒤 빈 페이지나 오류 페이지가 보여도 인증은 완료된 것입니다.');
+        setNotice('인증 메일을 보냈습니다. 메일의 링크를 누른 뒤 앱으로 돌아오면 자동으로 로그인됩니다. 링크를 열었을 때 빈 화면이나 오류가 보여도 인증은 정상적으로 완료됩니다.');
         setMode('sign-in');
         setAwaitingEmail(true);
       }
@@ -80,7 +80,7 @@ export default function SignIn() {
 
           <Button label={mode === 'sign-in' ? '로그인' : '계정 만들기'} onPress={submit} loading={busy} disabled={!ready} />
           <Button
-            kind="ghost" label={mode === 'sign-in' ? '처음이신가요? 계정 만들기' : '이미 계정이 있나요? 로그인'}
+            kind="ghost" label={mode === 'sign-in' ? '처음이신가요? 계정 만들기' : '이미 계정이 있으신가요? 로그인'}
             onPress={() => {
               setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in');
               setError(null);

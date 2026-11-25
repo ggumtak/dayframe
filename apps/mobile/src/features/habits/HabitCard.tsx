@@ -34,7 +34,7 @@ function CheckIn({ progress, target, done, onPress, onLongPress, label }: {
   const ratio = Math.min(1, progress / target);
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={label} accessibilityHint="길게 눌러 건너뛰기 등 더 보기" hitSlop={6}
+      accessibilityRole="button" accessibilityLabel={label} accessibilityHint="길게 눌러 건너뛰기나 쉬어가기를 선택할 수 있습니다" hitSlop={6}
       onLongPress={onLongPress}
       onPress={() => {
         scale.set(withSequence(withTiming(0.86, { duration: 80 }), withSpring(1, { damping: 8, stiffness: 300 })));
@@ -107,11 +107,11 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
               {streak > 0 || strength.score > 0 ? (
                 <View
                   style={styles.stats} accessible
-                  accessibilityLabel={[streak > 0 ? `${streak}${weekly ? '주' : '일'} 연속` : '', strength.score > 0 ? `습관 강도 ${strength.score}%` : '']
+                  accessibilityLabel={[streak > 0 ? `${streak}${weekly ? '주' : '일'} 연속` : '', strength.score > 0 ? `꾸준함 ${strength.score}%` : '']
                     .filter(Boolean).join(', ')}>
                   {streak > 0 ? <Icon name="zap" size={11} color={colors.textFaint} /> : null}
                   <Txt variant="caption" tone="muted">
-                    {[streak > 0 ? `${streak}${weekly ? '주' : '일'}` : '', strength.score > 0 ? `강도 ${strength.score}%` : ''].filter(Boolean).join(' · ')}
+                    {[streak > 0 ? `${streak}${weekly ? '주' : '일'}` : '', strength.score > 0 ? `꾸준함 ${strength.score}%` : ''].filter(Boolean).join(' · ')}
                   </Txt>
                 </View>
               ) : null}
@@ -159,9 +159,17 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
             </View>
             <Txt variant={strength.missedYesterday ? 'smallStrong' : 'small'} tone={strength.missedYesterday ? 'default' : 'muted'}>
               {strength.missedYesterday
-                ? '어제 놓침 · 이틀 연속 빠지지 않게 오늘은 꼭'
-                : (weekly ? `이번 주 ${progress}/${habit.target_count}회` : habit.target_count > 1 ? `오늘 ${progress}/${habit.target_count}회` : done ? '오늘 완료' : '오늘 아직')
-                  + (todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : '')}
+                ? '어제 놓쳤습니다 · 오늘은 이어가 보세요'
+                : weekly || habit.target_count > 1
+                  ? (weekly ? `이번 주 ${progress}/${habit.target_count}회` : `오늘 ${progress}/${habit.target_count}회`)
+                    + (todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : '')
+                  : done
+                    ? '오늘 완료'
+                    : todayLog?.status === 'skipped'
+                      ? '오늘 건너뜀'
+                      : todayLog?.status === 'frozen'
+                        ? '오늘 쉬어감'
+                        : '오늘 기록 전'}
             </Txt>
           </View>
           <CheckIn

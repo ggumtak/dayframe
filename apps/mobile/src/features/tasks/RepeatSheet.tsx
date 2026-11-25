@@ -135,8 +135,8 @@ function RepeatPickerContent({
           ]} />
         <Txt variant="caption" tone="muted">
           {mode === 'completion'
-            ? '실제로 완료한 날을 기준으로 다음 날짜를 정합니다. (예: 필터 교체, 청소, 미용실)'
-            : '원래 정해진 날짜·요일에 맞춰 반복합니다. (예: 주간 회의, 월세 납부)'}
+            ? '완료한 날을 기준으로 다음 일정을 잡습니다. (예: 필터 교체, 청소, 미용실)'
+            : '정해진 날짜와 요일에 맞춰 반복합니다. (예: 주간 회의, 월세 납부)'}
         </Txt>
       </View>
 
@@ -189,13 +189,13 @@ function RepeatPickerContent({
 
           {frequency === 'WEEKLY' ? (
             <View style={{ gap: space.sm }}>
-              <Txt variant="caption" tone="muted">반복 요일 (선택하지 않으면 현재 요일)</Txt>
+              <Txt variant="caption" tone="muted">반복 요일 (선택하지 않으면 현재 요일 기준)</Txt>
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {WEEKDAYS.map((day) => {
                   const active = weekdays.includes(day.code);
                   return (
                     <Pressable
-                      key={day.code} accessibilityRole="checkbox" accessibilityState={{ checked: active }}
+                      key={day.code} accessibilityRole="checkbox" accessibilityLabel={day.label + '요일'} accessibilityState={{ checked: active }}
                       onPress={() => toggleDay(day.code)}
                       style={[
                         styles.dayBtn,

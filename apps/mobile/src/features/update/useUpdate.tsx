@@ -45,14 +45,14 @@ interface UpdateValue {
 }
 
 const messages: Record<UpdateFailure, string> = {
-  untrusted: '이 버전에는 설치 파일이 없습니다. 잠시 후 다시 확인해 주세요.',
-  download: '다운로드하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.',
+  untrusted: '설치 파일을 확인할 수 없습니다. 잠시 후 다시 확인해 주세요.',
+  download: '다운로드하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.',
   'wrong-app': '다른 앱의 설치 파일이어서 설치를 중단했습니다.',
-  'wrong-signer': '서명이 현재 앱과 달라 덮어쓸 수 없습니다. 기존 앱을 삭제한 뒤 새로 설치해야 합니다.',
-  'not-newer': '내려받은 파일이 현재 버전보다 새롭지 않습니다.',
-  unreadable: '내려받은 파일이 손상되었습니다. 다시 시도해 주세요.',
+  'wrong-signer': '앱 서명이 달라 바로 업데이트할 수 없습니다. 기존 앱을 삭제한 뒤 새로 설치해 주세요.',
+  'not-newer': '다운로드한 파일이 현재 버전보다 최신이 아닙니다.',
+  unreadable: '다운로드한 파일이 손상되었습니다. 다시 시도해 주세요.',
   cancelled: '',
-  restart: '다시 시작하지 못했습니다. 앱을 완전히 닫았다가 다시 열면 적용됩니다.',
+  restart: '앱을 다시 시작하지 못했습니다. 앱을 완전히 종료한 뒤 다시 열면 적용됩니다.',
 };
 
 const UpdateContext = createContext<UpdateValue | null>(null);

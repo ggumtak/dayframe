@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { Task } from '../../lib/shared';
-import { buildShareText, createTodayReuser, deriveToday, groupByProject, INBOX_GROUP, splitToday } from './todayList.ts';
+import {
+  buildShareText, createTodayReuser, deriveToday, groupByPriority, groupByProject, groupByTimeOfDay, INBOX_GROUP, splitToday,
+} from './todayList.ts';
 
 const nowMs = Date.parse('2026-11-23T03:00:00Z'); // Monday 2026-11-23 12:00 KST
 
@@ -98,7 +100,7 @@ test('buildShareText lists open tasks with time and list, then what was done', (
   });
   assert.equal(text, [
     '11월 23일 (월) 할 일',
-    '☐ 보고서 마무리 (지연) · 회사',
+    '☐ 보고서 마무리 (기한 지남) · 회사',
     '☐ 운동 · 오후 3:00',
     '☐ 장보기 · 집',
     '',
@@ -114,4 +116,25 @@ test('buildShareText returns null when there is nothing to share, and omits the 
     buildShareText({ date, overdue: [], due: [makeTask('a')], doneTitles: [], projectName: () => undefined }),
     '11월 23일 (월) 할 일\n☐ a',
   );
+});
+
+test('groupByTimeOfDay and groupByPriority bucket Today tasks cleanly', () => {
+  const late = makeTask('late', { due_at: '2026-11-21T15:00:00Z', all_day: true, priority: 2 });
+  const am = makeTask('am', { due_at: '2026-11-23T00:00:00Z', priority: 1 }); // 09:00 KST
+  const pm = makeTask('pm', { due_at: '2026-11-23T06:00:00Z', priority: 3 }); // 15:00 KST
+  const eve = makeTask('eve', { due_at: '2026-11-23T11:00:00Z', priority: 4 }); // 20:00 KST
+  const allDay = makeTask('all', { due_at: '2026-11-22T15:00:00Z', all_day: true, priority: 1 }); // 11-23 all day
+
+  const byTime = groupByTimeOfDay([late], [am, pm, eve, allDay]);
+  assert.deepEqual(byTime.map((g) => [g.title, g.overdue.length + g.due.length]), [
+    ['기한 지남', 1], ['오전', 1], ['오후', 1], ['저녁', 1], ['종일', 1],
+  ]);
+
+  const byPrio = groupByPriority([late], [am, pm, eve, allDay]);
+  assert.deepEqual(byPrio.map((g) => [g.title, g.overdue.map((t) => t.id), g.due.map((t) => t.id)]), [
+    ['!!! 가장 높음', [], ['am', 'all']],
+    ['!! 높음', ['late'], []],
+    ['! 보통', [], ['pm']],
+    ['우선순위 없음', [], ['eve']],
+  ]);
 });

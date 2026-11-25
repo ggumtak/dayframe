@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  alertPreview, allDayLeadLabel, cleanReminder, joinLead, leadAhead, leadLabel, reminderSummary, splitLead,
+  alertPreview, allDayLeadLabel, cleanReminder, joinLead, leadAhead, leadLabel, reminderSummary, splitLead, taskReminderBadge,
 } from './lead.ts';
 import { alertTime, defaultReminderSettings, planReminders, type ReminderTask } from './plan.ts';
 
@@ -57,7 +57,7 @@ test('alert moments: leads of a day or more, all-day days before, and the previe
   const timed = { all_day: false, timezone: 'Asia/Seoul' };
   const due = '2026-11-24T09:00:00Z'; // 18:00 in Seoul
   assert.equal(alertPreview(alertTime(timed, due, defaultReminderSettings, 15), 'Asia/Seoul', now), '11월 24일 오후 5:45에 알림');
-  assert.equal(alertPreview(alertTime(timed, due, defaultReminderSettings, 1440), 'Asia/Seoul', now), '11월 23일 오후 6:00에 알림 · 이미 지난 시각이라 울리지 않습니다');
+  assert.equal(alertPreview(alertTime(timed, due, defaultReminderSettings, 1440), 'Asia/Seoul', now), '11월 23일 오후 6:00에 알림 · 이미 지난 시각이어서 울리지 않습니다');
   assert.match(alertPreview(alertTime(timed, due, defaultReminderSettings, 1440), 'Asia/Seoul', now, true)!, /다음 반복부터/);
   assert.equal(alertPreview(alertTime(timed, '2027-01-02T00:00:00Z', defaultReminderSettings, 1440 + 60), 'Asia/Seoul', now), '2027년 1월 1일 오전 8:00에 알림');
   const allDay = { all_day: true, timezone: 'Asia/Seoul' };
@@ -87,4 +87,40 @@ test('the planner rings a day early, skips alerts already past, and keeps later 
   const allDay = { ...task, all_day: true, due_at: '2026-11-26T15:00:00Z' };
   assert.deepEqual(planReminders([allDay], defaultReminderSettings, now, daily, { leadFor: () => 1440 }).map((item) => kst(item.at)), ['2026-11-26 09:00']);
   assert.deepEqual(planReminders([allDay], defaultReminderSettings, now, daily, { leadFor: () => 30 }).map((item) => kst(item.at)), ['2026-11-27 09:00']);
+});
+
+test('taskReminderBadge shows upcoming alerts, hides past/overdue ones, and keeps default all-day rows quiet', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const futureTimed: ReminderTask = {
+    id, title: 'x', due_at: '2026-11-26T09:00:00Z', all_day: false, timezone: 'Asia/Seoul', completed_at: null, recurrence_rule: null,
+  };
+  const pastTimed: ReminderTask = { ...futureTimed, due_at: '2026-11-24T01:00:00Z' }; // 10:00 KST, before 12:00 now
+  const imminentTimed: ReminderTask = { ...futureTimed, due_at: '2026-11-24T03:10:00Z' }; // 12:10 KST
+  const futureAllDay: ReminderTask = { ...futureTimed, all_day: true, due_at: '2026-11-26T15:00:00Z' }; // 2026-11-27 KST
+  const tomorrowAllDay: ReminderTask = { ...futureTimed, all_day: true, due_at: '2026-11-24T15:00:00Z' }; // 2026-11-25 KST
+
+  // Future timed tasks: active by default, label only when custom override differs from default lead.
+  assert.deepEqual(taskReminderBadge(futureTimed, defaultReminderSettings, undefined, now), { active: true });
+  assert.deepEqual(taskReminderBadge(futureTimed, defaultReminderSettings, 0, now), { active: true });
+  assert.deepEqual(taskReminderBadge(futureTimed, defaultReminderSettings, 30, now), { active: true, label: '30분 전' });
+  assert.deepEqual(taskReminderBadge(futureTimed, { ...defaultReminderSettings, leadMinutes: 15 }, 0, now), { active: true, label: '정시' });
+  assert.deepEqual(taskReminderBadge(futureTimed, defaultReminderSettings, 'off', now), { active: false });
+  assert.deepEqual(taskReminderBadge(futureTimed, { ...defaultReminderSettings, enabled: false }, 30, now), { active: false });
+  assert.deepEqual(taskReminderBadge({ ...futureTimed, completed_at: '2026-11-24T02:00:00Z' }, defaultReminderSettings, undefined, now), { active: false });
+  assert.deepEqual(taskReminderBadge({ ...futureTimed, due_at: null }, defaultReminderSettings, undefined, now), { active: false });
+
+  // Past/overdue timed tasks or tasks whose lead window has already elapsed stay quiet.
+  assert.deepEqual(taskReminderBadge(pastTimed, defaultReminderSettings, undefined, now), { active: false });
+  assert.deepEqual(taskReminderBadge(imminentTimed, defaultReminderSettings, 30, now), { active: false });
+  assert.deepEqual(taskReminderBadge(imminentTimed, { ...defaultReminderSettings, leadMinutes: 15 }, undefined, now), { active: false });
+
+  // All-day tasks stay quiet by default, showing a badge only when a custom day-before lead will still fire.
+  assert.deepEqual(taskReminderBadge(futureAllDay, defaultReminderSettings, undefined, now), { active: false });
+  assert.deepEqual(taskReminderBadge(futureAllDay, defaultReminderSettings, 0, now), { active: false });
+  assert.deepEqual(taskReminderBadge(futureAllDay, defaultReminderSettings, 30, now), { active: false });
+  assert.deepEqual(taskReminderBadge(futureAllDay, defaultReminderSettings, 1440, now), { active: true, label: '하루 전' });
+  assert.deepEqual(taskReminderBadge(futureAllDay, defaultReminderSettings, 2 * 1440, now), { active: true, label: '2일 전' });
+  assert.deepEqual(taskReminderBadge(futureAllDay, { ...defaultReminderSettings, allDayHour: null }, 1440, now), { active: false });
+  // Tomorrow's all-day task with 하루 전 would have rung today at 09:00 KST (< 12:00 now), so no misleading bell.
+  assert.deepEqual(taskReminderBadge(tomorrowAllDay, defaultReminderSettings, 1440, now), { active: false });
 });

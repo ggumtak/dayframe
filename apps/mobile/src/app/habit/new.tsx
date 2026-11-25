@@ -58,7 +58,7 @@ export default function NewHabit() {
         <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }} keyboardShouldPersistTaps="handled">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <Pressable
-              accessibilityRole="button" accessibilityLabel="아이콘과 색 고르기" hitSlop={4} onPress={() => setPicking(true)}
+              accessibilityRole="button" accessibilityLabel="아이콘 고르기" hitSlop={4} onPress={() => setPicking(true)}
               style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
               <HabitAvatar name={name || '습관'} emoji={look.emoji} size={52} />
               <View style={{ position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
@@ -114,14 +114,14 @@ export default function NewHabit() {
               </Txt>
               <IconButton name="plus" label="목표 늘리기" onPress={() => setTarget(Math.min(max, target + 1))} style={{ backgroundColor: colors.surfaceMuted }} />
             </View>
-            <Txt variant="small" tone="faint">기록이 어긋나지 않도록 주기와 목표는 만든 뒤에 바꿀 수 없습니다.</Txt>
+            <Txt variant="small" tone="faint">기록이 어긋나지 않도록 주기와 목표는 만든 뒤에는 바꿀 수 없습니다.</Txt>
           </View>
 
           <Button label="습관 만들기" onPress={save} disabled={!ready} />
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <Sheet visible={picking} onClose={() => setPicking(false)} title="아이콘과 색">
+      <Sheet visible={picking} onClose={() => setPicking(false)} title="아이콘">
         <View style={{ gap: space.lg }}>
           <HabitLookPicker name={name} look={look} onChange={setLook} />
           <Button label="완료" onPress={() => setPicking(false)} />

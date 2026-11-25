@@ -4,5 +4,6 @@ export type WidgetName = typeof WIDGETS[keyof typeof WIDGETS];
 
 /** Click actions the task handler understands; the rest open the app through deep links. */
 export const ACTIONS = {
-  complete: 'COMPLETE', habit: 'HABIT', startFocus: 'START_FOCUS', stopFocus: 'STOP_FOCUS', calendarMove: 'CALENDAR_MOVE',
+  complete: 'COMPLETE', habit: 'HABIT', startFocus: 'START_FOCUS', stopFocus: 'STOP_FOCUS',
+  calendarMove: 'CALENDAR_MOVE', refresh: 'REFRESH',
 } as const;

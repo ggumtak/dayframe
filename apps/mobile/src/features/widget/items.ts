@@ -1,8 +1,15 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { Priority, Task } from '@/lib/shared';
+import type { NextOccurrence } from '../../lib/occurrences.ts';
+import { occurrenceDates } from '../../lib/occurrences.ts';
+import type { Priority, Task } from '../../lib/shared.ts';
 
-export type WidgetTask = Pick<Task, 'id' | 'title' | 'due_at' | 'all_day' | 'timezone' | 'priority' | 'updated_at' | 'recurrence_rule'>;
+export type WidgetTask = Pick<Task, 'id' | 'title' | 'due_at' | 'all_day' | 'timezone' | 'priority' | 'updated_at' | 'recurrence_rule'>
+  & Partial<Pick<Task, 'recurrence_mode' | 'recurrence_anchor_at' | 'recurrence_local_time' | 'occurrence_at'>>
+  & {
+    projectName?: string;
+    subtaskLabel?: string;
+  };
 
 export interface WidgetHabit {
   id: string;
@@ -25,10 +32,16 @@ export interface WidgetFocus {
   seconds: number;
 }
 
+export interface WidgetDoneToday {
+  date: string;
+  count: number;
+}
+
 /** What the app leaves for the widgets: enough to draw them and to act on them without the app. */
 export interface WidgetSnapshot {
   signedIn: boolean;
   tasks: WidgetTask[];
+  doneToday?: WidgetDoneToday;
   habits?: WidgetHabit[];
   focus?: WidgetFocus | null;
   /** Tasks per date, repeats included, from the start of last month to the end of the month after next. */
@@ -44,22 +57,52 @@ export interface WidgetRow {
   title: string;
   /** "오후 7:00", "어제", "11월 19일", or empty for an all-day task due today. */
   when: string;
+  /** Secondary context such as "#업무 · 1/3" or "반복". */
+  meta?: string;
   overdue: boolean;
+  /** True when the task's due calendar date is strictly before today. */
+  overdueDay?: boolean;
   priority: Priority;
   occurrence: string;
+  /** False for future repeat previews in the Upcoming widget. */
+  completable?: boolean;
 }
 
 const MAX_SNAPSHOT = 80;
 
+export function buildWidgetMeta(task: Pick<WidgetTask, 'projectName' | 'subtaskLabel' | 'recurrence_rule'>, preview = false): string | undefined {
+  const parts = [
+    task.projectName ? '#' + task.projectName : '',
+    task.subtaskLabel ?? '',
+    preview ? '반복 예정' : task.recurrence_rule ? '반복' : '',
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
 /** Keeps overdue tasks and those due within eight days: today's list after midnight and the week ahead. */
-export function snapshotTasks(tasks: (WidgetTask & Pick<Task, 'completed_at'>)[], now: number): WidgetTask[] {
+export function snapshotTasks(
+  tasks: (WidgetTask & Pick<Task, 'completed_at'>)[], now: number,
+  extra?: { projectName?: (task: WidgetTask) => string | undefined; subtaskLabel?: (taskId: string) => string | undefined },
+): WidgetTask[] {
   const limit = now + 8 * 86_400_000;
   return tasks
     .filter((task) => !task.completed_at && task.due_at && Date.parse(task.due_at) <= limit)
     .sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!))
     .slice(0, MAX_SNAPSHOT)
-    .map(({ id, title, due_at, all_day, timezone, priority, updated_at, recurrence_rule }) =>
-      ({ id, title, due_at, all_day, timezone, priority, updated_at, recurrence_rule }));
+    .map((task) => {
+      const projectName = extra?.projectName ? extra.projectName(task) : task.projectName;
+      const subtaskLabel = extra?.subtaskLabel ? extra.subtaskLabel(task.id) : task.subtaskLabel;
+      return {
+        id: task.id, title: task.title, due_at: task.due_at, all_day: task.all_day, timezone: task.timezone,
+        priority: task.priority, updated_at: task.updated_at, recurrence_rule: task.recurrence_rule,
+        ...(task.recurrence_mode ? { recurrence_mode: task.recurrence_mode } : {}),
+        ...(task.recurrence_anchor_at ? { recurrence_anchor_at: task.recurrence_anchor_at } : {}),
+        ...(task.recurrence_local_time ? { recurrence_local_time: task.recurrence_local_time } : {}),
+        ...(task.occurrence_at ? { occurrence_at: task.occurrence_at } : {}),
+        ...(projectName ? { projectName } : {}),
+        ...(subtaskLabel ? { subtaskLabel } : {}),
+      };
+    });
 }
 
 /** Today's list as the widget shows it: earliest due first (so overdue days lead), then by priority. */
@@ -72,15 +115,70 @@ export function widgetRows(tasks: WidgetTask[], now: number): WidgetRow[] {
     const order = Temporal.PlainDate.compare(due.toPlainDate(), today);
     if (order > 0) continue;
     const timed = !task.all_day;
-    const overdue = order < 0 || (timed && Date.parse(task.due_at) < now);
+    const overdueDay = order < 0;
+    const overdue = overdueDay || (timed && Date.parse(task.due_at) < now);
     const days = due.toPlainDate().until(today).days;
-    const when = order < 0
+    const when = overdueDay
       ? (days === 1 ? '어제' : due.month + '월 ' + due.day + '일')
       : timed ? clock(due.hour, due.minute) : '';
-    rows.push({ id: task.id, title: task.title, when, overdue, priority: task.priority, occurrence: task.due_at, sort: Date.parse(task.due_at) });
+    const meta = buildWidgetMeta(task);
+    rows.push({
+      id: task.id, title: task.title, when, overdue, overdueDay, priority: task.priority,
+      occurrence: task.due_at, completable: true, ...(meta ? { meta } : {}), sort: Date.parse(task.due_at),
+    });
   }
   // An all-day task is stored at the start of its day, so due order already puts earlier days first.
   return rows.sort((a, b) => a.sort - b.sort || a.priority - b.priority).map(({ sort: _sort, ...row }) => row);
+}
+
+export type TodayWidgetItem =
+  | { kind: 'section'; key: string; label: string; danger?: boolean }
+  | ({ kind: 'task' } & WidgetRow);
+
+/** Splits Today's widget rows into 기한 지남 and 오늘 headings when overdue days are present. */
+export function todayWidgetItems(rows: WidgetRow[]): TodayWidgetItem[] {
+  const overdue = rows.filter((row) => row.overdueDay);
+  const due = rows.filter((row) => !row.overdueDay);
+  if (overdue.length === 0) return due.map((row) => ({ kind: 'task' as const, ...row }));
+  const items: TodayWidgetItem[] = [
+    { kind: 'section', key: 'overdue', label: `기한 지남 · ${overdue.length}`, danger: true },
+    ...overdue.map((row) => ({ kind: 'task' as const, ...row })),
+  ];
+  if (due.length > 0) {
+    items.push(
+      { kind: 'section', key: 'today', label: `오늘 · ${due.length}` },
+      ...due.map((row) => ({ kind: 'task' as const, ...row })),
+    );
+  }
+  return items;
+}
+
+/** Header summary and completion ratio for the Today widget. */
+export function todayOverview(
+  rows: WidgetRow[], doneToday: WidgetDoneToday | undefined, now: number, timeZone: string,
+): { subtitle: string; ratio: number | null; overdueCount: number; dueCount: number; doneCount: number } {
+  const local = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(timeZone).toPlainDate().toString();
+  const dateLabel = widgetDate(now, timeZone);
+  const doneCount = doneToday?.date === local ? doneToday.count : 0;
+  const overdueCount = rows.filter((row) => row.overdueDay).length;
+  const dueCount = rows.length - overdueCount;
+  const totalToday = dueCount + doneCount;
+  const ratio = totalToday > 0 ? Math.min(1, doneCount / totalToday) : rows.length > 0 ? 0 : null;
+
+  let detail = '';
+  if (overdueCount > 0 && dueCount > 0) detail = `기한 지남 ${overdueCount} · 오늘 ${dueCount}`;
+  else if (overdueCount > 0) detail = `기한 지남 ${overdueCount}개`;
+  else if (doneCount > 0 && dueCount > 0) detail = `오늘 ${doneCount}/${totalToday} 완료`;
+  else if (dueCount > 0) detail = `${dueCount}개`;
+  else if (doneCount > 0) detail = `${doneCount}개 완료`;
+
+  return {
+    subtitle: detail ? `${dateLabel} · ${detail}` : dateLabel,
+    ratio,
+    overdueCount,
+    dueCount,
+    doneCount,
+  };
 }
 
 function clock(hour: number, minute: number): string {
@@ -95,24 +193,49 @@ export function widgetDate(now: number, timeZone: string): string {
 
 export type UpcomingRow = { kind: 'day'; key: string; label: string; count: number } | ({ kind: 'task' } & WidgetRow);
 
-/** The next seven days after today, one heading per day that has something on it. */
-export function upcomingRows(tasks: WidgetTask[], now: number, timeZone: string): UpcomingRow[] {
+/** The next seven days after today, one heading per day that has something on it (real tasks + optional repeat previews). */
+export function upcomingRows(tasks: WidgetTask[], now: number, timeZone: string, next?: NextOccurrence): UpcomingRow[] {
   const today = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(timeZone).toPlainDate();
   const days = new Map<string, { date: Temporal.PlainDate; rows: WidgetRow[] }>();
   // "Ahead" is judged in each task's own zone, as the Today widget does, so no task shows in both.
   const todayIn = (zone: string) => Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(zone).toPlainDate();
-  for (const task of [...tasks].sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!) || a.priority - b.priority)) {
+  const sorted = [...tasks].sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!) || a.priority - b.priority);
+  for (const task of sorted) {
     if (!task.due_at) continue;
     const due = Temporal.Instant.from(task.due_at).toZonedDateTimeISO(task.timezone);
-    const ahead = todayIn(task.timezone).until(due.toPlainDate()).days;
-    if (ahead < 1 || ahead > 7) continue;
-    const key = due.toPlainDate().toString();
-    const entry = days.get(key) ?? { date: due.toPlainDate(), rows: [] };
-    entry.rows.push({
-      id: task.id, title: task.title, when: task.all_day ? '' : clock(due.hour, due.minute), overdue: false,
-      priority: task.priority, occurrence: task.due_at,
-    });
-    days.set(key, entry);
+    const zoneToday = todayIn(task.timezone);
+    const ahead = zoneToday.until(due.toPlainDate()).days;
+    if (ahead >= 1 && ahead <= 7) {
+      const key = due.toPlainDate().toString();
+      const entry = days.get(key) ?? { date: due.toPlainDate(), rows: [] };
+      const meta = buildWidgetMeta(task);
+      entry.rows.push({
+        id: task.id, title: task.title, when: task.all_day ? '' : clock(due.hour, due.minute), overdue: false,
+        priority: task.priority, occurrence: task.due_at, completable: true, ...(meta ? { meta } : {}),
+      });
+      days.set(key, entry);
+    }
+    if (next && task.recurrence_rule && task.recurrence_mode !== 'completion') {
+      const from = zoneToday.add({ days: 1 });
+      const to = zoneToday.add({ days: 7 });
+      const dueKey = due.toPlainDate().toString();
+      const occTask = {
+        ...task,
+        recurrence_anchor_at: task.recurrence_anchor_at ?? null,
+        recurrence_local_time: task.recurrence_local_time ?? null,
+      };
+      for (const repeatDate of occurrenceDates(occTask, from, to, next, 16)) {
+        const key = repeatDate.toString();
+        if (key === dueKey) continue;
+        const entry = days.get(key) ?? { date: repeatDate, rows: [] };
+        const meta = buildWidgetMeta(task, true);
+        entry.rows.push({
+          id: task.id + '@' + key, title: task.title, when: task.all_day ? '' : clock(due.hour, due.minute), overdue: false,
+          priority: task.priority, occurrence: task.due_at, completable: false, ...(meta ? { meta } : {}),
+        });
+        days.set(key, entry);
+      }
+    }
   }
   const rows: UpcomingRow[] = [];
   for (const [key, { date, rows: items }] of [...days].sort(([a], [b]) => (a < b ? -1 : 1))) {

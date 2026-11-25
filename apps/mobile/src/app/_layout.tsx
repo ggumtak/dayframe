@@ -85,8 +85,8 @@ function App() {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         <EmptyState
-          icon="cloud-off" title="서버 연결 정보가 없습니다"
-          message="이 빌드에는 Supabase 주소와 키가 들어 있지 않습니다. EXPO_PUBLIC_SUPABASE_URL과 EXPO_PUBLIC_SUPABASE_KEY를 설정해 다시 빌드해 주세요." />
+          icon="cloud-off" title="서버 연결 설정이 필요합니다"
+          message="현재 빌드에 Supabase 연결 정보가 포함되어 있지 않습니다. EXPO_PUBLIC_SUPABASE_URL과 EXPO_PUBLIC_SUPABASE_KEY를 설정한 뒤 다시 빌드해 주세요." />
       </View>
     );
   }

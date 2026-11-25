@@ -53,8 +53,8 @@ export function TemplatesSheet({
     });
     haptic.success();
     onClose();
-    showToast(`‘${tpl.title}’ 체크리스트(하위 작업 ${tpl.items.length}개)를 추가했습니다.`, {
-      actionLabel: '열기',
+    showToast(`‘${tpl.title}’ 체크리스트와 하위 작업 ${tpl.items.length}개를 추가했습니다.`, {
+      actionLabel: '보기',
       onAction: () => router.push({ pathname: '/task/[id]', params: { id: parentId } }),
     });
   };
@@ -91,7 +91,7 @@ export function TemplatesSheet({
     <Sheet visible={visible} onClose={onClose} title="체크리스트 템플릿">
       <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ gap: space.md, paddingBottom: space.sm }}>
         <Txt variant="small" tone="muted">
-          자주 쓰는 체크리스트를 한 번에 만듭니다. 할 일 상세 화면에서 내 템플릿을 저장할 수도 있습니다.
+          자주 쓰는 체크리스트를 한 번에 추가할 수 있습니다. 할 일 상세 화면에서 직접 템플릿을 저장해 보세요.
         </Txt>
         {custom.length > 0 ? (
           <View style={{ gap: space.sm }}>

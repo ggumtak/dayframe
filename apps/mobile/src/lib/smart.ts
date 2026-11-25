@@ -216,10 +216,10 @@ export function planBalancedReschedule(
     const reason = task.priority === 1
       ? '우선순위 가장 높음'
       : offset === 0
-        ? '오늘 여유 있음'
+        ? '오늘 일정에 여유 있음'
         : offset === 1
-          ? '내일이 여유 있음'
-          : `일정 적은 날 (${bestDay.month}월 ${bestDay.day}일)`;
+          ? '내일 일정에 여유 있음'
+          : `일정이 적은 날 (${bestDay.month}월 ${bestDay.day}일)`;
     proposals.push({ task, targetDate: bestDay, reason });
   }
 
@@ -269,10 +269,10 @@ export function suggestForToday(
       reason = '우선순위 높음';
     } else if (tomorrow) {
       score += 50;
-      reason = '내일 할 일 · 미리 하기';
+      reason = '내일 할 일 · 미리 끝내기';
     } else if (stale) {
       score += 40;
-      reason = '오래 미뤄 둔 일';
+      reason = '오래 미뤄 둔 할 일';
     } else if (!task.due_at && task.priority === 3) {
       score += 32;
       reason = '우선순위 보통 · 날짜 없음';

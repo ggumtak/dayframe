@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  defaultReminderSettings, parseHabitReminderId, parseReminderId, planHabitReminders, planReminders, reminderId, type ReminderTask, stableUuid,
+  defaultReminderSettings, parseBriefingReminderId, parseHabitReminderId, parseReminderId,
+  planBriefingReminders, planHabitReminders, planReminders, reminderId, type ReminderTask, stableUuid,
 } from './plan.ts';
 
 const now = Date.parse('2026-11-21T09:00:00Z'); // Saturday 18:00 in Seoul
@@ -64,14 +65,51 @@ test('a task can ring earlier than the default, or not at all', () => {
   assert.deepEqual(planned.map((item) => kst(item.at)), ['2026-11-21 18:30']);
 });
 
-test('habit alerts come daily at their time and skip today once done', () => {
+test('habit alerts come daily at their time, support snooze IDs, and skip today once done', () => {
   const habit = { id: '33333333-3333-4333-8333-333333333333', time: '21:00', timezone: 'Asia/Seoul', doneThrough: null };
   const planned = planHabitReminders([habit], now, 3);
   assert.deepEqual(planned.map((item) => kst(item.at)), ['2026-11-21 21:00', '2026-11-22 21:00', '2026-11-23 21:00']);
   assert.deepEqual(planHabitReminders([{ ...habit, doneThrough: '2026-11-21' }], now, 3).map((item) => item.date), ['2026-11-22', '2026-11-23']);
-  // A weekly goal met on Saturday also covers Sunday; Monday starts a new week.
   assert.deepEqual(planHabitReminders([{ ...habit, doneThrough: '2026-11-22' }], now, 3).map((item) => item.date), ['2026-11-23']);
   assert.deepEqual(planHabitReminders([{ ...habit, time: '07:00' }], now, 2).map((item) => item.date), ['2026-11-22']);
   assert.deepEqual(parseHabitReminderId(planned[0].id), { habitId: habit.id, date: '2026-11-21' });
+  assert.deepEqual(parseHabitReminderId('habit-snooze-' + habit.id + '-2026-11-21'), { habitId: habit.id, date: '2026-11-21' });
   assert.equal(planHabitReminders([{ ...habit, time: 'soon' }], now).length, 0);
+});
+
+test('daily briefing schedules only on days with open or overdue tasks', () => {
+  const earlyMorning = Date.parse('2026-11-20T22:00:00Z'); // Saturday 2026-11-21 07:00 KST (before 08:00 briefing)
+  const tasks: ReminderTask[] = [
+    { ...task('1', { due_at: '2026-11-19T15:00:00Z', all_day: true, priority: 2 }), title: '지연된 보고서' }, // 11-20 overdue
+    { ...task('2', { due_at: '2026-11-21T06:00:00Z', priority: 1 }), title: '오후 미팅' }, // 11-21 today
+    { ...task('3', { due_at: '2026-11-23T00:00:00Z', priority: 3 }), title: '월요일 점검' }, // 11-23
+  ];
+  const briefings = planBriefingReminders(tasks, { ...defaultReminderSettings, briefingHour: 8 }, earlyMorning, 'Asia/Seoul', daily, 4);
+  assert.deepEqual(briefings.map((b) => [b.date, kst(b.at), b.todayCount, b.overdueCount]), [
+    ['2026-11-21', '2026-11-21 08:00', 1, 1],
+    ['2026-11-23', '2026-11-23 08:00', 1, 0],
+  ]);
+  assert.deepEqual(briefings[0].topTitles, ['오후 미팅', '지연된 보고서']);
+  assert.deepEqual(parseBriefingReminderId(briefings[0].id), { date: '2026-11-21' });
+  assert.deepEqual(planBriefingReminders(tasks, { ...defaultReminderSettings, briefingHour: null }, earlyMorning, 'Asia/Seoul', daily, 4), []);
+});
+
+test('daily briefing carries overdue tasks onto the next morning after briefing hour, defaults undefined hour, and expands >14d overdue repeats', () => {
+  // `now` is Saturday 2026-11-21 18:00 KST (after the 08:00 briefing hour has already passed).
+  const tasks: ReminderTask[] = [
+    { ...task('1', { due_at: '2026-11-19T15:00:00Z', all_day: true, priority: 2 }), title: '지연된 보고서' }, // 11-20 overdue
+    { ...task('2', { due_at: '2026-11-21T11:00:00Z', priority: 1 }), title: '오늘 저녁 운동', recurrence_rule: 'FREQ=DAILY' }, // 11-21 today + daily repeat
+    { ...task('3', { due_at: '2026-11-23T00:00:00Z', priority: 3 }), title: '월요일 점검' }, // 11-23
+    { ...task('4', { due_at: '2026-10-31T15:00:00Z', all_day: true, priority: 4, recurrence_rule: 'FREQ=DAILY' }), title: '장기 미룬 매일 습관' }, // 11-01 (20d overdue daily)
+  ];
+
+  // Omitted `briefingHour` falls back to defaultReminderSettings.briefingHour (8).
+  const legacySettings = { enabled: true, leadMinutes: 0 as const, allDayHour: 9 };
+  const briefings = planBriefingReminders(tasks, legacySettings, now, 'Asia/Seoul', daily, 3);
+  assert.deepEqual(briefings.map((b) => [b.date, kst(b.at), b.todayCount, b.overdueCount]), [
+    ['2026-11-22', '2026-11-22 08:00', 1, 2], // first future briefing: carries both overdue tasks (< 11-21) + tomorrow's repeat of task 2
+    ['2026-11-23', '2026-11-23 08:00', 3, 0], // subsequent day: no overdue carryover, task 2 + task 3 + 20d-overdue daily task 4 expanded within 64-step cap
+  ]);
+  assert.deepEqual(briefings[0].topTitles, ['오늘 저녁 운동', '지연된 보고서', '장기 미룬 매일 습관']);
+  assert.deepEqual(briefings[1].topTitles, ['오늘 저녁 운동', '월요일 점검', '장기 미룬 매일 습관']);
 });

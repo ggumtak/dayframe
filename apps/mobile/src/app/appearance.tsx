@@ -28,7 +28,7 @@ export default function Appearance() {
               { value: 'light', label: MODE_LABELS.light, icon: 'sun' },
               { value: 'dark', label: MODE_LABELS.dark, icon: 'moon' },
             ]} />
-          {mode === 'system' ? <Txt variant="small" tone="muted">휴대폰의 다크 모드 설정을 따릅니다.</Txt> : null}
+          {mode === 'system' ? <Txt variant="small" tone="muted">기기의 다크 모드 설정을 따릅니다.</Txt> : null}
         </View>
 
         <View style={{ gap: space.sm }}>
@@ -59,11 +59,11 @@ export default function Appearance() {
               })}
             </View>
           </Card>
-          <Txt variant="small" tone="muted">버튼, 선택한 탭, 체크 표시의 색이 바뀝니다.</Txt>
+          <Txt variant="small" tone="muted">주요 버튼과 선택한 탭, 체크 표시에 적용됩니다.</Txt>
         </View>
 
         <View style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted" accessibilityRole="header">피드백</Txt>
+          <Txt variant="section" tone="muted" accessibilityRole="header">터치 피드백</Txt>
           <Card style={{ paddingVertical: space.xs }}>
             <Row
               icon="smartphone" label="진동 피드백" detail={hapticsOn ? '켜짐' : '꺼짐'}

@@ -36,7 +36,7 @@ function DraftRow({ draft, now, onToggle, onEdit }: { draft: Draft; now: Tempora
   const meta = [date, draft.list ?? '미분류', draft.durationMinutes ? formatDurationMinutes(draft.durationMinutes) : null].filter(Boolean);
   return (
     <View style={[styles.row, { borderBottomColor: colors.border, opacity: draft.include ? 1 : 0.55 }]}>
-      <Toggle on={draft.include} onPress={onToggle} label={`${draft.title} 추가`} />
+      <Toggle on={draft.include} onPress={onToggle} label={`${draft.title} 포함`} />
       <Pressable accessibilityRole="button" accessibilityLabel={`${draft.title} 고치기`} onPress={onEdit} style={{ flex: 1, gap: 4 }}>
         <Txt variant="bodyStrong">{draft.title}</Txt>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.sm, rowGap: 2 }}>
@@ -88,10 +88,10 @@ function EditSheet({ draft, lists, now, onClose, onSave }: {
   };
 
   return (
-    <Sheet visible={!!draft} onClose={onClose} title="할 일 고치기">
+    <Sheet visible={!!draft} onClose={onClose} title="할 일 수정">
       <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 520 }} contentContainerStyle={{ gap: space.md, paddingBottom: space.sm }}>
         <TextInput
-          value={title} onChangeText={setTitle} accessibilityLabel="제목" placeholder="제목" placeholderTextColor={colors.textFaint}
+          value={title} onChangeText={setTitle} accessibilityLabel="제목" placeholder="할 일 제목" placeholderTextColor={colors.textFaint}
           style={[styles.input, { backgroundColor: colors.surfaceMuted, color: colors.text, fontFamily }]} />
         <Txt variant="smallStrong" tone="muted">날짜</Txt>
         <View style={styles.chips}>
@@ -103,10 +103,10 @@ function EditSheet({ draft, lists, now, onClose, onSave }: {
         </View>
         <Txt variant="smallStrong" tone="muted">시간</Txt>
         <TextInput
-          value={time} onChangeText={setTime} accessibilityLabel="시간" placeholder="예: 19:00, 오후 7시 (비우면 시간 없음)"
+          value={time} onChangeText={setTime} accessibilityLabel="시간" placeholder="예: 19:00, 오후 7시 (비워 두면 시간 없음)"
           placeholderTextColor={colors.textFaint} keyboardType="numbers-and-punctuation"
           style={[styles.input, { backgroundColor: colors.surfaceMuted, color: colors.text, fontFamily, borderColor: timeBad ? colors.danger : 'transparent' }]} />
-        {timeBad ? <Txt variant="small" tone="danger">시간을 읽지 못했습니다. 19:00처럼 적어 주세요.</Txt> : null}
+        {timeBad ? <Txt variant="small" tone="danger">시간 형식이 올바르지 않습니다. 19:00처럼 입력해 주세요.</Txt> : null}
         <Txt variant="smallStrong" tone="muted">목록</Txt>
         <View style={styles.chips}>
           <Chip label="미분류" selected={!list} onPress={() => setList(null)} />
@@ -154,9 +154,9 @@ export default function Organize() {
     try {
       const text = await Clipboard.getStringAsync();
       if (text.trim()) setMemo((current) => (current.trim() ? current.trimEnd() + '\n' + text : text));
-      else showToast('복사한 내용이 없습니다.');
+      else showToast('복사된 내용이 없습니다.');
     } catch {
-      showToast('붙여넣기를 하지 못했습니다.', { tone: 'error' });
+      showToast('내용을 붙여넣지 못했습니다.', { tone: 'error' });
     }
   };
 
@@ -193,7 +193,7 @@ export default function Organize() {
   const footer = state.status === 'loading' || state.status === 'error' ? undefined : preview ? (
     <View style={{ flexDirection: 'row', gap: space.sm }}>
       <Button label="다시 쓰기" kind="secondary" onPress={() => { setDrafts(null); request.reset(); }} style={{ flex: 1 }} />
-      <Button label={chosen.length ? `${chosen.length}개 추가` : '고른 할 일 없음'} icon="plus" disabled={!chosen.length} onPress={add} style={{ flex: 2 }} />
+      <Button label={chosen.length ? `${chosen.length}개 추가` : '선택한 할 일 없음'} icon="plus" disabled={!chosen.length} onPress={add} style={{ flex: 2 }} />
     </View>
   ) : (
     <Button label="정리하기" icon="zap" disabled={!memo.trim()} onPress={() => void organize()} />
@@ -209,7 +209,7 @@ export default function Organize() {
         ) : preview ? (
           <>
             <Txt variant="small" tone="muted">
-              {drafts.length ? '추가할 할 일만 남겨 두세요. 누르면 제목·날짜·시간·목록을 고칠 수 있습니다.' : '메모에서 할 일을 찾지 못했습니다. 메모를 조금 더 구체적으로 적어 보세요.'}
+              {drafts.length ? '추가할 할 일만 선택해 주세요. 항목을 누르면 제목·날짜·시간·목록을 수정할 수 있습니다.' : '메모에서 할 일을 찾지 못했습니다. 내용을 조금 더 구체적으로 적어 다시 시도해 보세요.'}
             </Txt>
             {drafts.map((draft) => (
               <DraftRow
@@ -223,7 +223,7 @@ export default function Organize() {
             <View style={[styles.memo, { backgroundColor: colors.surfaceMuted }]}>
               <TextInput
                 value={memo} onChangeText={setMemo} multiline textAlignVertical="top" accessibilityLabel="메모"
-                placeholder={'머릿속에 있는 것을 그대로 적어 보세요\n\n예: 내일 오전에 치과 전화, 금요일까지 보고서 초안. 주말엔 장보기(우유, 계란)'}
+                placeholder={'떠오르는 일을 자유롭게 적어 보세요.\n\n예: 내일 오전에 치과 전화, 금요일까지 보고서 초안. 주말엔 장보기(우유, 계란)'}
                 placeholderTextColor={colors.textFaint} style={[styles.memoInput, { color: colors.text, fontFamily }]} />
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -238,7 +238,7 @@ export default function Organize() {
               ) : null}
             </View>
             <Txt variant="caption" tone="faint">
-              날짜·시간·목록은 메모에서 읽어 채웁니다. 추가하기 전에 하나씩 고칠 수 있습니다.
+              날짜·시간·목록은 메모 내용을 바탕으로 자동으로 채워 드립니다. 추가하기 전에 하나씩 수정할 수 있습니다.
             </Txt>
           </>
         )}

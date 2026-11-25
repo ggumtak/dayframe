@@ -17,7 +17,7 @@ export interface ChecklistTemplate {
 export const builtinTemplates: ChecklistTemplate[] = [
   {
     id: 'builtin-travel',
-    title: '여행 짐싸기',
+    title: '여행 짐 싸기',
     icon: 'briefcase',
     builtin: true,
     items: ['신분증 · 여권 · 지갑', '충전기 · 보조배터리 · 멀티어댑터', '속옷 · 양말 · 여벌 옷', '세면도구 · 상비약', '숙소 · 교통 예약 확인', '집 문단속 · 가스 · 콘센트 확인'],
@@ -34,28 +34,28 @@ export const builtinTemplates: ChecklistTemplate[] = [
     title: '외출 · 출근 전 체크',
     icon: 'sunrise',
     builtin: true,
-    items: ['휴대폰 · 지갑 · 이어폰', '차 키 · 사원증', '날씨 확인 (우산/겉옷)', '전등 · 냉난방기 끄기'],
+    items: ['휴대폰 · 지갑 · 이어폰', '차 키 · 사원증', '날씨 확인 (우산 · 겉옷)', '전등 · 냉난방기 끄기'],
   },
   {
     id: 'builtin-meeting',
     title: '회의 준비 · 정리',
     icon: 'users',
     builtin: true,
-    items: ['안건·자료 미리 공유', '핵심 질문 3가지 정리', '회의록 작성', '결정 사항 · 할 일 정리'],
+    items: ['안건 · 자료 미리 공유', '핵심 질문 3가지 정리', '회의록 작성', '결정 사항 · 후속 할 일 정리'],
   },
   {
     id: 'builtin-weekly-review',
     title: '주간 돌아보기',
     icon: 'compass',
     builtin: true,
-    items: ['미분류 할 일 모두 정리하기', '지연된 할 일 다시 잡거나 지우기', '다음 주 달력 일정 확인', '이번 주 완료한 일 돌아보기', '다음 주 핵심 목표 3가지 정하기'],
+    items: ['미분류 할 일 모두 정리하기', '기한이 지난 할 일 일정 다시 정리하기', '다음 주 달력 일정 확인', '이번 주 완료한 일 돌아보기', '다음 주 핵심 목표 3가지 정하기'],
   },
   {
     id: 'builtin-deploy',
     title: '릴리스 · 배포 점검',
     icon: 'check-square',
     builtin: true,
-    items: ['테스트 · 린트 · 타입체크 통과', '변경 로그 · 버전 확인', '환경 변수 · 설정 확인', '배포 후 핵심 플로우 스모크 테스트'],
+    items: ['테스트 · 린트 · 타입 체크 통과', '변경 내역 · 버전 확인', '환경 변수 · 설정 확인', '배포 후 핵심 기능 점검'],
   },
 ];
 

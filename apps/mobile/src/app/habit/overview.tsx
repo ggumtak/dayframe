@@ -16,7 +16,7 @@ import { type Colors, radius, space, useTheme } from '@/theme';
 type Mode = 'week' | 'month';
 const NO_LOGS: HabitLog[] = [];
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
-const stateLabel: Record<DayState, string> = { met: '달성', partial: '일부', skipped: '건너뜀', frozen: '쉬어감', empty: '기록 없음' };
+const stateLabel: Record<DayState, string> = { met: '달성', partial: '일부 달성', skipped: '건너뜀', frozen: '쉬어감', empty: '기록 없음' };
 
 /**
  * The colours of a day cell: one accent ramp for every habit, built once per theme. Habits are told apart by name,
@@ -61,7 +61,7 @@ const WeekRow = memo(function WeekRow({ habit, logs, days, todayKey }: {
           const outside = outsideHabit(habit, date, now);
           return (
             <View
-              key={date.toString()} accessibilityLabel={`${date.month}월 ${date.day}일 ${outside ? '' : stateLabel[state]}`}
+              key={date.toString()} accessibilityLabel={outside ? `${date.month}월 ${date.day}일` : `${date.month}월 ${date.day}일 ${stateLabel[state]}`}
               style={[styles.weekCell, { backgroundColor: outside ? fills.empty : fills[state], opacity: outside ? 0.35 : 1 }]}>
               {outside ? null : <Mark state={state} size={10} />}
             </View>
@@ -101,7 +101,7 @@ const MiniMonth = memo(function MiniMonth({ habit, logs, cells, todayKey, width 
   });
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={`${habit.name}, 이달 ${met}일 달성, 자세히 보기`}
+      accessibilityRole="button" accessibilityLabel={`${habit.name}, ${met}일 달성, 자세히 보기`}
       onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}
       style={({ pressed }) => [width, pressed && { opacity: 0.7 }]}>
       <Card style={styles.miniCard}>
@@ -178,13 +178,13 @@ export default function HabitOverview() {
         <Segmented<Mode> value={mode} onChange={setMode} options={[{ value: 'week', label: '주간' }, { value: 'month', label: '월간' }]} />
       </View>
       {isLoading ? <Loading /> : !habits.length ? (
-        <EmptyState icon="grid" art={<EmptyHabits size={EMPTY_ART} />} title="아직 습관이 없습니다" message="습관을 만들면 여기서 기록을 한눈에 볼 수 있습니다." />
+        <EmptyState icon="grid" art={<EmptyHabits size={EMPTY_ART} />} title="아직 등록된 습관이 없습니다" message="습관을 만들면 이곳에서 기록을 한눈에 볼 수 있습니다." />
       ) : mode === 'week' ? (
         <ScrollView contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.xxl, gap: space.sm }}>
           <Stepper
             label={weekLabel} canPrev={canPrevWeek} canNext={weekOffset > 0}
             onPrev={() => setWeekOffset((value) => value + 1)} onNext={() => setWeekOffset((value) => Math.max(0, value - 1))}
-            prevLabel="지난주" nextLabel="다음 주" />
+            prevLabel="이전 주" nextLabel="다음 주" />
           <Card style={{ paddingVertical: space.sm, paddingHorizontal: space.md }}>
             <View style={styles.weekRow}>
               <View style={styles.weekName} />
@@ -210,7 +210,7 @@ export default function HabitOverview() {
           <Stepper
             label={monthLabel} canPrev={canPrevMonth} canNext={monthOffset > 0}
             onPrev={() => setMonthOffset((value) => value + 1)} onNext={() => setMonthOffset((value) => Math.max(0, value - 1))}
-            prevLabel="지난달" nextLabel="다음 달" />
+            prevLabel="이전 달" nextLabel="다음 달" />
           <View style={styles.grid}>
             {habits.map((habit) => (
               <MiniMonth
@@ -233,7 +233,7 @@ function Legend() {
   const { colors } = useTheme();
   const items = [
     { label: '달성', color: colors.accent },
-    { label: '일부', color: colors.accentRamp[1] },
+    { label: '일부 달성', color: colors.accentRamp[1] },
     { label: '건너뜀·쉬어감', color: colors.border },
     { label: '기록 없음', color: colors.surfaceMuted },
   ];

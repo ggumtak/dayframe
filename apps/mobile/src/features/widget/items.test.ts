@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { adjustCalendar, calendarGrid, focusState, habitToday, snapshotTasks, upcomingRows, widgetDate, widgetRows, type WidgetTask } from './items.ts';
+import { nextOccurrence } from '../../lib/shared.ts';
+
+import {
+  adjustCalendar, buildWidgetMeta, calendarGrid, focusState, habitToday, snapshotTasks, todayOverview,
+  todayWidgetItems, upcomingRows, widgetDate, widgetRows, type WidgetTask,
+} from './items.ts';
 
 const now = Date.parse('2026-11-21T09:00:00Z'); // Saturday 18:00 in Seoul
 let next = 0;
@@ -30,6 +35,25 @@ test('the widget lists what is overdue and due today, oldest first', () => {
   ]);
 });
 
+test('todayOverview and todayWidgetItems separate overdue days and track today progress', () => {
+  const tasks = [
+    task('보고서', '2026-11-20T09:00:00Z', { projectName: '업무', subtaskLabel: '1/3' }),
+    task('장보기', '2026-11-20T15:00:00Z', { all_day: true }),
+    task('운동', '2026-11-21T10:00:00Z', { recurrence_rule: 'FREQ=DAILY' }),
+  ];
+  const rows = widgetRows(snapshotTasks(tasks, now), now);
+  assert.equal(rows[0].meta, '#업무 · 1/3');
+  assert.equal(rows[2].meta, '반복');
+  const overview = todayOverview(rows, { date: '2026-11-21', count: 2 }, now, 'Asia/Seoul');
+  assert.equal(overview.subtitle, '11월 21일 (토) · 기한 지남 1 · 오늘 2');
+  assert.equal(overview.ratio, 0.5);
+  assert.deepEqual(todayWidgetItems(rows).map((item) => (item.kind === 'section' ? '# ' + item.label : item.title)), [
+    '# 기한 지남 · 1', '보고서', '# 오늘 · 2', '장보기', '운동',
+  ]);
+  const cleanOverview = todayOverview(rows.slice(1), { date: '2026-11-21', count: 2 }, now, 'Asia/Seoul');
+  assert.equal(cleanOverview.subtitle, '11월 21일 (토) · 오늘 2/4 완료');
+});
+
 test('the snapshot drops finished and far-off tasks but keeps tomorrow for after midnight', () => {
   const kept = snapshotTasks([
     task('done', '2026-11-21T10:00:00Z', { completed_at: '2026-11-21T08:00:00Z' }),
@@ -44,7 +68,7 @@ test('the snapshot drops finished and far-off tasks but keeps tomorrow for after
   assert.equal(widgetDate(now, 'Asia/Seoul'), '11월 21일 (토)');
 });
 
-test('the upcoming widget groups the next seven days under day headings', () => {
+test('the upcoming widget groups the next seven days, marks real tasks completable, and expands repeats', () => {
   const tasks = snapshotTasks([
     task('오늘 일', '2026-11-21T10:00:00Z'),
     task('회의', '2026-11-22T01:00:00Z'),
@@ -57,6 +81,15 @@ test('the upcoming widget groups the next seven days under day headings', () => 
     '# 화요일 · 11월 24일 1', '보고서 오전 9:00',
     '# 토요일 · 11월 28일 1', '다음 주 토 오전 10:00',
   ]);
+  const repeating = snapshotTasks([
+    task('영양제', '2026-11-21T10:00:00Z', { recurrence_rule: 'FREQ=DAILY', recurrence_anchor_at: '2026-11-21T10:00:00Z', recurrence_local_time: '19:00:00' }),
+  ], now);
+  const expanded = upcomingRows(repeating, now, 'Asia/Seoul', nextOccurrence);
+  const previewTasks = expanded.filter((row): row is Extract<typeof row, { kind: 'task' }> => row.kind === 'task');
+  assert.equal(previewTasks.length, 7);
+  assert.equal(previewTasks[0].completable, false);
+  assert.equal(previewTasks[0].meta, '반복 예정');
+  assert.equal(buildWidgetMeta({ projectName: '건강', subtaskLabel: '2/3', recurrence_rule: 'FREQ=DAILY' }), '#건강 · 2/3 · 반복');
 });
 
 test('habit and focus figures roll over with the day', () => {
@@ -85,10 +118,9 @@ test('the calendar widget lays a month out Monday-first and marks today and busy
 });
 
 test('adjustCalendar updates cached day counts when tasks are completed from a widget', () => {
-  const prev = task('회의', '2026-11-21T10:00:00Z');
+  const prev = task('회의', '2026-11-21T10:00:00Z', { projectName: '업무' });
   assert.deepEqual(adjustCalendar({ '2026-11-21': 2, '2026-11-22': 1 }, prev, null), { '2026-11-21': 1, '2026-11-22': 1 });
   assert.deepEqual(adjustCalendar({ '2026-11-21': 1 }, prev, null), {});
-  // A repeating task's next day was already counted, so only the completed day decrements.
   const nextRepeat = task('회의', '2026-11-22T10:00:00Z', { recurrence_rule: 'FREQ=DAILY' });
   assert.deepEqual(adjustCalendar({ '2026-11-21': 1, '2026-11-22': 1 }, prev, nextRepeat), { '2026-11-22': 1 });
 });

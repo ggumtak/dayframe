@@ -60,22 +60,22 @@ export function describeInvalid(raw: unknown, rootKey: string): string {
 export const isAiError = (error: unknown): error is AiError => error instanceof AiError;
 
 export const AI_ERROR_TEXT: Record<AiErrorKind, { title: string; message: string }> = {
-  no_key: { title: '키가 필요합니다', message: 'AI 비서를 쓰려면 먼저 Anthropic 키를 저장해 주세요.' },
-  bad_key: { title: '키가 맞지 않습니다', message: 'Anthropic에서 이 키를 받아 주지 않았습니다. 키를 다시 복사해 넣어 주세요.' },
-  no_credit: { title: '크레딧이 부족합니다', message: 'Anthropic 콘솔의 결제 화면에서 크레딧을 충전한 뒤 다시 시도해 주세요.' },
-  permission: { title: '이 키로는 쓸 수 없습니다', message: 'Anthropic 콘솔에서 키의 권한과 워크스페이스 설정을 확인해 주세요.' },
-  model_unavailable: { title: '선택한 모델을 쓸 수 없습니다', message: 'AI 비서 설정에서 다른 모델을 골라 다시 시도해 주세요.' },
+  no_key: { title: 'Anthropic 키가 필요합니다', message: 'AI 비서를 사용하려면 먼저 Anthropic 키를 저장해 주세요.' },
+  bad_key: { title: '키가 올바르지 않습니다', message: '유효하지 않은 키입니다. Anthropic 키를 다시 복사해 입력해 주세요.' },
+  no_credit: { title: '크레딧이 부족합니다', message: 'Anthropic 콘솔에서 크레딧을 충전한 뒤 다시 시도해 주세요.' },
+  permission: { title: '키 권한이 부족합니다', message: '이 키로는 요청할 수 없습니다. Anthropic 콘솔에서 키 권한과 워크스페이스 설정을 확인해 주세요.' },
+  model_unavailable: { title: '선택한 모델을 사용할 수 없습니다', message: 'AI 비서 설정에서 다른 모델을 선택한 뒤 다시 시도해 주세요.' },
   rate_limit: { title: '요청이 너무 많습니다', message: '잠시 후 다시 시도해 주세요.' },
-  spend_limit: { title: '이번 달 사용 한도를 다 썼습니다', message: 'Anthropic 콘솔에서 월 사용 한도를 확인해 주세요.' },
-  overloaded: { title: 'Anthropic 서버가 붐빕니다', message: '잠시 후 다시 시도해 주세요.' },
-  server: { title: 'Anthropic 서버에 문제가 생겼습니다', message: '잠시 후 다시 시도해 주세요.' },
-  offline: { title: '인터넷에 연결되어 있지 않습니다', message: '연결을 확인한 뒤 다시 시도해 주세요.' },
-  timeout: { title: '답이 오지 않아 멈췄습니다', message: '잠시 후 다시 시도해 주세요.' },
-  refusal: { title: '이 요청에는 답하지 못했습니다', message: '내용을 조금 바꿔 다시 시도해 주세요.' },
-  max_tokens: { title: '답이 길어 중간에 끊겼습니다', message: '내용을 줄이거나 나눠서 다시 시도해 주세요.' },
-  invalid: { title: '받은 답을 읽지 못했습니다', message: '다시 시도해 주세요.' },
-  bad_request: { title: 'Anthropic에서 요청을 받지 않았습니다', message: '앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.' },
-  cancelled: { title: '취소했습니다', message: '' },
+  spend_limit: { title: '이번 달 사용 한도에 도달했습니다', message: 'Anthropic 콘솔에서 월 사용 한도를 확인해 주세요.' },
+  overloaded: { title: 'Anthropic 서버가 혼잡합니다', message: '잠시 후 다시 시도해 주세요.' },
+  server: { title: 'Anthropic 서버에 일시적인 문제가 생겼습니다', message: '잠시 후 다시 시도해 주세요.' },
+  offline: { title: '인터넷에 연결되어 있지 않습니다', message: '네트워크 연결을 확인한 뒤 다시 시도해 주세요.' },
+  timeout: { title: '응답 시간이 초과되었습니다', message: '잠시 후 다시 시도해 주세요.' },
+  refusal: { title: '이 요청에는 응답하지 못했습니다', message: '내용을 조금 수정해 다시 시도해 주세요.' },
+  max_tokens: { title: '응답이 길어 중간에 끊겼습니다', message: '내용을 줄이거나 나누어 다시 시도해 주세요.' },
+  invalid: { title: 'AI 응답을 처리하지 못했습니다', message: '다시 시도해 주세요.' },
+  bad_request: { title: '요청을 처리할 수 없습니다', message: '앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.' },
+  cancelled: { title: '요청을 취소했습니다', message: '' },
 };
 
 /** Maps an HTTP error to a kind, from the status, the error `type` and, for 429, the spend-cap code. */

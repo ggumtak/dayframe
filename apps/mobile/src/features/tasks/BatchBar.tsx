@@ -14,7 +14,7 @@ import type { Priority, Task } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { elevation, radius, space, useTheme } from '@/theme';
 
-import { priorityMark } from './priority';
+import { priorityLabel, priorityMark } from './priority';
 
 import { useTaskFlow } from './useTaskFlow';
 
@@ -72,7 +72,7 @@ export function BatchBar({
         }
       }
     }
-    showToast(`${count}개 할 일을 완료했습니다.`, {
+    showToast(`할 일 ${count}개를 완료했습니다.`, {
       actionLabel: '실행 취소',
       onAction: () => {
         for (const task of snapshot) flow.uncomplete(task, task.due_at);
@@ -86,7 +86,7 @@ export function BatchBar({
     haptic.success();
     for (const task of selected) flow.reschedule(task, date);
     setSheet(null);
-    showToast(date ? `${count}개 할 일의 일정을 바꿨습니다.` : `${count}개 할 일의 날짜를 지웠습니다.`);
+    showToast(date ? `할 일 ${count}개의 일정을 바꿨습니다.` : `할 일 ${count}개의 날짜를 지웠습니다.`);
     onCancel();
   };
 
@@ -95,7 +95,7 @@ export function BatchBar({
     haptic.tap();
     for (const task of selected) actions.update(task.id, { priority });
     setSheet(null);
-    showToast(`${count}개 할 일의 우선순위를 ‘${priority === 1 ? '가장 높음' : priority === 2 ? '높음' : priority === 3 ? '보통' : '없음'}’으로 바꿨습니다.`);
+    showToast(`할 일 ${count}개의 우선순위를 ‘${priorityLabel(priority)}’으로 바꿨습니다.`);
     onCancel();
   };
 
@@ -106,7 +106,7 @@ export function BatchBar({
       if (!task.parent_task_id) actions.update(task.id, { project_id: projectId, section_id: sectionId });
     }
     setSheet(null);
-    showToast(`${count}개 할 일을 ${label}${josa(label, '으로/로')} 옮겼습니다.`);
+    showToast(`할 일 ${count}개를 ${label}${josa(label, '으로/로')} 옮겼습니다.`);
     onCancel();
   };
 
@@ -115,7 +115,7 @@ export function BatchBar({
     haptic.warning();
     for (const task of selected) actions.remove(task.id);
     setSheet(null);
-    showToast(`${count}개 할 일을 삭제했습니다.`);
+    showToast(`할 일 ${count}개를 삭제했습니다.`);
     onCancel();
   };
 
@@ -141,7 +141,7 @@ export function BatchBar({
         </View>
       </View>
 
-      <Sheet visible={sheet === 'schedule'} onClose={() => setSheet(null)} title={`${count}개 일정 변경`}>
+      <Sheet visible={sheet === 'schedule'} onClose={() => setSheet(null)} title={`할 일 ${count}개 일정 변경`}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginBottom: space.md }}>
           <Chip icon="sun" label="오늘" onPress={() => batchReschedule(now)} />
           <Chip icon="sunrise" label="내일" onPress={() => batchReschedule(now.add({ days: 1 }))} />
@@ -152,17 +152,17 @@ export function BatchBar({
         <MonthCalendar initial={now} today={now} onSelect={batchReschedule} />
       </Sheet>
 
-      <Sheet visible={sheet === 'priority'} onClose={() => setSheet(null)} title={`${count}개 우선순위 변경`}>
+      <Sheet visible={sheet === 'priority'} onClose={() => setSheet(null)} title={`할 일 ${count}개 우선순위 변경`}>
         {([1, 2, 3, 4] as Priority[]).map((p) => (
           <Row
             key={p} icon="flag"
-            label={p === 1 ? '가장 높음' : p === 2 ? '높음' : p === 3 ? '보통' : '없음'}
+            label={priorityLabel(p)}
             trailing={p < 4 ? <Txt style={{ fontWeight: '700' }}>{priorityMark(p)}</Txt> : undefined}
             onPress={() => batchPriority(p)} />
         ))}
       </Sheet>
 
-      <Sheet visible={sheet === 'move'} onClose={() => setSheet(null)} title={`${count}개를 옮길 목록`}>
+      <Sheet visible={sheet === 'move'} onClose={() => setSheet(null)} title={`옮길 목록 선택 (${count}개)`}>
         <ScrollView style={{ maxHeight: 380 }}>
           <Row icon="inbox" label="미분류" onPress={() => batchMove(null, null, '미분류')} />
           {(projects ?? []).map((project) => {
@@ -183,9 +183,9 @@ export function BatchBar({
         </ScrollView>
       </Sheet>
 
-      <Sheet visible={sheet === 'delete'} onClose={() => setSheet(null)} title={`${count}개 할 일을 삭제할까요?`}>
+      <Sheet visible={sheet === 'delete'} onClose={() => setSheet(null)} title={`할 일 ${count}개를 삭제할까요?`}>
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          선택한 할 일 {count}개와 하위 작업이 모두 삭제됩니다. 되돌릴 수 없습니다.
+          선택한 할 일 {count}개와 하위 작업이 모두 삭제되며, 되돌릴 수 없습니다.
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button label={`${count}개 삭제`} kind="danger" onPress={batchDelete} />

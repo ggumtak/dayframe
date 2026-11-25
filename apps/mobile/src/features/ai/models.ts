@@ -7,8 +7,8 @@ export const DEFAULT_MODEL: AiModelId = 'claude-opus-5-5';
 
 export const AI_MODELS: { id: AiModelId; name: string; note: string }[] = [
   { id: 'claude-opus-5-5', name: 'Opus 5.5', note: '가장 정교함 · 기본' },
-  { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', note: '균형 · 약 절반 비용' },
-  { id: 'claude-haiku-5-5', name: 'Haiku 5.5', note: '가장 빠르고 저렴' },
+  { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', note: '균형 잡힌 성능 · 절반 비용' },
+  { id: 'claude-haiku-5-5', name: 'Haiku 5.5', note: '가장 빠르고 저렴함' },
 ];
 
 /** US dollars per million tokens (standard rate, prompts under 100K tokens). */

@@ -97,20 +97,22 @@ export function formatDue(task: Pick<Task, 'due_at' | 'timezone' | 'all_day'>): 
 
 export function describeRecurrence(rule: string | null, mode: RecurrenceMode = 'schedule'): string | null {
   if (!rule) return null;
-  const prefix = mode === 'completion' ? '완료 후 ' : '';
+  const completion = mode === 'completion';
+  const prefix = completion ? '완료 후 ' : '';
   try {
     const { frequency, interval, weekdays, lastDay } = recurrence(rule);
-    if (frequency === 'DAILY') return prefix + (interval === 1 ? '매일' : interval + '일마다');
-    if (frequency === 'YEARLY') return prefix + (interval === 1 ? '매년' : interval + '년마다');
+    if (frequency === 'DAILY') return prefix + (!completion && interval === 1 ? '매일' : interval + '일마다');
+    if (frequency === 'YEARLY') return prefix + (!completion && interval === 1 ? '매년' : interval + '년마다');
     if (frequency === 'MONTHLY') {
-      const every = interval === 1 ? '매월' : interval + '개월마다';
-      return prefix + (lastDay ? every + ' 말일' : every);
+      if (lastDay) return prefix + (interval === 1 ? '매월 말일' : interval + '개월마다 말일');
+      return prefix + (!completion && interval === 1 ? '매월' : interval + '개월마다');
     }
     const every = interval === 1 ? '매주' : interval === 2 ? '격주' : interval + '주마다';
     const days = weekdays.join(',');
     if (days === 'MO,TU,WE,TH,FR') return prefix + (interval === 1 ? '평일' : every + ' 평일');
     if (days === 'SA,SU') return prefix + (interval === 1 ? '주말' : every + ' 주말');
-    return prefix + (weekdays.length ? every + ' ' + weekdays.map((day) => byDay[day]).join('·') : every);
+    if (weekdays.length) return prefix + every + ' ' + weekdays.map((day) => byDay[day]).join('·');
+    return prefix + (completion ? interval + '주마다' : every);
   } catch {
     return prefix + '반복';
   }
@@ -136,6 +138,7 @@ export function formatDuration(seconds: number): string {
 }
 
 export function formatMinutes(totalSeconds: number): string {
+  if (totalSeconds <= 0) return '0분';
   if (totalSeconds < 60) return '1분 미만';
   const minutes = Math.round(totalSeconds / 60);
   return minutes < 60 ? minutes + '분' : Math.floor(minutes / 60) + '시간' + (minutes % 60 ? ' ' + (minutes % 60) + '분' : '');

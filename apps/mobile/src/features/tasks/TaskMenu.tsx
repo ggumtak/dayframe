@@ -128,7 +128,7 @@ function TaskMenuContent({
               selected={active}
               onPress={() => run(() => {
                 actions.update(task.id, { duration_minutes: mins });
-                showToast(mins ? `소요 시간을 ${formatDurationMinutes(mins)}${josa(formatDurationMinutes(mins), '으로/로')} 정했습니다.` : '소요 시간을 지웠습니다.');
+                showToast(mins ? `소요 시간을 ${formatDurationMinutes(mins)}${josa(formatDurationMinutes(mins), '으로/로')} 설정했습니다.` : '소요 시간을 지웠습니다.');
               })}
               style={{ flex: 1, justifyContent: 'center' }} />
           );
@@ -171,7 +171,7 @@ function TaskMenuContent({
               icon="minus" label="섹션 없음" selected={!task.section_id}
               onPress={() => run(() => {
                 actions.update(task.id, { section_id: null });
-                showToast('섹션에서 뺐습니다.');
+                showToast('섹션 지정을 해제했습니다.');
               })} />
             {projectSections.map((section) => (
               <Chip
@@ -184,7 +184,7 @@ function TaskMenuContent({
           </ScrollView>
         ) : null}
         {onStartSelect && !task.parent_task_id ? (
-          <Row icon="check-square" label="여러 개 선택" detail="한꺼번에 바꾸기" onPress={() => run(() => onStartSelect(task))} />
+          <Row icon="check-square" label="여러 개 선택" detail="한 번에 변경" onPress={() => run(() => onStartSelect(task))} />
         ) : null}
         {task.parent_task_id ? null : (
           <Row icon="corner-down-right" label="하위 작업 추가" onPress={() => run(() => quickAdd.open({ parentTaskId: task.id }))} />
@@ -194,7 +194,7 @@ function TaskMenuContent({
         ) : null}
         {doneSubs.length > 0 ? (
           <Row
-            icon="rotate-ccw" label="하위 작업 체크 초기화" detail={`${doneSubs.length}개 다시 열기`}
+            icon="rotate-ccw" label="하위 작업 체크 초기화" detail={`${doneSubs.length}개 완료 해제`}
             onPress={() => run(() => flow.resetChecklist(doneSubs))} />
         ) : null}
         <Row

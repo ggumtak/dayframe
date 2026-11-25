@@ -18,6 +18,8 @@ export interface TaskRowProps {
   projectName?: string;
   projectIcon?: ComponentProps<typeof Feather>['name'];
   tagNames?: string[];
+  /** Active alert indicator for Android notifications, with optional custom lead text. */
+  reminderBadge?: { active: boolean; label?: string };
   /** Open and completed direct subtasks, shown as a compact counter (`3` or `2/5`). */
   subtaskProgress?: SubtaskProgress;
   /** Whether inline subtasks beneath this row are currently expanded. */
@@ -54,12 +56,6 @@ function SwipeAction({ icon, label, color, foreground, onPress }: {
   );
 }
 
-/**
- * One side's swipe actions. Swipeable keeps both sides rendered behind the row at all times, so each side is drawn
- * only while the row is moved off it: the complete panel while `translation` > 0, 일정/삭제 while it is < 0. Otherwise
- * they show through whenever the row is translucent (screen transitions, a row fading out) and, the complete panel
- * being as wide as the row, the side that is not being swiped shows next to it. Runs on the UI thread only.
- */
 function SwipeSide({ translation, side, style, children }: {
   translation: SharedValue<number>; side: 'left' | 'right'; style: ComponentProps<typeof Animated.View>['style']; children: ReactNode;
 }) {
@@ -69,15 +65,23 @@ function SwipeSide({ translation, side, style, children }: {
   return <Animated.View style={[style, shown]}>{children}</Animated.View>;
 }
 
+function firstNoteLine(notes: string | null): string | undefined {
+  if (!notes) return undefined;
+  for (const raw of notes.split(/\r?\n/)) {
+    const cleaned = raw.replace(/^[-*•]\s*(?:\[[ xX]\]\s*)?/, '').trim();
+    if (cleaned) return cleaned;
+  }
+  return undefined;
+}
+
 export const TaskRow = memo(function TaskRow({
-  task, projectName, projectIcon, tagNames, subtaskProgress, subtasksExpanded, onToggleSubtasks, hideDate,
+  task, projectName, projectIcon, tagNames, reminderBadge, subtaskProgress, subtasksExpanded, onToggleSubtasks, hideDate,
   selectable, selected, onToggleSelect,
   onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true, onSurface,
 }: TaskRowProps) {
   const { colors } = useTheme();
   const swipe = useRef<SwipeableMethods>(null);
   const [checked, setChecked] = useState(false);
-  // Guards a swipe and a tap (or two swipe callbacks) from completing the same row twice before `checked` re-renders.
   const finishing = useRef(false);
   const due = formatDue(task);
   const repeat = describeRecurrence(task.recurrence_rule, task.recurrence_mode);
@@ -89,15 +93,14 @@ export const TaskRow = memo(function TaskRow({
     ? (subtaskProgress.completed > 0 ? `${subtaskProgress.completed}/${subtaskProgress.total}` : String(subtaskProgress.open))
     : '';
   const hasProgress = (subtaskProgress?.completed ?? 0) > 0;
+  const noteSnippet = firstNoteLine(task.notes);
 
   const finish = () => {
     if (checked || finishing.current) return;
     finishing.current = true;
     setChecked(true);
-    // Let the check land before the row leaves the list.
     setTimeout(() => {
       onComplete(task);
-      // A repeating task stays in the list with its next date, so show it unchecked again.
       if (task.recurrence_rule) {
         finishing.current = false;
         setChecked(false);
@@ -105,11 +108,8 @@ export const TaskRow = memo(function TaskRow({
     }, 240);
   };
 
-  // The meta line is neutral: textMuted text with icons a step lighter, tags and the notes glyph in textFaint.
-  // The one colour is an overdue date (danger, weight 600), the only red in the row. On Today (hideDate) a time
-  // stands alone without an icon; elsewhere "오늘" is told apart by weight, not hue.
   const meta: {
-    key: string; icon?: 'calendar' | 'clock' | 'repeat' | 'git-merge' | 'align-left'; text: string; color: string; iconColor?: string;
+    key: string; icon?: 'calendar' | 'clock' | 'repeat' | 'git-merge' | 'bell'; text: string; color: string; iconColor?: string;
     weight?: '500' | '600';
   }[] = [];
   const minutes = dueMinutes(task);
@@ -125,11 +125,13 @@ export const TaskRow = memo(function TaskRow({
     meta.push({ key: 'duration', icon: 'clock', text: formatDurationMinutes(task.duration_minutes), color: colors.textMuted });
   }
   if (repeat) meta.push({ key: 'repeat', icon: 'repeat', text: repeat, color: colors.textMuted });
+  if (reminderBadge?.active) {
+    meta.push({ key: 'reminder', icon: 'bell', text: reminderBadge.label ?? '', color: colors.textMuted });
+  }
   for (const name of tagNames ?? []) meta.push({ key: 'tag-' + name, text: '#' + name, color: colors.textFaint });
   if (subtaskCount && !onToggleSubtasks) {
     meta.push({ key: 'subtasks', icon: 'git-merge', text: subtaskLabel, color: colors.textMuted });
   }
-  if (task.notes?.trim()) meta.push({ key: 'notes', icon: 'align-left', text: '', color: colors.textFaint });
   const mark = priorityMark(task.priority);
   const subtaskTone = subtasksExpanded ? colors.accentText : colors.textMuted;
 
@@ -180,6 +182,11 @@ export const TaskRow = memo(function TaskRow({
           {mark ? <Text style={styles.mark}>{mark + ' '}</Text> : null}
           {task.title}
         </Text>
+        {!checked && noteSnippet ? (
+          <Text numberOfLines={1} style={[styles.noteSnippet, { color: colors.textMuted }]}>
+            {noteSnippet}
+          </Text>
+        ) : null}
         {meta.length || projectName || (subtaskCount && onToggleSubtasks) ? (
           <View style={styles.metaRow}>
             <View style={styles.meta}>
@@ -255,9 +262,6 @@ export const TaskRow = memo(function TaskRow({
           ) : null}
         </SwipeSide>
       )}
-      // Past the threshold the swipe completes on release: the row springs straight back with its check landing
-      // (only the complete panel behind it), then leaves the list. Waiting for onSwipeableOpen instead slid the
-      // row the whole width first, where 일정/삭제 showed beside 완료.
       onSwipeableWillOpen={(direction) => {
         if (direction !== 'right') return;
         swipe.current?.close();
@@ -276,8 +280,8 @@ const styles = StyleSheet.create({
   selectBox: {
     width: 22, height: 22, borderRadius: 6, borderWidth: 1.8, alignItems: 'center', justifyContent: 'center',
   },
-  // The divider starts at the text, as in a ruled list, so the checkboxes read as one column.
   body: { flex: 1, gap: 3, paddingVertical: 11, paddingRight: space.lg, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 46 },
+  noteSnippet: { fontFamily, fontSize: 12, lineHeight: 17 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   meta: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 2 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 190 },
@@ -287,6 +291,5 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row' },
   action: { width: 76, alignItems: 'center', justifyContent: 'center', gap: 4 },
   actionLabel: { fontFamily, fontSize: 12, fontWeight: '600' },
-  // The priority mark: the title's size and colour, bold, so its length is the cue.
   mark: { fontWeight: '700' },
 });

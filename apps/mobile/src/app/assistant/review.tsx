@@ -101,7 +101,7 @@ export default function Review() {
     const inbox = (openTasks ?? []).filter((task) => !task.parent_task_id && !task.project_id);
     flow.create({ input: { title, priority: 4, timezone: zone, position: nextPosition(inbox) } });
     setAdded((current) => new Set(current).add(title));
-    showToast('할 일에 추가했습니다.');
+    showToast('할 일로 추가했습니다.');
   };
 
   const { state } = request;
@@ -112,19 +112,19 @@ export default function Review() {
 
   let body;
   if (cached === undefined || !ready) body = <Loading />;
-  else if (state.status === 'loading') body = <AiLoading message="지난 7일을 돌아보고 있습니다" onCancel={request.cancel} />;
+  else if (state.status === 'loading') body = <AiLoading message="지난 7일의 기록을 정리하고 있습니다" onCancel={request.cancel} />;
   else if (state.status === 'error') body = <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void make()} />;
   else if (shown) {
     const { review } = shown;
     body = (
       <>
         <Txt variant="small" tone="muted">
-          {dateLabel(shown.range.from)} ~ {dateLabel(shown.range.to)}{stale ? ' · 지난 돌아보기입니다' : ''}
+          {dateLabel(shown.range.from)} ~ {dateLabel(shown.range.to)}{stale ? ' · 이전 기간 기준' : ''}
         </Txt>
         <Txt variant="heading" style={styles.headline}>{review.headline}</Txt>
         <List icon="award" title="잘한 점" items={review.wins} />
-        <List icon="alert-triangle" title="놓친 점" items={review.slipped} />
-        <List icon="trending-up" title="보이는 흐름" items={review.patterns} />
+        <List icon="alert-triangle" title="아쉬운 점" items={review.slipped} />
+        <List icon="trending-up" title="눈에 띄는 흐름" items={review.patterns} />
         {review.suggestions.length ? (
           <View style={[styles.section, { borderTopColor: colors.border, gap: space.md }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
@@ -136,7 +136,7 @@ export default function Review() {
                 <Txt variant="body">{item.title}</Txt>
                 {item.asTask ? (
                   <Button
-                    label={added.has(item.title) ? '추가했습니다' : '할 일로 추가'} icon={added.has(item.title) ? 'check' : 'plus'}
+                    label={added.has(item.title) ? '추가됨' : '할 일로 추가'} icon={added.has(item.title) ? 'check' : 'plus'}
                     kind="secondary" disabled={added.has(item.title)} onPress={() => addTask(item.title)}
                     style={{ alignSelf: 'flex-start', minHeight: 36 }} />
                 ) : null}
@@ -151,7 +151,7 @@ export default function Review() {
     body = (
       <>
         <Txt variant="small" tone="muted">
-          {dateLabel(range.from)} ~ {dateLabel(range.to)}의 기록으로 한 주를 돌아봅니다. 한 번 만든 돌아보기는 저장해 두고 다시 열어도 요금이 들지 않습니다.
+          {dateLabel(range.from)} ~ {dateLabel(range.to)} 기록을 바탕으로 한 주를 정리해 드립니다. 만든 돌아보기는 저장되므로 다시 열어도 요금이 들지 않습니다.
         </Txt>
         <View style={styles.stats}>
           <Stat label="완료" value={`${facts.completed.length}개`} />

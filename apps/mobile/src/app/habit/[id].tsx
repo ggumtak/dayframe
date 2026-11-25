@@ -54,7 +54,9 @@ export default function HabitDetail() {
   if (!habit) {
     return (
       <Screen>
-        <EmptyState icon="alert-circle" title="습관을 찾을 수 없습니다" action={<Button label="돌아가기" kind="secondary" onPress={() => router.back()} />} />
+        <EmptyState
+          icon="alert-circle" title="이미 삭제된 습관입니다" message="습관 목록에서 다시 확인해 주세요."
+          action={<Button label="돌아가기" kind="secondary" onPress={() => router.back()} />} />
       </Screen>
     );
   }
@@ -93,11 +95,11 @@ export default function HabitDetail() {
     <Screen>
       <Header
         title={habit.name}
-        subtitle={(habit.archived_at ? '보관됨 · ' : '') + (habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${startDateLabel(habit.start_date, day.year)}`}
+        subtitle={(habit.archived_at ? '보관 중 · ' : '') + (habit.cadence === 'daily' ? '매일' : '매주') + ` ${habit.target_count}${habit.cadence === 'daily' ? '회' : '일'} · ${startDateLabel(habit.start_date, day.year)}`}
         left={(
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
             <IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />
-            <Pressable accessibilityRole="button" accessibilityLabel="아이콘과 문구 바꾸기" onPress={openLook} hitSlop={4}>
+            <Pressable accessibilityRole="button" accessibilityLabel="아이콘과 응원 문구 바꾸기" onPress={openLook} hitSlop={4}>
               <HabitAvatar name={habit.name} emoji={look.emoji} size={40} />
             </Pressable>
           </View>
@@ -122,7 +124,7 @@ export default function HabitDetail() {
         </Card>
 
         <Card style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted">달력 · 날짜를 눌러 기록을 고칠 수 있습니다</Txt>
+          <Txt variant="section" tone="muted">달력 · 날짜를 눌러 기록을 수정할 수 있습니다</Txt>
           <MonthCalendar
             initial={day} today={day} marks={marks} min={Temporal.PlainDate.from(habit.start_date)} max={day} onSelect={toggle} />
         </Card>
@@ -165,10 +167,10 @@ export default function HabitDetail() {
             <Row icon="clock" label="이 습관으로 집중 시작" onPress={() => router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } })} />
           )}
           <Row icon="edit-2" label="이름 바꾸기" onPress={() => setName(habit.name)} />
-          <Row icon="smile" label="아이콘·색·응원 문구" onPress={openLook} />
+          <Row icon="smile" label="아이콘과 응원 문구" onPress={openLook} />
           {habit.archived_at ? null : (
             <Row
-              icon="archive" label="보관하기" detail="기록은 남습니다"
+              icon="archive" label="보관하기" detail="기록은 그대로 남습니다"
               onPress={() => {
                 actions.archive(habit.id);
                 showToast('습관을 보관했습니다.');
@@ -207,7 +209,7 @@ export default function HabitDetail() {
       </Sheet>
 
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="습관을 삭제할까요?">
-        <Txt tone="muted" style={{ marginBottom: space.lg }}>모든 기록이 함께 지워지고 되돌릴 수 없습니다. 기록을 남기려면 ‘보관하기’를 쓰세요.</Txt>
+        <Txt tone="muted" style={{ marginBottom: space.lg }}>지금까지의 기록이 모두 사라지며 되돌릴 수 없습니다. 기록을 남기려면 ‘보관하기’를 이용해 보세요.</Txt>
         <View style={{ gap: space.sm }}>
           <Button
             label="삭제" kind="danger"

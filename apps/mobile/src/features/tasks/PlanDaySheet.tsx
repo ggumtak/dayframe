@@ -54,7 +54,7 @@ export function PlanDaySheet({
     for (const item of proposals) {
       flow.reschedule(item.task, item.targetDate);
     }
-    showToast(`지연된 할 일 ${proposals.length}개를 여러 날에 나눠 옮겼습니다.`);
+    showToast(`기한이 지난 할 일 ${proposals.length}개를 여러 날에 나누어 옮겼습니다.`);
     onClose();
   };
 
@@ -62,7 +62,7 @@ export function PlanDaySheet({
     if (!overdue.length) return;
     haptic.success();
     flow.rescheduleOverdue();
-    showToast(`지연된 할 일 ${overdue.length}개를 모두 오늘로 옮겼습니다.`);
+    showToast(`기한이 지난 할 일 ${overdue.length}개를 모두 오늘로 옮겼습니다.`);
     onClose();
   };
 
@@ -76,7 +76,7 @@ export function PlanDaySheet({
           <Segmented<'overdue' | 'suggest'>
             value={activeTab} onChange={setTab}
             options={[
-              { value: 'overdue', label: `지연 정리 (${overdue.length})`, icon: 'alert-circle' },
+              { value: 'overdue', label: `기한 지남 (${overdue.length})`, icon: 'alert-circle' },
               { value: 'suggest', label: `오늘 추천 (${suggestions.length})`, icon: 'star' },
             ]} />
         </View>
@@ -88,14 +88,14 @@ export function PlanDaySheet({
             <View style={[styles.banner, { backgroundColor: colors.surfaceMuted }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Icon name="zap" size={15} color={colors.textMuted} />
-                <Txt variant="smallStrong">여러 날에 나눠 잡기</Txt>
+                <Txt variant="smallStrong">여러 날에 나누어 배정</Txt>
               </View>
               <Txt variant="caption" tone="muted">
-                앞으로 7일 동안의 일정과 우선순위를 보고, 하루에 몰리지 않게 나눠 보았습니다.
+                앞으로 7일간의 일정과 우선순위를 바탕으로, 하루에 몰리지 않게 나누어 보았습니다.
               </Txt>
               <View style={{ flexDirection: 'row', gap: space.sm, marginTop: 4 }}>
-                <Button label="이대로 옮기기" icon="zap" onPress={applyBalanced} style={{ flex: 1, minHeight: 40 }} />
-                <Button label="전부 오늘로" kind="secondary" onPress={applyAllToday} style={{ minHeight: 40 }} />
+                <Button label="이대로 적용" icon="zap" onPress={applyBalanced} style={{ flex: 1, minHeight: 40 }} />
+                <Button label="모두 오늘로" kind="secondary" onPress={applyAllToday} style={{ minHeight: 40 }} />
               </View>
             </View>
 
@@ -142,7 +142,7 @@ export function PlanDaySheet({
         ) : suggestions.length > 0 ? (
           <>
             <Txt variant="small" tone="muted">
-              진행 중인 체크리스트, 우선순위가 높은 일, 오래 미뤄 둔 할 일 가운데 오늘 끝내기 좋은 일을 골랐습니다.
+              진행 중인 체크리스트와 우선순위가 높은 일, 오래 미뤄 둔 할 일 중에서 오늘 챙기기 좋은 항목을 골랐습니다.
             </Txt>
             {suggestions.map(({ task, reason }) => (
               <View key={task.id} style={[styles.suggestRow, { borderColor: colors.border }]}>
@@ -167,13 +167,13 @@ export function PlanDaySheet({
         ) : (
           <View style={{ paddingVertical: space.xl, alignItems: 'center', gap: space.sm }}>
             <Icon name="check-circle" size={28} color={colors.textMuted} />
-            <Txt variant="bodyStrong">오늘로 가져올 만한 할 일이 없습니다</Txt>
-            <Txt variant="small" tone="muted">지금 잡혀 있는 일정에 집중해 보세요.</Txt>
+            <Txt variant="bodyStrong">오늘로 가져올 할 일이 없습니다</Txt>
+            <Txt variant="small" tone="muted">지금 예정된 일정에 집중해 보세요.</Txt>
           </View>
         )}
       </ScrollView>
       <Button
-        label="AI로 계획" icon="zap" kind="secondary" style={{ marginTop: space.sm }}
+        label="AI로 하루 계획 세우기" icon="zap" kind="secondary" style={{ marginTop: space.sm }}
         onPress={() => {
           onClose();
           router.push(AI_ROUTES.plan);

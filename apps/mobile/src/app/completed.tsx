@@ -69,7 +69,7 @@ export default function Completed() {
   const reopen = (task: Task) => {
     setRemoved((current) => new Set(current).add(task.id));
     actions.reopen(task);
-    showToast(`‘${task.title}’${josa(task.title, '을/를')} 다시 열었습니다.`);
+    showToast(`‘${task.title}’${josa(task.title, '을/를')} 할 일로 되돌렸습니다.`);
   };
 
   const confirmDelete = () => {
@@ -87,7 +87,7 @@ export default function Completed() {
       <Header title="완료한 일" subtitle={total > 0 ? `${total}개` : undefined} left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       {query.isPending ? <Loading /> : query.isError ? (
         <EmptyState
-          icon="cloud-off" art={<OfflineArt size={EMPTY_ART} />} title="불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+          icon="cloud-off" art={<OfflineArt size={EMPTY_ART} />} title="완료 기록을 불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
           action={<Button label="다시 시도" kind="secondary" onPress={() => void query.refetch()} />} />
       ) : (
         <>
@@ -111,7 +111,8 @@ export default function Completed() {
               <EmptyState
                 icon={search.trim() ? 'search' : 'check-circle'}
                 art={search.trim() ? <EmptySearch size={EMPTY_ART} /> : <EmptyDone size={EMPTY_ART} />}
-                title={search.trim() ? '일치하는 완료 기록이 없습니다' : '아직 완료한 일이 없습니다'} />
+                title={search.trim() ? '일치하는 완료 기록이 없습니다' : '아직 완료한 일이 없습니다'}
+                message={search.trim() ? '다른 검색어나 초성으로 다시 찾아보세요.' : '할 일을 완료하면 이곳에 기록이 쌓입니다.'} />
             ) : days.map(([day, tasks]) => (
               <View key={day}>
                 <SectionTitle title={formatDate(Temporal.PlainDate.from(day), now)} count={tasks.length} />
@@ -121,12 +122,12 @@ export default function Completed() {
                   const parentTitle = parentTitles.get(task.id);
                   return (
                     <View key={task.id} style={styles.row}>
-                      <Checkbox checked done onPress={() => reopen(task)} label={task.title + ' 다시 열기'} />
+                      <Checkbox checked done onPress={() => reopen(task)} label={task.title + ' 완료 취소'} />
                       <View style={[styles.body, { borderBottomColor: colors.border }]}>
                         <View style={{ flex: 1, gap: 2 }}>
                           <Txt tone="muted" numberOfLines={2}>{task.title}</Txt>
                           <Txt variant="small" tone="faint">{formatTime(at.hour * 60 + at.minute) + ' 완료' + (project ? ' · #' + project : '')}</Txt>
-                          {parentTitle ? <Txt variant="caption" tone="faint" numberOfLines={1}>상위 할 일: {parentTitle}</Txt> : null}
+                          {parentTitle ? <Txt variant="caption" tone="faint" numberOfLines={1}>상위 할 일 · {parentTitle}</Txt> : null}
                         </View>
                         <IconButton
                           name="trash-2" label={task.title + ' 삭제'} size={16} color={colors.textFaint}
@@ -148,7 +149,7 @@ export default function Completed() {
 
       <Sheet visible={!!deleting} onClose={() => setDeleting(null)} title="완료 기록을 삭제할까요?">
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          ‘{deleting?.title}’ 기록을 완전히 지웁니다. 되돌릴 수 없습니다.
+          ‘{deleting?.title}’ 완료 기록이 완전히 삭제되며 되돌릴 수 없습니다.
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button label="삭제" kind="danger" onPress={confirmDelete} />

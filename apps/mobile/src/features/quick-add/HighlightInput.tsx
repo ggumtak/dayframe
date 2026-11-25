@@ -19,8 +19,8 @@ export type PillPalette = Record<PillKind, { background: string; foreground: str
  * when tokens exist on single-paragraph text; automatically falls back to a standard visible `<TextInput>`
  * for plain text or multi-line pastes so long checklists scroll cleanly without overlay drift.
  */
-export function HighlightInput({ value, tokens, palette, disableHighlight, ref, ...props }: Omit<TextInputProps, 'style'> & {
-  value: string; tokens: TaskToken[]; palette: PillPalette; disableHighlight?: boolean; ref?: Ref<TextInputInstance>;
+export function HighlightInput({ value, tokens, palette, disableHighlight, onFocus, ref, ...props }: Omit<TextInputProps, 'style' | 'onFocus'> & {
+  value: string; tokens: TaskToken[]; palette: PillPalette; disableHighlight?: boolean; onFocus?: () => void; ref?: Ref<TextInputInstance>;
 }) {
   const { colors } = useTheme();
   const useOverlay = !disableHighlight && tokens.length > 0 && !value.includes('\n');
@@ -47,7 +47,7 @@ export function HighlightInput({ value, tokens, palette, disableHighlight, ref, 
         ref={ref} value={value} multiline submitBehavior="submit" returnKeyType="done" autoCapitalize="none" autoCorrect={false}
         placeholderTextColor={colors.textFaint} selectionColor={colors.accentSoft} cursorColor={colors.text}
         // The drawn highlight layer only works in place: never hand the text to Android's full-screen landscape editor.
-        underlineColorAndroid="transparent" disableFullscreenUI {...props}
+        underlineColorAndroid="transparent" disableFullscreenUI {...props} onFocus={onFocus}
         style={[
           styles.text,
           styles.input,
