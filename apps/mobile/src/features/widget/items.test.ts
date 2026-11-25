@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { nextOccurrence } from '../../lib/shared.ts';
+import { Temporal } from '@js-temporal/polyfill';
 
 import {
   adjustCalendar, buildWidgetMeta, calendarGrid, focusState, habitToday, snapshotTasks, todayOverview,
   todayWidgetItems, upcomingRows, widgetDate, widgetRows, type WidgetTask,
 } from './items.ts';
+
+// Local stand-in for the backend recurrence engine so this mobile unit test only depends on apps/mobile packages.
+const nextOccurrence = (rule: string, timezone: string, _anchor: string, after: Temporal.Instant) => {
+  const at = after.toZonedDateTimeISO(timezone);
+  if (rule.startsWith('FREQ=DAILY')) return at.add({ days: 1 }).toInstant().toString();
+  throw new Error('unsupported rule: ' + rule);
+};
 
 const now = Date.parse('2026-11-21T09:00:00Z'); // Saturday 18:00 in Seoul
 let next = 0;
