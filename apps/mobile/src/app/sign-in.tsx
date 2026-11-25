@@ -80,7 +80,7 @@ export default function SignIn() {
 
           <Button label={mode === 'sign-in' ? '로그인' : '계정 만들기'} onPress={submit} loading={busy} disabled={!ready} />
           <Button
-            kind="ghost" label={mode === 'sign-in' ? '처음이신가요? 계정 만들기' : '이미 계정이 있으신가요? 로그인'}
+            kind="ghost" label={mode === 'sign-in' ? '처음이신가요? 계정 만들기' : '이미 계정이 있나요? 로그인'}
             onPress={() => {
               setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in');
               setError(null);
