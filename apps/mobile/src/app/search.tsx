@@ -1,38 +1,53 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, TextInput, type TextInputInstance, type TextStyle,
-  View,
+  KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Switch, Text, TextInput,
+  type TextInputInstance, type TextStyle, View,
 } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
 import { EmptySearch } from '@/components/art';
-import { Button, Chip, EMPTY_ART, EmptyState, Icon, IconButton, Row, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
+import { Button, Chip, EMPTY_ART, EmptyState, Icon, IconButton, type IconName, Row, Screen, SectionTitle, Sheet, Txt } from '@/components/ui';
+import { queryClient } from '@/data/client';
+import { keys } from '@/data/keys';
 import {
   bySchedule, useCompletedTasks, useProjects, useSubtaskProgress, useTagActions, useTagNames, useTags, useTaskActions, useTaskIndex,
 } from '@/data/tasks';
 import { KEY_PRIORITY, matchesCombo, useInputCapture, useListCursor, useScreenContext, useScreenFocused, useTaskShortcuts } from '@/features/keyboard';
-import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
-import { TaskList } from '@/features/tasks/TaskList';
-import { TaskMenu } from '@/features/tasks/TaskMenu';
-import { useTaskFlow } from '@/features/tasks/useTaskFlow';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
+import { listColor } from '@/features/tasks/listColors';
+import { priorityOption } from '@/features/tasks/priority';
+import { useProjectMetaMap } from '@/features/tasks/projectMeta';
+import { saveFilter } from '@/features/tasks/savedFilters';
+import { TaskListSheets, TaskRows, useTaskListModel } from '@/features/tasks/TaskList';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, dueBucket, dueDate, formatDate, Temporal, today } from '@/lib/dates';
+import { deviceTimeZone, formatDate, formatTime, logicalToday, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
-import { searchTasks } from '@/lib/search';
+import { applyQuickFilters, matchesQuickFilter, type QuickFilterKey, searchTasks } from '@/lib/search';
 import type { Tag, Task } from '@/lib/shared';
-import { isStaleTask } from '@/lib/smart';
 import { showToast } from '@/lib/toast';
 import { fontFamily, radius, space, type, useTheme } from '@/theme';
 
-type QuickFilter = null | 'overdue' | 'today' | 'week' | 'p1' | 'repeating' | 'checklist' | 'stale' | 'unscheduled';
-
 const RECENT_KEY = 'dayframe-recent-searches-v1';
+const MAX_RECENT = 10;
 const taskId = (task: Task) => task.id;
 
-const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
+const SMART_VIEW_ICONS: IconName[] = ['filter', 'star', 'flag', 'calendar', 'clock', 'zap', 'bookmark', 'inbox'];
+
+const filterMeta: { key: QuickFilterKey; short: string; label: string; icon?: IconName }[] = [
+  { key: 'overdue', short: '기한 지남', label: '기한 지난 할 일', icon: 'alert-circle' },
+  { key: 'today', short: '오늘', label: '오늘 할 일', icon: 'sun' },
+  { key: 'week', short: '이번 주', label: '이번 주 일정', icon: 'calendar' },
+  { key: 'p1', short: '!!! 가장 높음', label: '가장 중요한 할 일' },
+  { key: 'repeating', short: '반복', label: '반복 할 일', icon: 'repeat' },
+  { key: 'checklist', short: '체크리스트', label: '체크리스트', icon: 'check-square' },
+  { key: 'stale', short: '오래 미룬 일', label: '오래 미뤄 둔 할 일', icon: 'clock' },
+  { key: 'unscheduled', short: '날짜 없음', label: '날짜 없는 할 일', icon: 'inbox' },
+];
+
+const filterLabels: Record<QuickFilterKey, string> = {
   overdue: '기한 지난 할 일',
   today: '오늘 할 일',
   week: '이번 주 일정',
@@ -43,33 +58,52 @@ const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
   unscheduled: '날짜 없는 할 일',
 };
 
+const filterShorts: Record<QuickFilterKey, string> = {
+  overdue: '기한 지남',
+  today: '오늘',
+  week: '이번 주',
+  p1: '가장 높음',
+  repeating: '반복',
+  checklist: '체크리스트',
+  stale: '오래 미룬 일',
+  unscheduled: '날짜 없음',
+};
+
 /**
- * Finds tasks with Korean 초성 (chosung) matching, structured `#project`, `@tag`, `p1`–`p4` filters,
- * combinable smart 1-tap filters, recent searches, and optional unified completed-task search.
+ * Finds tasks with Korean 초성 (chosung) matching, structured `#project`, `@tag`, `p1`–`p4`, `due:*`, `has:subtasks`,
+ * and `-p4`/`-#project`/`-@tag` filters, composable multi-select quick filters, saved smart views,
+ * recent searches, and inspectable completed-task results.
  */
 export default function Search() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const isFocused = useScreenFocused();
   useScreenContext('search', isFocused);
+  const prefs = usePersonalPrefs();
   const { tasks } = useTaskIndex();
   const { progress: subtaskProgress } = useSubtaskProgress();
   const { data: completedAll } = useCompletedTasks();
   const { data: projects } = useProjects();
+  const projectMeta = useProjectMetaMap();
   const { data: tags } = useTags();
   const tagActions = useTagActions();
   const taskActions = useTaskActions();
-  const flow = useTaskFlow();
   const tagNames = useTagNames();
+  const { model, sheets } = useTaskListModel();
 
   const [query, setQuery] = useState('');
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
+  const [quickFilters, setQuickFilters] = useState<Set<QuickFilterKey>>(() => new Set());
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
   const [managingTag, setManagingTag] = useState<Tag | null>(null);
   const [renamingTag, setRenamingTag] = useState<Tag | null>(null);
   const [tagInput, setTagInput] = useState('');
-  const [kbdSchedule, setKbdSchedule] = useState<Task | null>(null);
-  const [kbdMenu, setKbdMenu] = useState<Task | null>(null);
+  const [inspectingDone, setInspectingDone] = useState<Task | null>(null);
+
+  const [savingView, setSavingView] = useState(false);
+  const [viewName, setViewName] = useState('');
+  const [viewIcon, setViewIcon] = useState<IconName>('filter');
+  const [viewPinned, setViewPinned] = useState(true);
+
   const searchInput = useRef<TextInputInstance>(null);
   const scrollRef = useRef<ScrollViewInstance>(null);
 
@@ -78,20 +112,29 @@ export default function Search() {
       .then((raw) => {
         if (!raw) return;
         const parsed = JSON.parse(raw) as unknown;
-        if (Array.isArray(parsed)) setRecent(parsed.filter((item): item is string => typeof item === 'string').slice(0, 6));
+        if (Array.isArray(parsed)) setRecent(parsed.filter((item): item is string => typeof item === 'string').slice(0, MAX_RECENT));
       })
       .catch(() => {});
   }, []);
 
-  const recordRecent = (raw: string) => {
+  const recordRecent = useCallback((raw: string) => {
     const trimmed = raw.trim();
     if (!trimmed) return;
     setRecent((prev) => {
-      const next = [trimmed, ...prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 6);
+      const next = [trimmed, ...prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, MAX_RECENT);
       AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  };
+  }, []);
+
+  const removeRecent = useCallback((target: string) => {
+    haptic.tap();
+    setRecent((prev) => {
+      const next = prev.filter((item) => item !== target);
+      AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
 
   const clearRecent = () => {
     haptic.tap();
@@ -99,71 +142,109 @@ export default function Search() {
     AsyncStorage.removeItem(RECENT_KEY).catch(() => {});
   };
 
+  const toggleQuickFilter = useCallback((key: QuickFilterKey) => {
+    setQuickFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setQuery('');
+    setQuickFilters(new Set());
+  }, []);
+
   const nowMs = useMinute() * 60_000;
+  const nowInstant = useMemo(() => Temporal.Instant.fromEpochMilliseconds(nowMs), [nowMs]);
   const zone = deviceTimeZone();
-  const nowDate = today(zone);
+  const nowDate = useMemo(() => logicalToday(zone, prefs.dayStartHour, nowInstant), [zone, prefs.dayStartHour, nowInstant]);
   const projectNames = useMemo(() => new Map((projects ?? []).map((project) => [project.id, project.name])), [projects]);
 
+  const filterList = useMemo(() => [...quickFilters], [quickFilters]);
+  const active = !!query.trim() || quickFilters.size > 0;
+
+  const filterCtx = useMemo(
+    () => ({ subtaskProgress, nowMs, dayStartHour: prefs.dayStartHour }),
+    [subtaskProgress, nowMs, prefs.dayStartHour],
+  );
+  const searchCtx = useMemo(
+    () => ({ projectNames, tagNames, subtaskProgress, nowMs, dayStartHour: prefs.dayStartHour }),
+    [projectNames, tagNames, subtaskProgress, nowMs, prefs.dayStartHour],
+  );
+
   const results = useMemo(() => {
-    let pool = tasks;
-    if (quickFilter) {
-      const tz = deviceTimeZone();
-      const todayRef = Temporal.Instant.fromEpochMilliseconds(nowMs).toZonedDateTimeISO(tz).toPlainDate();
-      pool = tasks.filter((task) => {
-        if (quickFilter === 'overdue') return dueBucket(task) === 'overdue';
-        if (quickFilter === 'today') return dueBucket(task) === 'today';
-        if (quickFilter === 'week') {
-          const d = dueDate(task);
-          if (!d) return false;
-          const delta = todayRef.until(d).days;
-          return delta >= 0 && delta <= 7;
-        }
-        if (quickFilter === 'p1') return task.priority === 1;
-        if (quickFilter === 'repeating') return !!task.recurrence_rule;
-        if (quickFilter === 'checklist') return (subtaskProgress.get(task.id)?.total ?? 0) > 0;
-        if (quickFilter === 'stale') return isStaleTask(task, nowMs, 14);
-        return !task.due_at;
-      });
-    }
-    if (query.trim()) return searchTasks(pool, query, { projectNames, tagNames });
-    if (quickFilter) return [...pool].sort(bySchedule);
-    return [];
-  }, [query, quickFilter, tasks, projectNames, tagNames, subtaskProgress, nowMs]);
+    if (!active) return [];
+    const pool = quickFilters.size > 0 ? applyQuickFilters(tasks, quickFilters, filterCtx) : tasks;
+    if (query.trim()) return searchTasks(pool, query, searchCtx);
+    return [...pool].sort(bySchedule);
+  }, [active, query, quickFilters, tasks, filterCtx, searchCtx]);
 
   const completedResults = useMemo(() => {
-    if (!includeCompleted || !query.trim()) return [];
-    return searchTasks(completedAll ?? [], query, { projectNames, tagNames }).slice(0, 30);
-  }, [includeCompleted, query, completedAll, projectNames, tagNames]);
+    if (!includeCompleted || !active) return [];
+    const pool = quickFilters.size > 0 ? applyQuickFilters(completedAll ?? [], quickFilters, filterCtx) : (completedAll ?? []);
+    if (query.trim()) return searchTasks(pool, query, searchCtx).slice(0, 30);
+    return [...pool]
+      .sort((a, b) => Date.parse(b.completed_at ?? '') - Date.parse(a.completed_at ?? ''))
+      .slice(0, 30);
+  }, [includeCompleted, active, quickFilters, completedAll, filterCtx, query, searchCtx]);
 
-  const active = !!query.trim() || quickFilter !== null;
   const counts = useMemo(() => {
-    const tz = deviceTimeZone();
-    const todayRef = Temporal.Instant.fromEpochMilliseconds(nowMs).toZonedDateTimeISO(tz).toPlainDate();
-    let overdue = 0;
-    let todayCount = 0;
-    let week = 0;
-    let p1 = 0;
-    let repeating = 0;
-    let checklist = 0;
-    let stale = 0;
-    let unscheduled = 0;
+    const map: Record<QuickFilterKey, number> = {
+      overdue: 0, today: 0, week: 0, p1: 0, repeating: 0, checklist: 0, stale: 0, unscheduled: 0,
+    };
     for (const task of tasks) {
-      const bucket = dueBucket(task);
-      if (bucket === 'overdue') overdue++;
-      if (bucket === 'today') todayCount++;
-      const d = dueDate(task);
-      if (d) {
-        const delta = todayRef.until(d).days;
-        if (delta >= 0 && delta <= 7) week++;
+      for (const item of filterMeta) {
+        if (matchesQuickFilter(task, item.key, filterCtx)) map[item.key]++;
       }
-      if (task.priority === 1) p1++;
-      if (task.recurrence_rule) repeating++;
-      if ((subtaskProgress.get(task.id)?.total ?? 0) > 0) checklist++;
-      if (isStaleTask(task, nowMs, 14)) stale++;
-      if (!task.due_at) unscheduled++;
     }
-    return { overdue, todayCount, week, p1, repeating, checklist, stale, unscheduled };
-  }, [tasks, subtaskProgress, nowMs]);
+    return map;
+  }, [tasks, filterCtx]);
+
+  // Wrap row open so tapping any result records the typed query in recent searches.
+  const searchModel = useMemo(() => ({
+    ...model,
+    open: (task: Task) => {
+      if (query.trim()) recordRecent(query);
+      model.open(task);
+    },
+  }), [model, query, recordRecent]);
+
+  const activeTitle = useMemo(() => {
+    if (filterList.length === 0) return '할 일';
+    if (filterList.length === 1) return filterLabels[filterList[0]];
+    return filterList.map((k) => filterShorts[k]).join(' · ');
+  }, [filterList]);
+
+  const openSaveSmartView = () => {
+    const suggested = query.trim()
+      ? (filterList.length ? `${filterList.map((k) => filterShorts[k]).join(' · ')} (${query.trim()})` : query.trim())
+      : filterList.map((k) => filterShorts[k]).join(' · ');
+    const defaultIcon: IconName = filterList.length === 1
+      ? (filterMeta.find((item) => item.key === filterList[0])?.icon ?? 'flag')
+      : 'filter';
+    setViewName(suggested.slice(0, 40));
+    setViewIcon(SMART_VIEW_ICONS.includes(defaultIcon) ? defaultIcon : 'filter');
+    setViewPinned(true);
+    setSavingView(true);
+  };
+
+  const confirmSaveSmartView = () => {
+    const trimmed = viewName.trim();
+    if (!trimmed) return;
+    haptic.success();
+    saveFilter({
+      name: trimmed,
+      icon: viewIcon,
+      query: query.trim(),
+      quickFilters: filterList,
+      includeCompleted,
+      pinned: viewPinned,
+    });
+    setSavingView(false);
+    showToast(viewPinned ? `‘${trimmed}’ 스마트 뷰를 목록 탭에 고정했습니다.` : `‘${trimmed}’ 스마트 뷰를 저장했습니다.`);
+  };
 
   const saveTagRename = () => {
     const trimmed = tagInput.trim().replace(/^@/, '');
@@ -179,7 +260,8 @@ export default function Search() {
     setRenamingTag(null);
   };
 
-  const shortcutsEnabled = isFocused && !managingTag && !renamingTag && !kbdSchedule && !kbdMenu;
+  const anySheetOpen = !!managingTag || !!renamingTag || !!sheets.scheduling || !!sheets.menu || savingView || !!inspectingDone;
+  const shortcutsEnabled = isFocused && !anySheetOpen;
   useInputCapture({ arrows: true, enabled: shortcutsEnabled && results.length > 0 });
   const cursor = useListCursor(results, taskId, {
     enabled: shortcutsEnabled,
@@ -190,8 +272,10 @@ export default function Search() {
   useTaskShortcuts(cursor, {
     enabled: shortcutsEnabled,
     priority: KEY_PRIORITY.screen,
-    onSchedule: setKbdSchedule,
-    onOpenMenu: setKbdMenu,
+    onSchedule: sheets.setScheduling,
+    onOpenMenu: sheets.setMenu,
+    onToggleSubtasks: model.toggleSubtasks,
+    onAddSubtask: model.addSubtask,
     onBefore: (event) => {
       if (matchesCombo(event, 'arrowdown') || matchesCombo(event, 'ctrl+j')) {
         if (results.length > 0) {
@@ -230,7 +314,7 @@ export default function Search() {
         return false;
       }
       if (matchesCombo(event, 'alt+c')) {
-        if (query.trim()) {
+        if (active) {
           if (!event.repeat) setIncludeCompleted((prev) => !prev);
           return true;
         }
@@ -243,9 +327,8 @@ export default function Search() {
           searchInput.current?.focus();
           return true;
         }
-        if (query || quickFilter) {
-          setQuery('');
-          setQuickFilter(null);
+        if (active) {
+          clearAllFilters();
           return true;
         }
         router.back();
@@ -258,6 +341,13 @@ export default function Search() {
       return false;
     },
   });
+
+  const inspectedAt = inspectingDone?.completed_at
+    ? Temporal.Instant.from(inspectingDone.completed_at).toZonedDateTimeISO(zone)
+    : null;
+  const inspectedProject = inspectingDone?.project_id ? projects?.find((p) => p.id === inspectingDone.project_id) ?? null : null;
+  const inspectedMeta = inspectedProject ? projectMeta[inspectedProject.id] : undefined;
+  const inspectedTags = inspectingDone ? (tagNames.get(inspectingDone.id) ?? []) : [];
 
   return (
     <Screen>
@@ -275,36 +365,46 @@ export default function Search() {
                 router.push({ pathname: '/task/[id]', params: { id: cursor.focusedItem.id } });
               }
             }}
-            autoFocus placeholder={quickFilter ? `${filterLabels[quickFilter]}에서 검색` : '제목, 초성(ㅈㅂㄱ), #목록, @태그, p1'}
+            autoFocus
+            placeholder={filterList.length > 0 ? `${activeTitle}에서 검색` : '제목, 초성(ㅈㅂㄱ), #목록, @태그, due:today, -p4'}
             accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
             style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 15, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
           {active ? (
             <IconButton
               name="x" label="지우기" size={18} color={colors.textMuted}
-              onPress={() => {
-                setQuery('');
-                setQuickFilter(null);
-              }} />
+              onPress={clearAllFilters} />
           ) : null}
         </View>
       </View>
 
       {active ? (
-        <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm, flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
-          {quickFilter ? (
-            <Chip
-              icon="filter" label={filterLabels[quickFilter] + ' ×'} selected
-              onPress={() => setQuickFilter(null)} />
-          ) : null}
-          {query.trim() ? (
+        <View style={{ gap: 6, paddingBottom: space.sm }}>
+          <ScrollView
+            horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingHorizontal: space.lg, gap: 6 }}>
+            {filterMeta.map((item) => {
+              const selected = quickFilters.has(item.key);
+              if (item.key === 'stale' && !selected && counts.stale === 0) return null;
+              return (
+                <Chip
+                  key={item.key}
+                  icon={item.icon}
+                  label={selected ? `${item.short} ×` : item.short}
+                  selected={selected}
+                  tone={!selected && item.key === 'overdue' && counts.overdue > 0 ? 'danger' : undefined}
+                  onPress={() => toggleQuickFilter(item.key)} />
+              );
+            })}
+          </ScrollView>
+          <View style={{ paddingHorizontal: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
             <Chip
               icon="check-circle" label="완료한 일 포함" selected={includeCompleted}
               onPress={() => setIncludeCompleted((prev) => !prev)} />
-          ) : null}
-          {quickFilter && !query.trim() ? (
-            <Txt variant="caption" tone="faint">검색어나 #목록을 입력해 결과를 좁혀 보세요</Txt>
-          ) : null}
+            <Chip
+              icon="bookmark" label="스마트 뷰 저장"
+              onPress={openSaveSmartView} />
+          </View>
         </View>
       ) : null}
 
@@ -322,41 +422,47 @@ export default function Search() {
                   </View>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                     {recent.map((item) => (
-                      <Chip key={item} icon="clock" label={item} onPress={() => setQuery(item)} />
+                      <View key={item} style={[styles.recentChip, { borderColor: colors.border }]}>
+                        <Pressable
+                          accessibilityRole="button" accessibilityLabel={`최근 검색 ${item}`}
+                          onPress={() => {
+                            haptic.tap();
+                            setQuery(item);
+                          }}
+                          style={({ pressed }) => [styles.recentMain, { opacity: pressed ? 0.6 : 1 }]}>
+                          <Icon name="clock" size={13} color={colors.textFaint} />
+                          <Txt variant="smallStrong" tone="muted" numberOfLines={1}>{item}</Txt>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button" accessibilityLabel={`${item} 최근 검색 삭제`} hitSlop={6}
+                          onPress={() => removeRecent(item)}
+                          style={({ pressed }) => [styles.recentRemove, { opacity: pressed ? 0.5 : 1 }]}>
+                          <Icon name="x" size={13} color={colors.textFaint} />
+                        </Pressable>
+                      </View>
                     ))}
                   </View>
                 </View>
               ) : null}
 
               <View style={{ gap: space.sm }}>
-                <Txt variant="section" tone="muted">빠른 필터</Txt>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Txt variant="section" tone="muted">빠른 필터</Txt>
+                  <Txt variant="caption" tone="faint">여러 개 조합 가능</Txt>
+                </View>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-                  <Chip
-                    icon="alert-circle" label={`기한 지남${counts.overdue ? ' ' + counts.overdue : ''}`}
-                    tone={counts.overdue ? 'danger' : undefined} onPress={() => setQuickFilter('overdue')} />
-                  <Chip
-                    icon="sun" label={`오늘${counts.todayCount ? ' ' + counts.todayCount : ''}`}
-                    onPress={() => setQuickFilter('today')} />
-                  <Chip
-                    icon="calendar" label={`이번 주${counts.week ? ' ' + counts.week : ''}`}
-                    onPress={() => setQuickFilter('week')} />
-                  <Chip
-                    label={`!!! 가장 높음${counts.p1 ? ' ' + counts.p1 : ''}`}
-                    onPress={() => setQuickFilter('p1')} />
-                  <Chip
-                    icon="repeat" label={`반복${counts.repeating ? ' ' + counts.repeating : ''}`}
-                    onPress={() => setQuickFilter('repeating')} />
-                  <Chip
-                    icon="check-square" label={`체크리스트${counts.checklist ? ' ' + counts.checklist : ''}`}
-                    onPress={() => setQuickFilter('checklist')} />
-                  {counts.stale > 0 ? (
-                    <Chip
-                      icon="clock" label={`오래 미룬 일 ${counts.stale}`}
-                      onPress={() => setQuickFilter('stale')} />
-                  ) : null}
-                  <Chip
-                    icon="inbox" label={`날짜 없음${counts.unscheduled ? ' ' + counts.unscheduled : ''}`}
-                    onPress={() => setQuickFilter('unscheduled')} />
+                  {filterMeta.map((item) => {
+                    const count = counts[item.key];
+                    if (item.key === 'stale' && count === 0) return null;
+                    return (
+                      <Chip
+                        key={item.key}
+                        icon={item.icon}
+                        label={`${item.short}${count ? ' ' + count : ''}`}
+                        tone={item.key === 'overdue' && count > 0 ? 'danger' : undefined}
+                        onPress={() => toggleQuickFilter(item.key)} />
+                    );
+                  })}
                 </View>
               </View>
 
@@ -364,15 +470,21 @@ export default function Search() {
                 <View style={{ gap: space.sm }}>
                   <Txt variant="section" tone="muted">목록별 보기</Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-                    {projects.map((project) => (
-                      <Chip
-                        key={project.id} icon="hash" label={project.name}
-                        onPress={() => {
-                          const q = '#' + project.name + ' ';
-                          setQuery(q);
-                          recordRecent('#' + project.name);
-                        }} />
-                    ))}
+                    {projects.map((project) => {
+                      const meta = projectMeta[project.id];
+                      return (
+                        <Chip
+                          key={project.id}
+                          icon={meta?.icon ?? 'hash'}
+                          color={listColor(meta?.color, isDark)}
+                          label={project.name}
+                          onPress={() => {
+                            const q = '#' + project.name + ' ';
+                            setQuery(q);
+                            recordRecent('#' + project.name);
+                          }} />
+                      );
+                    })}
                   </View>
                 </View>
               ) : null}
@@ -417,9 +529,8 @@ export default function Search() {
             <>
               {results.length > 0 ? (
                 <>
-                  <SectionTitle
-                    title={quickFilter ? filterLabels[quickFilter] : '할 일'} count={results.length} />
-                  <TaskList tasks={results} focusedTaskId={cursor.focusedId} />
+                  <SectionTitle title={activeTitle} count={results.length} />
+                  <TaskRows model={searchModel} tasks={results} focusedTaskId={cursor.focusedId} />
                 </>
               ) : null}
               {completedResults.length > 0 ? (
@@ -439,12 +550,19 @@ export default function Search() {
                             showToast(`‘${task.title}’${josa(task.title, '을/를')} 할 일로 되돌렸습니다.`);
                           }}
                           label={task.title + ' 완료 취소'} />
-                        <View style={[styles.completedBody, { borderBottomColor: colors.border }]}>
+                        <Pressable
+                          accessibilityRole="button" accessibilityLabel={`${task.title} 완료 상세 보기`}
+                          onPress={() => {
+                            haptic.tap();
+                            if (query.trim()) recordRecent(query);
+                            setInspectingDone(task);
+                          }}
+                          style={({ pressed }) => [styles.completedBody, { borderBottomColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
                           <Text numberOfLines={1} style={[type.body as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
                             {task.title}
                           </Text>
-                          <Txt variant="caption" tone="faint">{doneDay}</Txt>
-                        </View>
+                          <Txt variant="caption" tone="faint" tabular>{doneDay}</Txt>
+                        </Pressable>
                       </View>
                     );
                   })}
@@ -453,18 +571,124 @@ export default function Search() {
             </>
           ) : (
             <EmptyState
-              icon="search" art={<EmptySearch size={EMPTY_ART} />} title={quickFilter && !query.trim() ? `${filterLabels[quickFilter]}${josa(filterLabels[quickFilter], '이/가')} 없습니다` : '검색 결과가 없습니다'}
-              message={query.trim()
-                ? (includeCompleted ? '다른 검색어나 초성으로 다시 찾아보세요.' : '이미 완료한 일에 있을 수도 있습니다.')
-                : undefined}
-              action={quickFilter && !query.trim() ? (
-                <Button label="필터 해제" kind="secondary" onPress={() => setQuickFilter(null)} />
-              ) : query.trim() && !includeCompleted ? (
+              icon="search" art={<EmptySearch size={EMPTY_ART} />}
+              title={filterList.length > 0 && !query.trim() ? `${activeTitle}${josa(activeTitle, '이/가')} 없습니다` : '검색 결과가 없습니다'}
+              message={includeCompleted ? '다른 검색어나 필터로 다시 찾아보세요.' : '이미 완료한 일에 있을 수도 있습니다.'}
+              action={filterList.length > 0 && !query.trim() && includeCompleted ? (
+                <Button label="필터 해제" kind="secondary" onPress={() => setQuickFilters(new Set())} />
+              ) : !includeCompleted ? (
                 <Button label="완료한 일에서도 찾기" kind="secondary" onPress={() => setIncludeCompleted(true)} />
               ) : undefined} />
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Sheet visible={savingView} onClose={() => setSavingView(false)} title="스마트 뷰로 저장">
+        <View style={{ gap: space.md }}>
+          <TextInput
+            value={viewName} onChangeText={setViewName} autoFocus maxLength={60}
+            placeholder="예: 급한 회사 일, 이번 주 체크리스트" placeholderTextColor={colors.textFaint}
+            returnKeyType="done" onSubmitEditing={confirmSaveSmartView} accessibilityLabel="스마트 뷰 이름"
+            style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
+          <View style={{ gap: 6 }}>
+            <Txt variant="caption" tone="muted">아이콘</Txt>
+            <View style={styles.iconGrid}>
+              {SMART_VIEW_ICONS.map((ic) => {
+                const selected = viewIcon === ic;
+                return (
+                  <Pressable
+                    key={ic} accessibilityRole="button" accessibilityLabel={'아이콘 ' + ic}
+                    onPress={() => {
+                      haptic.tap();
+                      setViewIcon(ic);
+                    }}
+                    style={[
+                      styles.iconPick,
+                      {
+                        borderColor: selected ? colors.accent : colors.border,
+                        backgroundColor: selected ? colors.accentSoft : 'transparent',
+                      },
+                    ]}>
+                    <Icon name={ic} size={17} color={selected ? colors.accentText : colors.textMuted} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          <Row
+            icon="bookmark" label="목록 탭에 고정" detail="목록 상단에서 바로 열기"
+            trailing={(
+              <Switch
+                value={viewPinned} onValueChange={setViewPinned}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor={colors.surface} />
+            )} />
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            <Button label="취소" kind="secondary" onPress={() => setSavingView(false)} style={{ flex: 1 }} />
+            <Button label="저장" disabled={!viewName.trim()} onPress={confirmSaveSmartView} style={{ flex: 1 }} />
+          </View>
+        </View>
+      </Sheet>
+
+      <Sheet visible={!!inspectingDone} onClose={() => setInspectingDone(null)} title="완료한 할 일">
+        {inspectingDone ? (
+          <View style={{ gap: space.md }}>
+            <Txt variant="bodyStrong">{inspectingDone.title}</Txt>
+            <View style={{ gap: 6 }}>
+              {inspectedAt ? (
+                <View style={styles.detailMetaRow}>
+                  <Icon name="check-circle" size={15} color={colors.textFaint} />
+                  <Txt variant="small" tone="muted" tabular>
+                    {formatDate(inspectedAt.toPlainDate(), nowDate)} {formatTime(inspectedAt.hour * 60 + inspectedAt.minute, prefs.timeFormat)} 완료
+                  </Txt>
+                </View>
+              ) : null}
+              <View style={styles.detailMetaRow}>
+                <Icon
+                  name={inspectedProject ? (inspectedMeta?.icon ?? 'hash') : 'inbox'} size={15}
+                  color={inspectedProject ? (listColor(inspectedMeta?.color, isDark) ?? colors.textFaint) : colors.textFaint} />
+                <Txt variant="small" tone="muted">{inspectedProject ? inspectedProject.name : '미분류'}</Txt>
+              </View>
+              {inspectingDone.priority < 4 ? (
+                <View style={styles.detailMetaRow}>
+                  <Icon name="flag" size={15} color={colors.textFaint} />
+                  <Txt variant="small" tone="muted">{priorityOption(inspectingDone.priority)}</Txt>
+                </View>
+              ) : null}
+              {inspectedTags.length > 0 ? (
+                <View style={styles.detailMetaRow}>
+                  <Icon name="tag" size={15} color={colors.textFaint} />
+                  <Txt variant="small" tone="muted">{inspectedTags.map((t) => '@' + t).join('  ')}</Txt>
+                </View>
+              ) : null}
+            </View>
+            {inspectingDone.notes?.trim() ? (
+              <View style={[styles.notesBox, { backgroundColor: colors.surfaceMuted }]}>
+                <Txt variant="small" tone="muted">{inspectingDone.notes.trim()}</Txt>
+              </View>
+            ) : null}
+            <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xs }}>
+              <Button
+                label="다시 열기" kind="secondary" icon="rotate-ccw" style={{ flex: 1 }}
+                onPress={() => {
+                  const target = inspectingDone;
+                  setInspectingDone(null);
+                  taskActions.reopen(target);
+                  showToast(`‘${target.title}’${josa(target.title, '을/를')} 할 일로 되돌렸습니다.`);
+                }} />
+              <Button
+                label="삭제" kind="danger" icon="trash-2" style={{ flex: 1 }}
+                onPress={() => {
+                  const target = inspectingDone;
+                  setInspectingDone(null);
+                  queryClient.setQueryData<Task[]>(keys.completedTasks, (list) => list?.filter((item) => item.id !== target.id));
+                  taskActions.remove(target.id);
+                  showToast('완료 기록을 삭제했습니다.');
+                }} />
+            </View>
+          </View>
+        ) : null}
+      </Sheet>
 
       <Sheet visible={!!managingTag} onClose={() => setManagingTag(null)} title={managingTag ? '@' + managingTag.name : ''}>
         <Row
@@ -500,8 +724,7 @@ export default function Search() {
         </View>
       </Sheet>
 
-      <ScheduleSheet task={kbdSchedule} onClose={() => setKbdSchedule(null)} onPick={flow.reschedule} />
-      <TaskMenu task={kbdMenu} onClose={() => setKbdMenu(null)} onSchedule={setKbdSchedule} />
+      <TaskListSheets sheets={sheets} />
     </Screen>
   );
 }
@@ -509,11 +732,22 @@ export default function Search() {
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', gap: space.xs, paddingHorizontal: space.sm, paddingVertical: space.sm },
   field: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, borderRadius: radius.md, paddingLeft: space.md },
+  recentChip: {
+    flexDirection: 'row', alignItems: 'center', borderRadius: radius.sm, borderWidth: 1, minHeight: 34, paddingLeft: 10, paddingRight: 4,
+  },
+  recentMain: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 6, paddingRight: 4, maxWidth: 200 },
+  recentRemove: { padding: 5, alignItems: 'center', justifyContent: 'center' },
   tagChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, minHeight: 32, borderRadius: radius.sm, borderWidth: 1,
   },
   link: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg, borderWidth: 1, borderRadius: radius.lg },
   input: { minHeight: 48, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: space.md },
+  iconGrid: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  iconPick: {
+    width: 38, height: 38, borderRadius: radius.md, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
+  },
+  detailMetaRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  notesBox: { borderRadius: radius.md, padding: space.md },
   completedRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingLeft: space.lg },
   completedBody: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 11, paddingRight: space.lg,

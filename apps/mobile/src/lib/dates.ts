@@ -1,12 +1,15 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { getCalendars } from 'expo-localization';
 
+import type { StartOfWeek, TimeFormat } from '@/features/settings/prefs';
+
 import { recurrence, type RecurrenceMode, type Task } from './shared';
 
 export { Temporal };
 export type PlainDate = Temporal.PlainDate;
 
-const weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
+const weekdayNames = ['월', '화', '수', '목', '금', '토', '일'] as const;
+const sundayFirstWeekdayNames = ['일', '월', '화', '수', '목', '금', '토'] as const;
 const byDay: Record<string, string> = { MO: '월', TU: '화', WE: '수', TH: '목', FR: '금', SA: '토', SU: '일' };
 
 export function deviceTimeZone(): string {
@@ -28,9 +31,26 @@ export function sameInstant(a: string | null, b: string | null): boolean {
 }
 
 export const today = (timeZone: string): PlainDate => Temporal.Now.plainDateISO(timeZone);
+
+/**
+ * The logical "today" date when a user shifts their day boundary past midnight.
+ * With `dayStartHour = 2`, 00:00–01:59 still counts as yesterday's "today".
+ */
+export function logicalToday(timeZone: string, dayStartHour = 0, now: Temporal.Instant = Temporal.Now.instant()): PlainDate {
+  const shift = Math.max(0, Math.min(5, Math.round(dayStartHour)));
+  if (shift === 0) return now.toZonedDateTimeISO(timeZone).toPlainDate();
+  return now.subtract({ hours: shift }).toZonedDateTimeISO(timeZone).toPlainDate();
+}
+
 export const weekdayName = (date: PlainDate): string => weekdayNames[date.dayOfWeek - 1];
-/** Monday of the ISO week that contains `date`. */
-export const weekStart = (date: PlainDate): PlainDate => date.subtract({ days: date.dayOfWeek - 1 });
+
+/** Ordered weekday headers (`월..일` or `일..토`) matching `startOfWeek`. */
+export const weekdayLabels = (startOfWeek: StartOfWeek = 'monday'): readonly string[] =>
+  startOfWeek === 'sunday' ? sundayFirstWeekdayNames : weekdayNames;
+
+/** First day of the week containing `date`, defaulting to ISO Monday. */
+export const weekStart = (date: PlainDate, startOfWeek: StartOfWeek = 'monday'): PlainDate =>
+  date.subtract({ days: startOfWeek === 'sunday' ? date.dayOfWeek % 7 : date.dayOfWeek - 1 });
 
 function zoned(task: Pick<Task, 'due_at' | 'timezone'>): Temporal.ZonedDateTime | null {
   if (!task.due_at) return null;
@@ -68,9 +88,12 @@ export function isPastDue(task: Pick<Task, 'due_at' | 'timezone' | 'all_day'>): 
   return Temporal.Instant.compare(Temporal.Instant.from(task.due_at), Temporal.Now.instant()) < 0;
 }
 
-export function formatTime(minutes: number): string {
+export function formatTime(minutes: number, timeFormat: TimeFormat = '12h'): string {
   const hour = Math.floor(minutes / 60);
   const minute = minutes % 60;
+  if (timeFormat === '24h') {
+    return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
+  }
   const period = hour < 12 ? '오전' : '오후';
   return period + ' ' + (hour % 12 === 0 ? 12 : hour % 12) + ':' + String(minute).padStart(2, '0');
 }
@@ -87,12 +110,12 @@ export function formatDate(date: PlainDate, reference: PlainDate): string {
 }
 
 /** "오늘 오후 7:00", "내일", "11월 25일 (수)" — or null when the task has no schedule. */
-export function formatDue(task: Pick<Task, 'due_at' | 'timezone' | 'all_day'>): string | null {
+export function formatDue(task: Pick<Task, 'due_at' | 'timezone' | 'all_day'>, timeFormat: TimeFormat = '12h'): string | null {
   const date = dueDate(task);
   if (!date) return null;
   const minutes = dueMinutes(task);
   const day = formatDate(date, today(task.timezone));
-  return minutes === null ? day : day + ' ' + formatTime(minutes);
+  return minutes === null ? day : day + ' ' + formatTime(minutes, timeFormat);
 }
 
 export function describeRecurrence(rule: string | null, mode: RecurrenceMode = 'schedule'): string | null {

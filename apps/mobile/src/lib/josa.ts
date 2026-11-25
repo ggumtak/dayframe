@@ -72,6 +72,8 @@ function ending(word: string): Ending | null {
   while (i >= 0 && SKIPPED.test(word[i])) i -= 1;
   if (i < 0) return null;
   const rest = word.slice(0, i + 1);
+  // '%' is read as "퍼센트" or "프로", both ending in a vowel ("50%를", "100%가").
+  if (rest[i] === '%') return 'none';
   // A clock time is read in hours and minutes: "3:00" 세 시, "3:30" 세 시 삼십 분.
   const clock = rest.match(/\d{1,2}:(\d{2})$/);
   if (clock) return clock[1] === '00' ? 'none' : 'other';

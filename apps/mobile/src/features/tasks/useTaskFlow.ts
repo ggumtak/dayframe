@@ -3,9 +3,10 @@ import { useCallback } from 'react';
 import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
 import { hideTasks, nextDueAfterComplete, nextPosition, unhideTasks, useTaskActions, withDescendants } from '@/data/tasks';
-import { dueMinutes, formatDue, instantFor, type PlainDate, sameInstant, today } from '@/lib/dates';
+import { getPersonalPrefs } from '@/features/settings/prefsStore';
+import { dueMinutes, formatDue, instantFor, type PlainDate, sameInstant, Temporal, today } from '@/lib/dates';
 import { josa } from '@/lib/josa';
-import type { Task, TaskPatch } from '@/lib/shared';
+import { nextOccurrence, occurrenceFloor, type Task, type TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 
 /** Formats minutes past midnight as `HH:MM:00` for `recurrence_local_time`. */
@@ -34,7 +35,12 @@ export function toMarkdownChecklist(task: Task, openSubtasks: Task[], completedS
   return lines.join('\n');
 }
 
-/** Task gestures with their feedback: completion (including repeats) and deletion can both be undone from the toast. */
+export interface RescheduleOptions {
+  durationMinutes?: number | null;
+  toastMessage?: string;
+}
+
+/** Task gestures with their feedback: completion (including repeats), rescheduling, skipping, and deletion can be undone from the toast. */
 export function useTaskFlow() {
   const actions = useTaskActions();
 
@@ -61,7 +67,7 @@ export function useTaskFlow() {
       for (const child of completedChildren) actions.reopen(child);
     }
     const next = nextDueAfterComplete(task);
-    const when = next ? formatDue({ due_at: next, timezone: task.timezone, all_day: task.all_day }) : null;
+    const when = next ? formatDue({ due_at: next, timezone: task.timezone, all_day: task.all_day }, getPersonalPrefs().timeFormat) : null;
     const message = !task.recurrence_rule
       ? '완료했습니다.'
       : completedChildren.length > 0
@@ -83,46 +89,145 @@ export function useTaskFlow() {
     });
   }, [actions]);
 
-  const reschedule = useCallback((task: Task, date: PlainDate | null, minutes?: number | null) => {
-    const previousPatch: TaskPatch = {
+  const reschedule = useCallback((task: Task, date: PlainDate | null, minutes?: number | null, options?: RescheduleOptions) => {
+    const previousSnapshot = {
       due_at: task.due_at,
       all_day: task.all_day,
       recurrence_rule: task.recurrence_rule,
       recurrence_mode: task.recurrence_mode,
       recurrence_local_time: task.recurrence_local_time,
+      occurrence_at: task.occurrence_at,
+      duration_minutes: task.duration_minutes,
     };
+    const durationChanged = options?.durationMinutes !== undefined && options.durationMinutes !== task.duration_minutes;
     const currentMinutes = dueMinutes(task);
     const timeChanged = minutes !== undefined && minutes !== currentMinutes;
+
+    let movedDueAt: string | null = null;
+    let movedAllDay = task.all_day;
+    let usedPreserve = false;
+
     if (date && task.recurrence_rule && task.due_at && !timeChanged) {
-      const due_at = task.recurrence_local_time
+      usedPreserve = true;
+      movedDueAt = task.recurrence_local_time
         ? date.toZonedDateTime({ timeZone: task.timezone, plainTime: task.recurrence_local_time }).toInstant().toString()
         : instantFor(date, currentMinutes, task.timezone);
-      actions.update(task.id, { due_at, expected_due_at: task.due_at, preserve_recurrence: true });
+      movedAllDay = currentMinutes === null;
+      actions.update(task.id, { due_at: movedDueAt, expected_due_at: task.due_at, preserve_recurrence: true });
+      if (durationChanged) {
+        actions.update(task.id, { duration_minutes: options?.durationMinutes ?? null });
+      }
     } else {
-      actions.update(task.id, schedulePatch(task, date, minutes));
+      const nextPatch = schedulePatch(task, date, minutes);
+      if (!('preserve_recurrence' in nextPatch) && durationChanged) {
+        nextPatch.duration_minutes = options?.durationMinutes ?? null;
+      }
+      movedDueAt = 'due_at' in nextPatch ? (nextPatch.due_at ?? null) : null;
+      movedAllDay = 'all_day' in nextPatch ? !!nextPatch.all_day : false;
+      actions.update(task.id, nextPatch);
     }
-    if (!date && task.due_at) {
-      showToast('일정을 지웠습니다.', {
-        actionLabel: '실행 취소',
-        onAction: () => actions.update(task.id, previousPatch),
-      });
+
+    const undo = () => {
+      if (usedPreserve && previousSnapshot.due_at) {
+        const current = queryClient.getQueryData<Task[]>(keys.tasks)?.find((item) => item.id === task.id);
+        actions.update(task.id, {
+          due_at: previousSnapshot.due_at,
+          expected_due_at: current?.due_at ?? movedDueAt ?? previousSnapshot.due_at,
+          preserve_recurrence: true,
+        });
+        if (durationChanged) {
+          actions.update(task.id, { duration_minutes: previousSnapshot.duration_minutes });
+        }
+        return;
+      }
+      const revertPatch: TaskPatch = {
+        due_at: previousSnapshot.due_at,
+        all_day: previousSnapshot.all_day,
+        recurrence_rule: previousSnapshot.recurrence_rule,
+        recurrence_mode: previousSnapshot.recurrence_mode,
+        recurrence_local_time: previousSnapshot.recurrence_local_time,
+        ...(durationChanged ? { duration_minutes: previousSnapshot.duration_minutes } : {}),
+      };
+      actions.update(task.id, revertPatch);
+      if (previousSnapshot.occurrence_at) {
+        queryClient.setQueryData<Task[]>(keys.tasks, (list) => list?.map((item) => (
+          item.id === task.id ? { ...item, occurrence_at: previousSnapshot.occurrence_at } : item
+        )));
+      }
+    };
+
+    if (options?.toastMessage) {
+      showToast(options.toastMessage, { actionLabel: '실행 취소', onAction: undo });
+      return;
     }
+
+    if (!date) {
+      if (previousSnapshot.due_at || durationChanged) {
+        showToast(previousSnapshot.due_at ? '일정을 지웠습니다.' : '소요 시간을 바꿨습니다.', {
+          actionLabel: '실행 취소',
+          onAction: undo,
+        });
+      }
+      return;
+    }
+
+    const when = movedDueAt
+      ? formatDue({ due_at: movedDueAt, timezone: task.timezone, all_day: movedAllDay }, getPersonalPrefs().timeFormat)
+      : null;
+    showToast(when ? `일정을 ‘${when}’${josa(when, '으로/로')} 바꿨습니다.` : '일정을 바꿨습니다.', {
+      actionLabel: '실행 취소',
+      onAction: undo,
+    });
   }, [actions]);
 
   const postpone = useCallback((task: Task) => {
-    const previousPatch: TaskPatch = {
-      due_at: task.due_at,
-      all_day: task.all_day,
-      recurrence_rule: task.recurrence_rule,
-      recurrence_mode: task.recurrence_mode,
-      recurrence_local_time: task.recurrence_local_time,
-    };
-    reschedule(task, today(task.timezone).add({ days: 1 }));
-    showToast('내일로 옮겼습니다.', {
-      actionLabel: '실행 취소',
-      onAction: () => actions.update(task.id, previousPatch),
+    reschedule(task, today(task.timezone).add({ days: 1 }), undefined, { toastMessage: '내일로 옮겼습니다.' });
+  }, [reschedule]);
+
+  const skipOccurrence = useCallback((task: Task) => {
+    if (!task.recurrence_rule || !task.due_at) return;
+    const anchorAt = task.recurrence_anchor_at ?? task.due_at;
+    let nextDueAt: string;
+    try {
+      const mode = task.recurrence_mode ?? 'schedule';
+      const floor = occurrenceFloor(task, Temporal.Now.instant());
+      nextDueAt = nextOccurrence(
+        task.recurrence_rule,
+        task.timezone,
+        anchorAt,
+        floor,
+        task.all_day,
+        task.recurrence_local_time,
+        mode,
+      );
+    } catch {
+      return;
+    }
+    const previousDueAt = task.due_at;
+    const previousOccurrenceAt = task.occurrence_at;
+    actions.update(task.id, {
+      due_at: nextDueAt,
+      expected_due_at: previousDueAt,
+      preserve_recurrence: true,
     });
-  }, [actions, reschedule]);
+    const when = formatDue({ due_at: nextDueAt, timezone: task.timezone, all_day: task.all_day }, getPersonalPrefs().timeFormat);
+    showToast(when ? `이번 반복을 건너뛰었습니다 · 다음: ${when}` : '이번 반복을 건너뛰었습니다', {
+      actionLabel: '실행 취소',
+      onAction: () => {
+        const current = queryClient.getQueryData<Task[]>(keys.tasks)?.find((item) => item.id === task.id);
+        actions.update(task.id, {
+          due_at: previousDueAt,
+          expected_due_at: current?.due_at ?? nextDueAt,
+          preserve_recurrence: true,
+        });
+        if (previousOccurrenceAt) {
+          queryClient.setQueryData<Task[]>(keys.tasks, (list) => list?.map((item) => (
+            item.id === task.id ? { ...item, occurrence_at: previousOccurrenceAt } : item
+          )));
+        }
+      },
+    });
+  }, [actions]);
 
   const duplicate = useCallback((task: Task, options: { openSubtasks?: Task[]; completedSubtasks?: Task[]; tagNames?: string[] } = {}) => {
     const allOpen = queryClient.getQueryData<Task[]>(keys.tasks) ?? [];
@@ -172,5 +277,5 @@ export function useTaskFlow() {
     showToast(`완료한 하위 작업 ${completedSubtasks.length}개의 체크를 해제했습니다.`);
   }, [actions]);
 
-  return { ...actions, complete, uncomplete, remove, reschedule, postpone, duplicate, resetChecklist };
+  return { ...actions, complete, uncomplete, remove, reschedule, postpone, skipOccurrence, duplicate, resetChecklist };
 }

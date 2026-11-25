@@ -18,6 +18,7 @@ const DEFAULTS: AiPrefs = { model: DEFAULT_MODEL, dayStart: 9 * 60, dayEnd: 22 *
 
 let prefs: AiPrefs = DEFAULTS;
 let loaded: Promise<void> | null = null;
+let changedBeforeLoad = false;
 const listeners = new Set<() => void>();
 
 function accept(raw: unknown): Partial<AiPrefs> {
@@ -35,7 +36,7 @@ function accept(raw: unknown): Partial<AiPrefs> {
 function ensureLoaded(): Promise<void> {
   loaded ??= AsyncStorage.getItem(KEY)
     .then((raw) => {
-      if (!raw) return;
+      if (changedBeforeLoad || !raw) return;
       prefs = { ...prefs, ...accept(JSON.parse(raw)) };
       listeners.forEach((listener) => listener());
     })
@@ -49,6 +50,7 @@ export async function readAiPrefs(): Promise<AiPrefs> {
 }
 
 export function setAiPrefs(patch: Partial<AiPrefs>): void {
+  changedBeforeLoad = true;
   prefs = { ...prefs, ...patch };
   listeners.forEach((listener) => listener());
   AsyncStorage.setItem(KEY, JSON.stringify(prefs)).catch(() => {});

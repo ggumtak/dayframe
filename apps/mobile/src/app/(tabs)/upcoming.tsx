@@ -7,18 +7,21 @@ import { EmptyUpcoming } from '@/components/art';
 import { MonthCalendar } from '@/components/MonthCalendar';
 import { YearCalendar } from '@/components/YearCalendar';
 import { FoldHeader, Header, Icon, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
-import { bySchedule, useTaskIndex } from '@/data/tasks';
+import { bySchedule, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
 import {
   type HardwareKeyEvent, KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor, useScreenContext, useScreenFocused, useTaskShortcuts,
 } from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
-import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
-import { TaskList } from '@/features/tasks/TaskList';
-import { TaskMenu } from '@/features/tasks/TaskMenu';
+import type { TimeFormat } from '@/features/settings/prefs';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
+import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
+import { type TaskListModel, TaskListSheets, TaskRows, useTaskListModel } from '@/features/tasks/TaskList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, dueBucket, dueDate, formatDate, Temporal, today, weekdayName } from '@/lib/dates';
+import {
+  deviceTimeZone, dueDate, formatDate, formatTime, logicalToday, Temporal, weekdayName, weekStart,
+} from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { gridColumns } from '@/lib/layout';
 import { useLayout } from '@/lib/layoutContext';
@@ -34,24 +37,38 @@ type UpcomingView = 'week' | 'month' | 'year';
 const VIEW_ORDER: readonly UpcomingView[] = ['week', 'month', 'year'];
 const isUpcomingView = (value: string): value is UpcomingView => value === 'week' || value === 'month' || value === 'year';
 const taskIdOf = (task: Task) => task.id;
+const BEYOND_PREVIEW_DAYS = 30;
+
+function taskBucket(
+  task: Pick<Task, 'due_at' | 'timezone'>,
+  dayStartHour: number,
+  nowInstant: Temporal.Instant,
+): 'none' | 'overdue' | 'today' | 'upcoming' {
+  const date = dueDate(task);
+  if (!date) return 'none';
+  const order = Temporal.PlainDate.compare(date, logicalToday(task.timezone, dayStartHour, nowInstant));
+  return order < 0 ? 'overdue' : order === 0 ? 'today' : 'upcoming';
+}
 
 export default function Upcoming() {
   const { colors } = useTheme();
   const isFocused = useScreenFocused();
   useScreenContext('upcoming', isFocused);
-  const { tasks, isLoading, refetch } = useTaskIndex();
+  const prefs = usePersonalPrefs();
+  const { tasks, roots, isLoading, refetch } = useTaskIndex();
+  const { progress: subtaskProgress } = useSubtaskProgress();
+  const { model, sheets } = useTaskListModel();
   const [refreshing, setRefreshing] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [overdueOpen, setOverdueOpen] = useState(false);
+  const [showPlanDay, setShowPlanDay] = useState(false);
   const [view, setView] = usePersistentState<UpcomingView>('dayframe-upcoming-view', 'week', isUpcomingView);
   const [monthDay, setMonthDay] = useState<string | null>(null);
   // The calendar's shown month ("YYYY-MM") once the person moves it or picks one in the year view; until then it
   // follows the selected day, or this month.
   const [calendarMonth, setCalendarMonth] = useState<string | null>(null);
   const [yearShown, setYearShown] = useState<number | null>(null);
-  const [kbdSchedule, setKbdSchedule] = useState<Task | null>(null);
-  const [kbdMenu, setKbdMenu] = useState<Task | null>(null);
   const quickAdd = useQuickAdd();
   const flow = useTaskFlow();
   const listScroll = useRef<ScrollViewInstance>(null);
@@ -59,10 +76,18 @@ export default function Upcoming() {
   const yearScroll = useRef<ScrollViewInstance>(null);
   useTabScrollTop('upcoming', view === 'week' ? listScroll : view === 'month' ? monthScroll : yearScroll);
 
+  const minute = useMinute();
+  const zone = deviceTimeZone();
+  const nowInstant = useMemo(() => Temporal.Instant.fromEpochMilliseconds(minute * 60_000), [minute]);
+  const todayKey = logicalToday(zone, prefs.dayStartHour, nowInstant).toString();
+  const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
+
   // The floating + adds to the day in view: the picked day of the week strip or of the calendar.
   const focusDay = view === 'month' ? monthDay : view === 'week' ? picked : null;
-  useScreenDefaults({ initialText: focusDay ? datePhrase(Temporal.PlainDate.from(focusDay), today(deviceTimeZone())) + ' ' : undefined });
-  const addOn = (date: Temporal.PlainDate) => quickAdd.open({ initialText: datePhrase(date, today(deviceTimeZone())) + ' ' });
+  useScreenDefaults({ initialText: focusDay ? datePhrase(Temporal.PlainDate.from(focusDay), now) + ' ' : undefined });
+  const addOn = useCallback((date: Temporal.PlainDate) => {
+    quickAdd.open({ initialText: datePhrase(date, now) + ' ' });
+  }, [quickAdd, now]);
 
   // The calendar widget opens a day here; `at` differs on every tap, so the same day can be opened twice.
   const params = useLocalSearchParams<{ view?: string; date?: string; at?: string }>();
@@ -76,9 +101,6 @@ export default function Upcoming() {
       setCalendarMonth(null);
     }
   }
-  const minute = useMinute();
-  const todayKey = today(deviceTimeZone()).toString();
-  const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   const shownMonth = calendarMonth ?? (monthDay ? monthDay.slice(0, 7) : now.toPlainYearMonth().toString());
   const showMonth = useCallback((next: Temporal.PlainYearMonth) => {
     setCalendarMonth(next.toString());
@@ -92,27 +114,24 @@ export default function Upcoming() {
   }, [setView]);
 
   const overdue = useMemo(
-    () => tasks.filter((item) => dueBucket(item) === 'overdue').sort(bySchedule),
-    [tasks],
+    () => tasks.filter((item) => taskBucket(item, prefs.dayStartHour, nowInstant) === 'overdue').sort(bySchedule),
+    [tasks, prefs.dayStartHour, nowInstant],
   );
 
-  // Week strip starts from today + weekOffset * 7 days, navigable forward & backward like Todoist/Fantastical.
+  // Week strip respects `startOfWeek` (`monday` or `sunday`), navigable forward & backward.
   const week = useMemo(() => {
-    const start = Temporal.PlainDate.from(todayKey).add({ days: weekOffset * 7 });
+    const start = weekStart(now, prefs.startOfWeek).add({ days: weekOffset * 7 });
     return Array.from({ length: 7 }, (_, offset) => start.add({ days: offset }));
-  }, [todayKey, weekOffset]);
+  }, [now, prefs.startOfWeek, weekOffset]);
   const weekStartDay = week[0];
   const weekLastDay = week[6];
 
   // Expand both real tasks AND future repeat previews across the visible week window.
   const weekMap = useMemo(() => {
-    const base = Temporal.Instant.fromEpochMilliseconds(minute * 60_000).toZonedDateTimeISO(deviceTimeZone()).toPlainDate();
-    const start = base.add({ days: weekOffset * 7 });
-    const end = start.add({ days: 6 });
     const map = new Map<string, { real: Task[]; previews: Task[] }>();
     for (const task of tasks) {
       const due = dueDate(task)?.toString();
-      for (const date of occurrenceDates(task, start, end, nextOccurrence)) {
+      for (const date of occurrenceDates(task, weekStartDay, weekLastDay, nextOccurrence)) {
         const key = date.toString();
         const entry = map.get(key) ?? { real: [], previews: [] };
         (key === due ? entry.real : entry.previews).push(task);
@@ -124,43 +143,60 @@ export default function Upcoming() {
       entry.previews.sort(bySchedule);
     });
     return map;
-  }, [tasks, weekOffset, minute]);
+  }, [tasks, weekStartDay, weekLastDay]);
 
-  // Also collect further-out dated tasks after the current week when viewing weekOffset === 0.
+  // Collect further-out dated tasks AND repeat previews for the next 30 days after the current week when viewing weekOffset === 0.
   const beyondWeek = useMemo(() => {
     if (weekOffset !== 0) return [];
-    const base = Temporal.Instant.fromEpochMilliseconds(minute * 60_000).toZonedDateTimeISO(deviceTimeZone()).toPlainDate();
-    const end = base.add({ days: 6 });
+    const beyondStart = weekLastDay.add({ days: 1 });
+    const previewEnd = now.add({ days: BEYOND_PREVIEW_DAYS });
     const groups = new Map<string, { real: Task[]; previews: Task[] }>();
-    for (const task of tasks.filter((item) => dueBucket(item) === 'upcoming').sort(bySchedule)) {
-      const d = dueDate(task)!;
-      if (Temporal.PlainDate.compare(d, end) <= 0) continue;
-      const key = d.toString();
-      const entry = groups.get(key) ?? { real: [], previews: [] };
-      entry.real.push(task);
-      groups.set(key, entry);
+    for (const task of tasks) {
+      const due = dueDate(task);
+      if (!due) continue;
+      const dueKey = due.toString();
+      if (Temporal.PlainDate.compare(beyondStart, previewEnd) <= 0) {
+        for (const date of occurrenceDates(task, beyondStart, previewEnd, nextOccurrence)) {
+          const key = date.toString();
+          const entry = groups.get(key) ?? { real: [], previews: [] };
+          (key === dueKey ? entry.real : entry.previews).push(task);
+          groups.set(key, entry);
+        }
+      }
+      // Keep far-future real tasks scheduled beyond the 30-day repeat preview window.
+      if (Temporal.PlainDate.compare(due, previewEnd) > 0 && Temporal.PlainDate.compare(due, beyondStart) >= 0) {
+        const entry = groups.get(dueKey) ?? { real: [], previews: [] };
+        entry.real.push(task);
+        groups.set(dueKey, entry);
+      }
     }
+    groups.forEach((entry) => {
+      entry.real.sort(bySchedule);
+      entry.previews.sort(bySchedule);
+    });
     return [...groups.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, entry]) => ({ key, ...entry }));
-  }, [tasks, weekOffset, minute]);
+  }, [tasks, weekOffset, weekLastDay, now]);
 
   const selected = picked && week.some((date) => date.toString() === picked) ? picked : null;
-  // dueBucket reads the clock for every task, so count once per task list and minute rather than on every render;
-  // `minute` is a dependency only so the count follows the day turning over.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const upcomingCount = useMemo(() => tasks.filter((item) => dueBucket(item) === 'upcoming').length, [tasks, minute]);
+  const upcomingCount = useMemo(
+    () => tasks.filter((item) => taskBucket(item, prefs.dayStartHour, nowInstant) === 'upcoming').length,
+    [tasks, prefs.dayStartHour, nowInstant],
+  );
 
   const plannerDays = useMemo(() => (
     selected
       ? [{ key: selected, ...(weekMap.get(selected) ?? { real: [], previews: [] }) }]
       : [
-        ...week.map((date) => {
-          const key = date.toString();
-          const entry = weekMap.get(key) ?? { real: [], previews: [] };
-          return { key, ...entry };
-        }),
+        ...week
+          .filter((date) => weekOffset !== 0 || Temporal.PlainDate.compare(date, now) >= 0)
+          .map((date) => {
+            const key = date.toString();
+            const entry = weekMap.get(key) ?? { real: [], previews: [] };
+            return { key, ...entry };
+          }),
         ...beyondWeek,
       ]
-  ), [selected, weekMap, week, beyondWeek]);
+  ), [selected, weekMap, week, weekOffset, now, beyondWeek]);
 
   const weekVisibleTasks = useMemo(() => {
     const raw = [
@@ -177,7 +213,7 @@ export default function Upcoming() {
     return unique;
   }, [weekOffset, selected, overdueOpen, overdue, plannerDays]);
 
-  const anySheetOpen = !!kbdSchedule || !!kbdMenu;
+  const anySheetOpen = !!sheets.scheduling || !!sheets.menu || showPlanDay;
 
   const swipeWeek = Gesture.Pan()
     .activeOffsetX([-24, 24])
@@ -200,10 +236,6 @@ export default function Upcoming() {
     await refetch();
     setRefreshing(false);
   }, [refetch]);
-
-  const addSubtask = useCallback((task: Task) => {
-    quickAdd.open({ parentTaskId: task.id });
-  }, [quickAdd]);
 
   const stepWeekDay = useCallback((delta: -1 | 1) => {
     const idx = selected ? week.findIndex((d) => d.toString() === selected) : -1;
@@ -288,9 +320,10 @@ export default function Upcoming() {
 
   useTaskShortcuts(weekCursor, {
     enabled: isFocused && view === 'week' && !anySheetOpen,
-    onSchedule: setKbdSchedule,
-    onOpenMenu: setKbdMenu,
-    onAddSubtask: addSubtask,
+    onSchedule: sheets.setScheduling,
+    onOpenMenu: sheets.setMenu,
+    onToggleSubtasks: model.toggleSubtasks,
+    onAddSubtask: model.addSubtask,
     onBefore: onBeforeWeekKey,
     onAfter: onAfterWeekKey,
   });
@@ -363,10 +396,11 @@ export default function Upcoming() {
           onPickMonth={openMonth} refreshing={refreshing} onRefresh={refresh} />
       ) : view === 'month' ? (
         <MonthView
-          key={appliedLink} scrollRef={monthScroll} tasks={tasks} month={shownMonth} onMonthChange={showMonth} selected={monthDay}
+          key={appliedLink} scrollRef={monthScroll} model={model} tasks={tasks} today={now} timeFormat={prefs.timeFormat}
+          month={shownMonth} onMonthChange={showMonth} selected={monthDay}
           onSelect={setMonthDay} onAdd={addOn} refreshing={refreshing} onRefresh={refresh}
           keyboardActive={isFocused && view === 'month' && !anySheetOpen}
-          onSchedule={setKbdSchedule} onOpenMenu={setKbdMenu} onAddSubtask={addSubtask} />
+          onSchedule={sheets.setScheduling} onOpenMenu={sheets.setMenu} />
       ) : (
         <>
           <View style={styles.weekNav}>
@@ -380,7 +414,7 @@ export default function Upcoming() {
                 setWeekOffset((w) => Math.max(0, w - 1));
               }}
               style={{ width: 32, height: 32 }} />
-            <Txt variant="smallStrong" tone="muted" style={{ flex: 1, textAlign: 'center' }}>
+            <Txt variant="smallStrong" tone="muted" tabular style={{ flex: 1, textAlign: 'center' }}>
               {weekStartDay.year !== now.year ? `${weekStartDay.year}년 ` : ''}{weekStartDay.month}월 {weekStartDay.day}일 ~ {weekLastDay.month}월 {weekLastDay.day}일
             </Txt>
             {weekOffset !== 0 ? (
@@ -411,6 +445,7 @@ export default function Upcoming() {
                 const key = date.toString();
                 const active = key === selected;
                 const isToday = date.equals(now);
+                const isPast = Temporal.PlainDate.compare(date, now) < 0;
                 const entry = weekMap.get(key);
                 const count = (entry?.real.length ?? 0) + (entry?.previews.length ?? 0);
                 // Busy days get one or two grey dots: red is kept for overdue, and weekends are not coloured.
@@ -425,14 +460,18 @@ export default function Upcoming() {
                       setPicked(active ? null : key);
                     }}
                     style={styles.day}>
-                    <Txt variant="caption" tone="muted">{weekdayName(date)}</Txt>
+                    <Txt variant="caption" tone={isPast ? 'faint' : 'muted'}>{weekdayName(date)}</Txt>
                     <View
                       style={[
                         styles.dayNumber,
                         active && { backgroundColor: colors.accent },
                         isToday && !active && { borderWidth: 1.5, borderColor: colors.text },
                       ]}>
-                      <Txt variant="bodyStrong" style={{ color: active ? colors.onAccent : colors.text }}>{date.day}</Txt>
+                      <Txt
+                        variant="bodyStrong" tabular
+                        style={{ color: active ? colors.onAccent : isPast ? colors.textFaint : colors.text }}>
+                        {date.day}
+                      </Txt>
                     </View>
                     <View style={styles.dotRow}>
                       {dotNum > 0 ? Array.from({ length: dotNum }, (_, i) => (
@@ -458,18 +497,29 @@ export default function Upcoming() {
                         title="기한 지남" titleTone="danger" count={overdue.length} detail={overdueOpen ? '접기' : '펼치기'}
                         open={overdueOpen} onToggle={() => setOverdueOpen((open) => !open)} label="기한 지난 할 일" />
                     </View>
-                    <Pressable
-                      accessibilityRole="button" accessibilityLabel="기한 지난 할 일 모두 오늘로 옮기기" hitSlop={8}
-                      onPress={() => {
-                        haptic.success();
-                        flow.rescheduleOverdue();
-                        showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
-                      }}
-                      style={({ pressed }) => ({ paddingRight: space.lg, paddingTop: space.md, opacity: pressed ? 0.6 : 1 })}>
-                      <Txt variant="smallStrong" tone="muted">오늘로 이동</Txt>
-                    </Pressable>
+                    <View style={styles.overdueActions}>
+                      <Pressable
+                        accessibilityRole="button" accessibilityLabel="기한 지난 할 일 일정 분산" hitSlop={8}
+                        onPress={() => {
+                          haptic.tap();
+                          setShowPlanDay(true);
+                        }}
+                        style={({ pressed }) => ({ paddingHorizontal: space.xs, paddingTop: space.md, opacity: pressed ? 0.6 : 1 })}>
+                        <Txt variant="smallStrong" tone="accent">일정 분산</Txt>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button" accessibilityLabel="기한 지난 할 일 모두 오늘로 옮기기" hitSlop={8}
+                        onPress={() => {
+                          haptic.success();
+                          flow.rescheduleOverdue();
+                          showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
+                        }}
+                        style={({ pressed }) => ({ paddingRight: space.lg, paddingLeft: space.xs, paddingTop: space.md, opacity: pressed ? 0.6 : 1 })}>
+                        <Txt variant="smallStrong" tone="muted">오늘로 이동</Txt>
+                      </Pressable>
+                    </View>
                   </View>
-                  {overdueOpen ? <TaskList tasks={overdue} focusedTaskId={weekCursor.focusedId} /> : null}
+                  {overdueOpen ? <TaskRows model={model} tasks={overdue} focusedTaskId={weekCursor.focusedId} /> : null}
                 </View>
               ) : null}
 
@@ -490,8 +540,8 @@ export default function Upcoming() {
                     <SectionTitle
                       title={title} count={total}
                       action={<AddButton label={title} onPress={() => addOn(date)} />} />
-                    {day.real.length ? <TaskList tasks={day.real} hideDate focusedTaskId={weekCursor.focusedId} /> : null}
-                    {day.previews.map((task) => <Preview key={task.id + '-' + day.key} task={task} date={date} />)}
+                    {day.real.length ? <TaskRows model={model} tasks={day.real} hideDate focusedTaskId={weekCursor.focusedId} /> : null}
+                    {day.previews.map((task) => <Preview key={task.id + '-' + day.key} task={task} date={date} timeFormat={prefs.timeFormat} />)}
                   </View>
                 );
               })}
@@ -500,8 +550,10 @@ export default function Upcoming() {
         </>
       )}
 
-      <ScheduleSheet task={kbdSchedule} onClose={() => setKbdSchedule(null)} onPick={flow.reschedule} />
-      <TaskMenu task={kbdMenu} onClose={() => setKbdMenu(null)} onSchedule={setKbdSchedule} />
+      <TaskListSheets sheets={sheets} />
+      <PlanDaySheet
+        visible={showPlanDay} onClose={() => setShowPlanDay(false)}
+        overdue={overdue} allOpen={tasks} openRoots={roots} subtaskProgress={subtaskProgress} />
     </Screen>
   );
 }
@@ -533,6 +585,7 @@ const styles = StyleSheet.create({
   emptyMonth: { alignItems: 'center', gap: space.sm, paddingVertical: space.lg },
   weekNav: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.md, paddingBottom: 2 },
   week: { flexDirection: 'row', paddingHorizontal: space.sm, paddingBottom: space.sm, borderBottomWidth: StyleSheet.hairlineWidth },
+  overdueActions: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   monthBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.lg, paddingTop: space.md, marginTop: space.sm, borderTopWidth: StyleSheet.hairlineWidth },
   preview: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: space.lg },
   previewIcon: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginTop: 12, marginRight: space.md },
@@ -548,7 +601,7 @@ const styles = StyleSheet.create({
 });
 
 /** One task as it will fall on a later date of its repeat: shown for planning, opened to edit the task. */
-function Preview({ task, date }: { task: Task; date: Temporal.PlainDate }) {
+function Preview({ task, date, timeFormat }: { task: Task; date: Temporal.PlainDate; timeFormat: TimeFormat }) {
   const { colors } = useTheme();
   const at = task.due_at && !task.all_day ? Temporal.Instant.from(task.due_at).toZonedDateTimeISO(task.timezone) : null;
   return (
@@ -561,8 +614,8 @@ function Preview({ task, date }: { task: Task; date: Temporal.PlainDate }) {
       </View>
       <View style={[styles.previewBody, { borderBottomColor: colors.border }]}>
         <Txt tone="muted" numberOfLines={1}>{task.title}</Txt>
-        <Txt variant="small" tone="faint">
-          {(at ? (at.hour < 12 ? '오전 ' : '오후 ') + (at.hour % 12 || 12) + ':' + String(at.minute).padStart(2, '0') + ' · ' : '')
+        <Txt variant="small" tone="faint" tabular>
+          {(at ? formatTime(at.hour * 60 + at.minute, timeFormat) + ' · ' : '')
             + (task.recurrence_mode === 'completion' ? '완료 기준 반복 예정 · ' : '반복 예정 · ') + date.month + '월 ' + date.day + '일'}
         </Txt>
       </View>
@@ -574,11 +627,14 @@ function Preview({ task, date }: { task: Task; date: Temporal.PlainDate }) {
  * A month at a glance. Density dots mark workload per day (repeats included); swipe left/right to change months.
  */
 function MonthView({
-  scrollRef, tasks, month: monthKey, onMonthChange, selected, onSelect, onAdd, refreshing, onRefresh,
-  keyboardActive, onSchedule, onOpenMenu, onAddSubtask,
+  scrollRef, model, tasks, today: now, timeFormat, month: monthKey, onMonthChange, selected, onSelect, onAdd, refreshing, onRefresh,
+  keyboardActive, onSchedule, onOpenMenu,
 }: {
   scrollRef: RefObject<ScrollViewInstance | null>;
+  model: TaskListModel;
   tasks: Task[];
+  today: Temporal.PlainDate;
+  timeFormat: TimeFormat;
   /** The shown month, "YYYY-MM"; held by the screen so the year view can open a month here. */
   month: string; onMonthChange: (month: Temporal.PlainYearMonth) => void;
   selected: string | null; onSelect: (day: string | null) => void; onAdd: (date: Temporal.PlainDate) => void;
@@ -586,11 +642,8 @@ function MonthView({
   keyboardActive: boolean;
   onSchedule: (task: Task) => void;
   onOpenMenu: (task: Task) => void;
-  onAddSubtask: (task: Task) => void;
 }) {
   const { colors } = useTheme();
-  const todayKey = today(deviceTimeZone()).toString();
-  const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   const picked = useMemo(() => (selected ? Temporal.PlainDate.from(selected) : null), [selected]);
   const month = useMemo(() => Temporal.PlainYearMonth.from(monthKey), [monthKey]);
   const days = useMemo(() => {
@@ -702,7 +755,8 @@ function MonthView({
     enabled: keyboardActive,
     onSchedule,
     onOpenMenu,
-    onAddSubtask,
+    onToggleSubtasks: model.toggleSubtasks,
+    onAddSubtask: model.addSubtask,
     onBefore: onBeforeMonthKey,
     onAfter: onAfterMonthKey,
   });
@@ -725,7 +779,7 @@ function MonthView({
           }} />
       </View>
       <View style={[styles.monthBar, { borderTopColor: colors.border }]}>
-        <Txt variant="small" tone="muted" style={{ flex: 1 }}>
+        <Txt variant="small" tone="muted" tabular style={{ flex: 1 }}>
           {selected ? '선택한 날짜를 다시 누르면 전체 보기' : `${month.month}월 일정 ${total}개 · 좌우로 밀어 월 이동`}
         </Txt>
         {selected ? <AddButton label={title(picked!)} onPress={() => onAdd(picked!)} /> : null}
@@ -743,8 +797,8 @@ function MonthView({
             <SectionTitle
               title={title(date)} count={entry.real.length + entry.previews.length} tone={Temporal.PlainDate.compare(date, now) < 0 ? 'danger' : undefined}
               action={<AddButton label={title(date)} onPress={() => onAdd(date)} />} />
-            {entry.real.length ? <TaskList tasks={entry.real} hideDate focusedTaskId={cursor.focusedId} /> : null}
-            {entry.previews.map((task) => <Preview key={task.id} task={task} date={date} />)}
+            {entry.real.length ? <TaskRows model={model} tasks={entry.real} hideDate focusedTaskId={cursor.focusedId} /> : null}
+            {entry.previews.map((task) => <Preview key={task.id + '-' + key} task={task} date={date} timeFormat={timeFormat} />)}
             {entry.real.length + entry.previews.length === 0 ? (
               <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.sm }}>이 날은 예정된 할 일이 없습니다.</Txt>
             ) : null}

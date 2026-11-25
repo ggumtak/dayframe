@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { type PlainDate, Temporal } from '@/lib/dates';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
+import { type PlainDate, Temporal, weekdayLabels } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { space, type, useTheme } from '@/theme';
+import { leadingBlanks } from '@/lib/yearView';
+import { space, type, useMotion, useTheme } from '@/theme';
 
 import { Icon, IconButton, Txt } from './ui';
 
-const names = ['월', '화', '수', '목', '금', '토', '일'];
-
 export type DayMark = 'done' | 'partial' | 'skipped';
 
-/** A Monday-first month grid with horizontal swipe month navigation and optional workload density dots. */
+/** A month grid respecting `startOfWeek` with horizontal swipe month navigation and optional workload density dots. */
 export function MonthCalendar({ initial, month: shownMonth, selected, today, marks, dots, dotCounts, min, max, onSelect, onLongPress, onMonthChange }: {
   initial: PlainDate;
   /**
@@ -36,6 +37,8 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
   onMonthChange?: (month: Temporal.PlainYearMonth) => void;
 }) {
   const { colors } = useTheme();
+  const { reduced } = useMotion();
+  const { startOfWeek } = usePersonalPrefs();
   const [ownMonth, setMonthState] = useState(() => initial.toPlainYearMonth());
   const month = shownMonth ?? ownMonth;
   const [picking, setPicking] = useState(false);
@@ -44,9 +47,11 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
     if (!shownMonth) setMonthState(next);
     onMonthChange?.(next);
   };
+  const names = weekdayLabels(startOfWeek);
   const first = month.toPlainDate({ day: 1 });
+  const blanks = leadingBlanks(month.year, month.month, startOfWeek);
   const cells: (PlainDate | null)[] = [
-    ...Array.from({ length: first.dayOfWeek - 1 }, () => null),
+    ...Array.from({ length: blanks }, () => null),
     ...Array.from({ length: month.daysInMonth }, (_, index) => first.add({ days: index })),
   ];
   while (cells.length % 7) cells.push(null);
@@ -66,6 +71,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
     });
 
   const showDots = !!(dots || dotCounts);
+  const entering = reduced ? undefined : FadeIn.duration(140);
 
   return (
     <View style={styles.root}>
@@ -78,7 +84,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
             setPicking(!picking);
           }}
           style={styles.title}>
-          <Txt variant="bodyStrong">{month.year}년 {month.month}월</Txt>
+          <Txt variant="bodyStrong" tabular>{month.year}년 {month.month}월</Txt>
           <Icon name={picking ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -91,10 +97,10 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
         </View>
       </View>
       {picking ? (
-        <View style={[styles.picker, { borderColor: colors.border }]}>
+        <Animated.View entering={entering} style={[styles.picker, { borderColor: colors.border }]}>
           <View style={styles.pickerYear}>
             <IconButton name="chevron-left" label="이전 해" onPress={() => setPickYear(pickYear - 1)} />
-            <Txt variant="bodyStrong">{pickYear}년</Txt>
+            <Txt variant="bodyStrong" tabular>{pickYear}년</Txt>
             <IconButton name="chevron-right" label="다음 해" onPress={() => setPickYear(pickYear + 1)} />
           </View>
           <View style={styles.months}>
@@ -109,15 +115,15 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
                     setPicking(false);
                   }}
                   style={[styles.monthCell, { backgroundColor: active ? colors.accent : colors.surfaceMuted }]}>
-                  <Txt variant="smallStrong" style={{ color: active ? colors.onAccent : colors.text }}>{number}월</Txt>
+                  <Txt variant="smallStrong" tabular style={{ color: active ? colors.onAccent : colors.text }}>{number}월</Txt>
                 </Pressable>
               );
             })}
           </View>
-        </View>
+        </Animated.View>
       ) : null}
       <View style={styles.week}>
-        {names.map((name, idx) => (
+        {names.map((name) => (
           <Txt
             key={name} variant="caption"
             style={[styles.cell, { color: colors.textFaint }]}>
@@ -126,7 +132,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
         ))}
       </View>
       <GestureDetector gesture={swipeMonth}>
-        <View>
+        <Animated.View key={month.toString()} entering={entering}>
           {Array.from({ length: cells.length / 7 }, (_, row) => (
             <View key={row} style={styles.week}>
               {cells.slice(row * 7, row * 7 + 7).map((date, column) => {
@@ -160,22 +166,33 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
                       onLongPress(date);
                     } : undefined}
                     style={styles.cell}>
-                    <View style={[styles.day, { backgroundColor: fill }, isToday && !isSelected && { borderWidth: 1.5, borderColor: colors.text }]}>
-                      <Text style={[type.small as TextStyle, { color: foreground, fontWeight: isToday ? '700' : '400' }]}>{date.day}</Text>
-                    </View>
-                    {showDots ? (
-                      <View style={styles.dotRow}>
-                        {dotNum > 0 ? Array.from({ length: dotNum }, (_, i) => (
-                          <View key={i} style={[styles.dot, { backgroundColor: dotColor }]} />
-                        )) : <View style={[styles.dot, { backgroundColor: 'transparent' }]} />}
-                      </View>
-                    ) : null}
+                    {({ pressed }) => (
+                      <>
+                        <View
+                          style={[
+                            styles.day,
+                            { backgroundColor: pressed && !disabled && !isSelected ? colors.surfaceMuted : fill },
+                            isToday && !isSelected && { borderWidth: 1.5, borderColor: colors.text },
+                          ]}>
+                          <Text style={[type.small as TextStyle, styles.tabular, { color: foreground, fontWeight: isToday ? '700' : '400' }]}>
+                            {date.day}
+                          </Text>
+                        </View>
+                        {showDots ? (
+                          <View style={styles.dotRow}>
+                            {dotNum > 0 ? Array.from({ length: dotNum }, (_, i) => (
+                              <View key={i} style={[styles.dot, { backgroundColor: dotColor }]} />
+                            )) : <View style={[styles.dot, { backgroundColor: 'transparent' }]} />}
+                          </View>
+                        ) : null}
+                      </>
+                    )}
                   </Pressable>
                 );
               })}
             </View>
           ))}
-        </View>
+        </Animated.View>
       </GestureDetector>
     </View>
   );
@@ -190,6 +207,7 @@ const styles = StyleSheet.create({
   week: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', justifyContent: 'center', textAlign: 'center', paddingVertical: 3 },
   day: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  tabular: { fontVariant: ['tabular-nums'] },
   dotRow: { flexDirection: 'row', gap: 2, marginTop: 2, height: 4, alignItems: 'center' },
   dot: { width: 4, height: 4, borderRadius: 2 },
   title: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6 },

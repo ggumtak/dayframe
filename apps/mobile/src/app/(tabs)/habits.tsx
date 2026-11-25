@@ -3,26 +3,36 @@ import { useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 
 import { EmptyHabits } from '@/components/art';
-import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { Button, Card, Chip, Divider, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, Txt } from '@/components/ui';
 import { useHabitActions, useHabitDetails, useHabits } from '@/data/habits';
 import { nextCheckIn } from '@/features/habits/checkIn';
 import { dayMet, logsByDate, periodProgress } from '@/features/habits/goal';
-import { HabitCard } from '@/features/habits/HabitCard';
+import { HabitAdjustSheet, HabitCard, showHabitUndoToast } from '@/features/habits/HabitCard';
 import { HABIT_TIME_GROUPS, type HabitTimeOfDay, useHabitMetaMap } from '@/features/habits/habitMeta';
+import { RoutineRunner, type RoutineRunnerItem } from '@/features/habits/RoutineRunner';
 import { KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor, useScreenContext, useScreenFocused } from '@/features/keyboard';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, Temporal, today, weekdayName, weekStart } from '@/lib/dates';
+import { deviceTimeZone, logicalToday, Temporal, weekdayName, weekStart } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Habit, HabitLog } from '@/lib/shared';
 import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
-import { space, useTheme } from '@/theme';
+import { radius, space, useTheme } from '@/theme';
 
 const NO_LOGS: HabitLog[] = [];
 const habitId = (habit: Habit) => habit.id;
 
+const ROUTINE_TITLES: Record<HabitTimeOfDay, string> = {
+  morning: '아침 루틴',
+  afternoon: '오후 루틴',
+  evening: '저녁 루틴',
+  anytime: '오늘의 루틴',
+};
+
 export default function Habits() {
   const { colors } = useTheme();
+  const prefs = usePersonalPrefs();
   const isFocused = useScreenFocused();
   useScreenContext('habits', isFocused);
   const { data, isLoading, refetch } = useHabits();
@@ -30,7 +40,9 @@ export default function Habits() {
   const habitMeta = useHabitMetaMap();
   const [refreshing, setRefreshing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const [kbdMenuHabit, setKbdMenuHabit] = useState<Habit | null>(null);
+  const [runnerGroup, setRunnerGroup] = useState<HabitTimeOfDay | null>(null);
   const scrollRef = useRef<ScrollViewInstance>(null);
   useTabScrollTop('habits', scrollRef);
   // Re-renders the cards when the date rolls over, so a check-in always lands on the current day.
@@ -38,31 +50,62 @@ export default function Habits() {
   const habits = useMemo(() => (data ?? []).filter((habit) => !habit.archived_at), [data]);
   const archived = useMemo(() => (data ?? []).filter((habit) => !!habit.archived_at), [data]);
   const details = useHabitDetails(habits);
-  const done = habits.filter((habit) =>
-    periodProgress(habit, details.get(habit.id)?.logs ?? [], today(habit.timezone).toString()) >= habit.target_count).length;
 
-  // Weekly completion summary across all active habits (Mon–Sun) so the Habits tab acts as a true routine dashboard.
-  const nowKey = today(deviceTimeZone()).toString();
+  const habitDateFor = (habit: Habit) => logicalToday(habit.timezone, prefs.dayStartHour).toString();
+
+  const isSettledToday = (habit: Habit) => {
+    const date = habitDateFor(habit);
+    const logs = details.get(habit.id)?.logs ?? NO_LOGS;
+    const progress = periodProgress(habit, logs, date);
+    const todayCount = logsByDate(logs).get(date)?.count ?? 0;
+    return progress >= habit.target_count || (habit.cadence === 'weekly' && todayCount > 0);
+  };
+
+  const done = habits.filter((habit) =>
+    periodProgress(habit, details.get(habit.id)?.logs ?? NO_LOGS, habitDateFor(habit)) >= habit.target_count).length;
+
+  // Weekly completion summary across all active habits respecting user startOfWeek and dayStartHour.
+  const nowKey = logicalToday(deviceTimeZone(), prefs.dayStartHour).toString();
   const nowDay = useMemo(() => Temporal.PlainDate.from(nowKey), [nowKey]);
   const weeklySummary = useMemo(() => {
     if (!habits.length) return [];
-    const monday = weekStart(nowDay);
+    const firstDay = weekStart(nowDay, prefs.startOfWeek);
     // One date lookup per habit, built once, instead of searching every habit's logs for every day.
     const indexes = habits.map((habit) => logsByDate(details.get(habit.id)?.logs ?? NO_LOGS));
     return Array.from({ length: 7 }, (_, index) => {
-      const date = monday.add({ days: index });
+      const date = firstDay.add({ days: index });
       const key = date.toString();
       const future = date.until(nowDay).days < 0;
       let met = 0;
       let eligible = 0;
+      const eligibleHabits: { habit: Habit; met: boolean; log: HabitLog | undefined }[] = [];
       habits.forEach((habit, order) => {
         if (key < habit.start_date) return;
+        const log = indexes[order].get(key);
+        const isMet = dayMet(habit, log);
         eligible += 1;
-        if (dayMet(habit, indexes[order].get(key))) met += 1;
+        if (isMet) met += 1;
+        eligibleHabits.push({ habit, met: isMet, log });
       });
-      return { date, key, future, met, eligible, ratio: eligible > 0 ? met / eligible : 0 };
+      return { date, key, future, met, eligible, ratio: eligible > 0 ? met / eligible : 0, eligibleHabits };
     });
-  }, [habits, details, nowDay]);
+  }, [habits, details, nowDay, prefs.startOfWeek]);
+
+  const weeklyPct = useMemo(() => {
+    let metTotal = 0;
+    let eligibleTotal = 0;
+    for (const bar of weeklySummary) {
+      if (bar.future) continue;
+      metTotal += bar.met;
+      eligibleTotal += bar.eligible;
+    }
+    return eligibleTotal > 0 ? Math.round((metTotal / eligibleTotal) * 100) : 0;
+  }, [weeklySummary]);
+
+  const selectedBar = useMemo(
+    () => (selectedDayKey ? weeklySummary.find((bar) => bar.key === selectedDayKey && !bar.future) ?? null : null),
+    [selectedDayKey, weeklySummary],
+  );
 
   const hasTimeGroups = habits.some((h) => (habitMeta[h.id]?.timeOfDay ?? 'anytime') !== 'anytime');
   const groupedHabits = useMemo(() => {
@@ -74,6 +117,18 @@ export default function Habits() {
       }))
       .filter((group) => group.items.length > 0);
   }, [habits, habitMeta, hasTimeGroups]);
+
+  const runnerItems = useMemo<RoutineRunnerItem[]>(() => {
+    if (!runnerGroup) return [];
+    const targetGroup = groupedHabits.find((group) => group.key === runnerGroup);
+    const list = targetGroup ? targetGroup.items : habits;
+    return list.map((habit) => ({
+      habit,
+      logs: details.get(habit.id)?.logs ?? NO_LOGS,
+      meta: habitMeta[habit.id],
+      date: logicalToday(habit.timezone, prefs.dayStartHour).toString(),
+    }));
+  }, [runnerGroup, groupedHabits, habits, details, habitMeta, prefs.dayStartHour]);
 
   const orderedHabits = useMemo(() => groupedHabits.flatMap((group) => group.items), [groupedHabits]);
   const cursor = useListCursor(orderedHabits, habitId, {
@@ -89,15 +144,9 @@ export default function Habits() {
     setRefreshing(false);
   };
 
-  const kbdMenuDate = kbdMenuHabit ? today(kbdMenuHabit.timezone).toString() : '';
+  const kbdMenuDate = kbdMenuHabit ? habitDateFor(kbdMenuHabit) : '';
   const kbdMenuLogs = kbdMenuHabit ? (details.get(kbdMenuHabit.id)?.logs ?? NO_LOGS) : NO_LOGS;
   const kbdMenuTodayLog = kbdMenuHabit ? logsByDate(kbdMenuLogs).get(kbdMenuDate) : undefined;
-
-  const markKbdMenuHabit = (status: 'skipped' | 'frozen' | null) => {
-    if (!kbdMenuHabit) return;
-    habitActions.setLog({ habitId: kbdMenuHabit.id, date: kbdMenuDate, status, count: 0 });
-    setKbdMenuHabit(null);
-  };
 
   useKeyHandler(
     (event) => {
@@ -126,6 +175,10 @@ export default function Habits() {
         if (!event.repeat) router.push('/routines');
         return true;
       }
+      if (matchesCombo(event, 'n')) {
+        if (!event.repeat) router.push('/habit/new');
+        return true;
+      }
       if (matchesCombo(event, 'r')) {
         if (!event.repeat) {
           void refresh();
@@ -138,14 +191,31 @@ export default function Habits() {
       if (habit) {
         if (matchesCombo(event, 'space') || matchesCombo(event, 'x')) {
           if (!event.repeat) {
-            const date = today(habit.timezone).toString();
+            const date = habitDateFor(habit);
             const logs = details.get(habit.id)?.logs ?? NO_LOGS;
-            const todayCount = logsByDate(logs).get(date)?.count ?? 0;
+            const todayLog = logsByDate(logs).get(date);
+            const todayCount = todayLog?.count ?? 0;
             const progress = periodProgress(habit, logs, date);
+            const isMultiDaily = habit.cadence === 'daily' && habit.target_count > 1;
+            if (isMultiDaily && progress >= habit.target_count) {
+              haptic.tap();
+              setKbdMenuHabit(habit);
+              return true;
+            }
+            const prevStatus = todayLog?.status ?? null;
+            const prevCount = todayLog?.count ?? 0;
             const next = nextCheckIn(habit, todayCount, progress);
             if (next.reaches) haptic.success();
             else haptic.light();
             habitActions.setLog({ habitId: habit.id, date, status: next.status, count: next.count });
+            const msg = next.status === null
+              ? `‘${habit.name}’ 오늘 기록을 취소했습니다.`
+              : isMultiDaily
+                ? `‘${habit.name}’ ${next.count}/${habit.target_count}회 기록했습니다.`
+                : `‘${habit.name}’ 오늘 기록을 남겼습니다.`;
+            showHabitUndoToast(msg, () => {
+              habitActions.setLog({ habitId: habit.id, date, status: prevStatus, count: prevCount });
+            });
           }
           return true;
         }
@@ -156,7 +226,10 @@ export default function Habits() {
         if (matchesCombo(event, 'f')) {
           if (!event.repeat) {
             haptic.tap();
-            router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } });
+            router.navigate({
+              pathname: '/focus',
+              params: { habitId: habit.id, title: habit.name, autostart: '1', at: String(Date.now()) },
+            });
           }
           return true;
         }
@@ -175,40 +248,7 @@ export default function Habits() {
 
       return false;
     },
-    { priority: KEY_PRIORITY.screen, enabled: isFocused && !kbdMenuHabit },
-  );
-
-  useKeyHandler(
-    (event) => {
-      if (event.editing) return false;
-      if (matchesCombo(event, 'escape')) {
-        if (!event.repeat) setKbdMenuHabit(null);
-        return true;
-      }
-      if (matchesCombo(event, '1') || matchesCombo(event, 's')) {
-        if (!event.repeat) {
-          haptic.tap();
-          markKbdMenuHabit('skipped');
-        }
-        return true;
-      }
-      if (matchesCombo(event, '2') || matchesCombo(event, 'f')) {
-        if (!event.repeat) {
-          haptic.tap();
-          markKbdMenuHabit('frozen');
-        }
-        return true;
-      }
-      if (matchesCombo(event, '0') || matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
-        if (kbdMenuTodayLog && !event.repeat) {
-          haptic.light();
-          markKbdMenuHabit(null);
-        }
-        return true;
-      }
-      return false;
-    },
-    { priority: KEY_PRIORITY.sheet, enabled: isFocused && !!kbdMenuHabit },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused && !kbdMenuHabit && !runnerGroup },
   );
 
   return (
@@ -217,8 +257,9 @@ export default function Habits() {
         title="습관" subtitle={habits.length ? `${habits.length}개 중 ${done}개 달성` : undefined}
         right={(
           <View style={{ flexDirection: 'row' }}>
+            <IconButton name="star" label="습관 갤러리" onPress={() => router.push('/routines')} color={colors.textMuted} />
             <IconButton name="grid" label="기록 한눈에 보기" onPress={() => router.push('/habit/overview')} color={colors.textMuted} />
-            <IconButton name="plus" label="습관 추가" onPress={() => router.push('/routines')} color={colors.textMuted} />
+            <IconButton name="plus" label="습관 추가" onPress={() => router.push('/habit/new')} color={colors.textMuted} />
           </View>
         )} />
       {isLoading ? <Loading /> : (
@@ -229,19 +270,37 @@ export default function Habits() {
           {habits.length ? (
             <>
               <Card style={{ gap: space.sm, paddingVertical: space.md }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }}>이번 주 달성 현황</Txt>
-                  <Txt variant="caption" tone="faint">요일을 눌러 기록 수정</Txt>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm }}>
+                  <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }} tabular>
+                    이번 주 달성 현황 · {weeklyPct}%
+                  </Txt>
+                  <Txt variant="caption" tone="faint">요일을 눌러 그날 기록 보기</Txt>
                 </View>
                 <View style={styles.weekBars}>
                   {weeklySummary.map((bar) => {
                     const isToday = bar.date.equals(nowDay);
+                    const isSelected = selectedBar?.key === bar.key;
                     const full = bar.eligible > 0 && bar.met === bar.eligible;
                     const height = bar.future ? 4 : bar.met > 0 ? Math.max(10, Math.round(bar.ratio * 38)) : 4;
                     return (
-                      <View key={bar.key} style={styles.barCol}>
-                        <Txt variant="caption" tone="faint" style={{ fontSize: 10 }}>
-                          {!bar.future && bar.met > 0 ? `${bar.met}/${bar.eligible}` : ''}
+                      <Pressable
+                        key={bar.key}
+                        disabled={bar.future}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected, disabled: bar.future }}
+                        accessibilityLabel={`${bar.date.month}월 ${bar.date.day}일 (${weekdayName(bar.date)}) ${bar.met}/${bar.eligible}개 달성`}
+                        hitSlop={4}
+                        onPress={() => {
+                          haptic.tap();
+                          setSelectedDayKey((current) => (current === bar.key ? null : bar.key));
+                        }}
+                        style={({ pressed }) => [
+                          styles.barCol,
+                          isSelected && { backgroundColor: colors.accentSoft, borderRadius: radius.sm },
+                          pressed && !bar.future && { opacity: 0.7 },
+                        ]}>
+                        <Txt variant="caption" tone={isSelected ? 'accent' : 'faint'} tabular style={{ fontSize: 10 }}>
+                          {!bar.future && bar.met > 0 ? `${bar.met}/${bar.eligible}` : ' '}
                         </Txt>
                         <View style={styles.barTrack}>
                           <View
@@ -255,31 +314,116 @@ export default function Habits() {
                               },
                             ]} />
                         </View>
-                        <Txt variant="caption" tone={isToday ? 'default' : 'faint'} style={{ fontWeight: isToday ? '700' : '500' }}>
+                        <Txt
+                          variant="caption"
+                          tone={isSelected ? 'accent' : isToday ? 'default' : 'faint'}
+                          style={{ fontWeight: isToday || isSelected ? '700' : '500' }}>
                           {weekdayName(bar.date)}
                         </Txt>
-                      </View>
+                      </Pressable>
                     );
                   })}
                 </View>
+
+                {selectedBar ? (
+                  <View style={{ gap: space.sm, paddingTop: space.xs }}>
+                    <Divider />
+                    <View style={styles.selectedDayHead}>
+                      <Txt variant="smallStrong" tabular style={{ flex: 1 }}>
+                        {selectedBar.date.month}월 {selectedBar.date.day}일 ({weekdayName(selectedBar.date)}) · {selectedBar.met}/{selectedBar.eligible} 완료 ({Math.round(selectedBar.ratio * 100)}%)
+                      </Txt>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="선택한 요일 닫기"
+                        hitSlop={8}
+                        onPress={() => setSelectedDayKey(null)}>
+                        <Icon name="x" size={14} color={colors.textFaint} />
+                      </Pressable>
+                    </View>
+                    {selectedBar.eligibleHabits.length ? (
+                      <View style={styles.dayChips}>
+                        {selectedBar.eligibleHabits.map(({ habit, met, log }) => (
+                          <Chip
+                            key={habit.id}
+                            icon={met ? 'check' : undefined}
+                            label={habit.name}
+                            selected={met}
+                            onPress={() => {
+                              const prevStatus = log?.status ?? null;
+                              const prevCount = log?.count ?? 0;
+                              const weekly = habit.cadence === 'weekly';
+                              habitActions.setLog({
+                                habitId: habit.id,
+                                date: selectedBar.key,
+                                status: met ? null : 'completed',
+                                count: met ? 0 : weekly ? 1 : habit.target_count,
+                              });
+                              showHabitUndoToast(
+                                `${selectedBar.date.month}월 ${selectedBar.date.day}일 ‘${habit.name}’ 기록을 ${met ? '지웠습니다.' : '남겼습니다.'}`,
+                                () => {
+                                  habitActions.setLog({ habitId: habit.id, date: selectedBar.key, status: prevStatus, count: prevCount });
+                                },
+                              );
+                            }}
+                          />
+                        ))}
+                      </View>
+                    ) : (
+                      <Txt variant="small" tone="faint">이날 시작한 습관이 없습니다.</Txt>
+                    )}
+                  </View>
+                ) : null}
               </Card>
 
-              {groupedHabits.map((group) => (
-                <View key={group.key} style={{ gap: space.md }}>
-                  {hasTimeGroups ? (
-                    <View style={styles.groupHead}>
-                      <Icon name={group.icon} size={14} color={colors.textFaint} />
-                      <Txt variant="section" tone="muted">{group.label}</Txt>
-                      <Txt variant="caption" tone="faint">{group.items.length}</Txt>
-                    </View>
-                  ) : null}
-                  {group.items.map((habit) => (
-                    <HabitCard
-                      key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} stats={details.get(habit.id)?.stats}
-                      meta={habitMeta[habit.id]} date={today(habit.timezone).toString()} focused={cursor.focusedId === habit.id} />
-                  ))}
-                </View>
-              ))}
+              {groupedHabits.map((group) => {
+                const remainingInGroup = group.items.filter((habit) => !isSettledToday(habit)).length;
+                const showRoutineStart = remainingInGroup >= 2;
+                const showHeader = hasTimeGroups || showRoutineStart;
+                return (
+                  <View key={group.key} style={{ gap: space.md }}>
+                    {showHeader ? (
+                      <View style={styles.groupHead}>
+                        {hasTimeGroups ? (
+                          <>
+                            <Icon name={group.icon} size={14} color={colors.textFaint} />
+                            <Txt variant="section" tone="muted">{group.label}</Txt>
+                            <Txt variant="caption" tone="faint" tabular>{group.items.length}</Txt>
+                          </>
+                        ) : (
+                          <Txt variant="section" tone="muted">오늘의 습관</Txt>
+                        )}
+                        <View style={{ flex: 1 }} />
+                        {showRoutineStart ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`${ROUTINE_TITLES[group.key]} 시작`}
+                            hitSlop={6}
+                            onPress={() => {
+                              haptic.tap();
+                              setRunnerGroup(group.key);
+                            }}
+                            style={({ pressed }) => [
+                              styles.routineChip,
+                              {
+                                backgroundColor: colors.accentSoft,
+                                borderColor: colors.border,
+                                opacity: pressed ? 0.75 : 1,
+                              },
+                            ]}>
+                            <Icon name="play" size={11} color={colors.accentText} />
+                            <Txt variant="metaStrong" tone="accent">루틴 시작</Txt>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    ) : null}
+                    {group.items.map((habit) => (
+                      <HabitCard
+                        key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} stats={details.get(habit.id)?.stats}
+                        meta={habitMeta[habit.id]} date={habitDateFor(habit)} focused={cursor.focusedId === habit.id} />
+                    ))}
+                  </View>
+                );
+              })}
             </>
           ) : (
             <EmptyState
@@ -298,7 +442,7 @@ export default function Habits() {
                 onPress={() => setShowArchived((open) => !open)}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: space.xs, opacity: pressed ? 0.6 : 1 })}>
                 <Icon name="archive" size={14} color={colors.textMuted} />
-                <Txt variant="smallStrong" tone="muted">보관한 습관 {archived.length}</Txt>
+                <Txt variant="smallStrong" tone="muted" tabular>보관한 습관 {archived.length}</Txt>
                 <Icon name={showArchived ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textFaint} />
               </Pressable>
               {showArchived ? (
@@ -316,19 +460,35 @@ export default function Habits() {
           ) : null}
         </ScrollView>
       )}
-      <Sheet visible={!!kbdMenuHabit} onClose={() => setKbdMenuHabit(null)} title={kbdMenuHabit?.name}>
-        <Row icon="skip-forward" label="오늘 건너뛰기" detail="달성률에서 제외" onPress={() => markKbdMenuHabit('skipped')} />
-        <Row icon="pause-circle" label="오늘 쉬어가기" detail="연속 기록 유지" onPress={() => markKbdMenuHabit('frozen')} />
-        {kbdMenuTodayLog ? <Row icon="rotate-ccw" label="오늘 기록 지우기" onPress={() => markKbdMenuHabit(null)} /> : null}
-      </Sheet>
+
+      <HabitAdjustSheet
+        visible={!!kbdMenuHabit}
+        onClose={() => setKbdMenuHabit(null)}
+        habit={kbdMenuHabit}
+        date={kbdMenuDate}
+        todayLog={kbdMenuTodayLog}
+      />
+
+      <RoutineRunner
+        visible={runnerGroup !== null}
+        title={runnerGroup ? ROUTINE_TITLES[runnerGroup] : '오늘의 루틴'}
+        items={runnerItems}
+        onClose={() => setRunnerGroup(null)}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
-  barCol: { flex: 1, alignItems: 'center', gap: 3 },
+  weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
+  barCol: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 4 },
   barTrack: { height: 38, justifyContent: 'flex-end', width: '100%', alignItems: 'center' },
   barFill: { width: 18, borderRadius: 5 },
+  selectedDayHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  dayChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   groupHead: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: space.xs },
+  routineChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, minHeight: 28, borderRadius: radius.pill, borderWidth: 1,
+  },
 });

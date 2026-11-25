@@ -17,9 +17,11 @@ import { radius, space, type, useTheme } from '@/theme';
 const ideas = ['물 2L 마시기', '30분 걷기', '독서 20쪽', '스트레칭', '일기 쓰기'];
 
 /** What the gallery passes in when a preset is tapped; every field is optional and checked before use. */
-type Prefill = { name?: string; emoji?: string; color?: string; quote?: string; cadence?: string; target?: string };
+type Prefill = { name?: string; emoji?: string; color?: string; quote?: string; cadence?: string; target?: string; timeOfDay?: string };
 
 const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+const isTimeOfDay = (value: string | undefined): value is HabitTimeOfDay =>
+  value === 'morning' || value === 'afternoon' || value === 'evening' || value === 'anytime';
 
 export default function NewHabit() {
   const { colors } = useTheme();
@@ -33,7 +35,10 @@ export default function NewHabit() {
   const [name, setName] = useState(() => one(params.name)?.slice(0, 120) ?? '');
   const [cadence, setCadence] = useState<HabitCadence>(initialCadence);
   const [target, setTarget] = useState(initialTarget);
-  const [timeOfDay, setTimeOfDay] = useState<HabitTimeOfDay>('anytime');
+  const [timeOfDay, setTimeOfDay] = useState<HabitTimeOfDay>(() => {
+    const paramTime = one(params.timeOfDay);
+    return isTimeOfDay(paramTime) ? paramTime : 'anytime';
+  });
   const [look, setLook] = useState<HabitLook>(() => {
     const color = one(params.color);
     return { emoji: one(params.emoji) || undefined, color: isHabitColor(color) ? color : undefined };
@@ -158,7 +163,7 @@ export default function NewHabit() {
             <Txt variant="section" tone="muted">{cadence === 'daily' ? '하루 목표 횟수' : '주간 목표 일수'}</Txt>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
               <IconButton name="minus" label="목표 줄이기" onPress={() => setTarget(Math.max(1, target - 1))} style={{ backgroundColor: colors.surfaceMuted }} />
-              <Txt variant="heading" style={{ minWidth: 56, textAlign: 'center' }} accessibilityLiveRegion="polite">
+              <Txt variant="heading" tabular style={{ minWidth: 56, textAlign: 'center' }} accessibilityLiveRegion="polite">
                 {target}{cadence === 'daily' ? '회' : '일'}
               </Txt>
               <IconButton name="plus" label="목표 늘리기" onPress={() => setTarget(Math.min(max, target + 1))} style={{ backgroundColor: colors.surfaceMuted }} />

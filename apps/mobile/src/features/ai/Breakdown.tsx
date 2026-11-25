@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { Button, Sheet, Txt } from '@/components/ui';
+import { Button, Loading, Sheet, Txt } from '@/components/ui';
 import { nextPosition, useCompletedTasks, useTaskIndex } from '@/data/tasks';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { deviceTimeZone, formatDurationMinutes } from '@/lib/dates';
@@ -11,6 +11,7 @@ import { fontFamily, radius, space, useTheme } from '@/theme';
 
 import { runAi } from './client';
 import { AiErrorView, AiLoading, KeyGate, Toggle, UsageLine } from './components';
+import { useAiKeyStatus } from './keyStore';
 import { BREAKDOWN_SYSTEM, breakdownUser } from './prompts';
 import { type BreakdownStep, breakdownSchema } from './schemas';
 import { useAiRequest } from './useAiRequest';
@@ -28,7 +29,8 @@ export function BreakdownPanel({ task, onDone, maxHeight, inSheet }: { task: Tas
   const { colors } = useTheme();
   const flow = useTaskFlow();
   const { children } = useTaskIndex();
-  const { data: completed } = useCompletedTasks();
+  const { data: completed, isLoading: completedLoading } = useCompletedTasks();
+  const { ready: keyReady, hasKey } = useAiKeyStatus();
   const request = useAiRequest<BreakdownStep[]>();
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
 
@@ -45,14 +47,14 @@ export function BreakdownPanel({ task, onDone, maxHeight, inSheet }: { task: Tas
     if (result) setDrafts(result.data.map((step, index) => ({ ...step, key: index, include: true })));
   };
 
-  // Ask once when opened; the panel only mounts when the owner asked for a breakdown.
+  // Ask once when opened and ready; wait for a saved key and completed subtasks so we never fire without a key or miss completed steps.
   const asked = useRef(false);
   useEffect(() => {
-    if (asked.current) return;
+    if (asked.current || !keyReady || !hasKey || completedLoading) return;
     asked.current = true;
     void ask();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [keyReady, hasKey, completedLoading]);
 
   const chosen = drafts?.filter((draft) => draft.include && draft.title.trim()) ?? [];
 
@@ -76,7 +78,9 @@ export function BreakdownPanel({ task, onDone, maxHeight, inSheet }: { task: Tas
   return (
     // In a sheet, going to the key screen closes the sheet first so the screen is not opened underneath it.
     <KeyGate onLeave={inSheet ? onDone : undefined}>
-      {state.status === 'loading' ? (
+      {state.status === 'idle' && completedLoading ? (
+        <Loading />
+      ) : state.status === 'loading' ? (
         <AiLoading message="바로 시작할 수 있는 단계로 나누고 있습니다" onCancel={() => { request.cancel(); onDone(); }} />
       ) : state.status === 'error' ? (
         <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void ask()} onLeave={inSheet ? onDone : undefined} />

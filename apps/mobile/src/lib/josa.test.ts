@@ -64,6 +64,14 @@ test('trailing quotes, brackets and punctuation are skipped', () => {
   assert.equal(josa('#건강', '으로/로'), '으로');
 });
 
+test('percentages take vowel particles (퍼센트/프로)', () => {
+  assert.equal(josa('50%', '을/를'), '를');
+  assert.equal(withJosa('50%', '을/를'), '50%를');
+  assert.equal(josa('100%', '을/를'), '를');
+  assert.equal(josa('3%', '이/가'), '가');
+  assert.equal(josa('(50%)!', '으로/로'), '로');
+});
+
 test('an unreadable ending falls back to the double form', () => {
   assert.equal(josa('book', '을/를'), '을(를)');
   assert.equal(josa('GitHub', '으로/로'), '(으)로');

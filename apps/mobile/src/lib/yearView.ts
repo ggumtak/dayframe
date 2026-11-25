@@ -11,15 +11,14 @@ export function busyLevel(count: number): BusyLevel {
 
 /**
  * Open tasks per date of `year`, keyed "YYYY-MM-DD": each task's due date plus the dates its repeat will fall on.
- * Repeats are expanded with `occurrenceDates` and its default step limit, exactly as the month view does, so a day
- * shows the same workload in both views and a year costs at most that many steps per repeating task.
+ * Passes a full-year step budget (370) so daily repeating tasks stay visible across every day of the year.
  */
 export function yearCounts(tasks: OccurrenceTask[], year: number, next: NextOccurrence): Map<string, number> {
   const from = Temporal.PlainDate.from({ year, month: 1, day: 1 });
   const to = Temporal.PlainDate.from({ year, month: 12, day: 31 });
   const counts = new Map<string, number>();
   for (const task of tasks) {
-    for (const date of occurrenceDates(task, from, to, next)) {
+    for (const date of occurrenceDates(task, from, to, next, 370)) {
       const key = date.toString();
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -67,7 +66,8 @@ export function yearSummaryText(months: YearMonthSummary[]): string {
   return '예정된 일 ' + total + '개' + (busiest ? ' · 가장 바쁜 달 ' + busiest + '월' : '');
 }
 
-/** Blank cells before day 1 in a Monday-first grid (the month view's week start). */
-export function leadingBlanks(year: number, month: number): number {
-  return Temporal.PlainDate.from({ year, month, day: 1 }).dayOfWeek - 1;
+/** Blank cells before day 1 in a Monday-first (default) or Sunday-first month grid. */
+export function leadingBlanks(year: number, month: number, startOfWeek: 'monday' | 'sunday' = 'monday'): number {
+  const dow = Temporal.PlainDate.from({ year, month, day: 1 }).dayOfWeek;
+  return startOfWeek === 'sunday' ? dow % 7 : dow - 1;
 }

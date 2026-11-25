@@ -8,32 +8,37 @@ import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-rean
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MonthCalendar } from '@/components/MonthCalendar';
-import { Chip, Icon, IconButton, type IconName, Txt } from '@/components/ui';
+import { Chip, Icon, IconButton, type IconName, Row, Sheet, Txt } from '@/components/ui';
 import { useNewTaskDate } from '@/data/session';
-import { nextPosition, useProjects, useSections, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
+import { nextPosition, useProjects, useSections, useSubtaskProgress, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { AI_ROUTES } from '@/features/ai/routes';
 import {
   KEY_PRIORITY, matchesCombo, moveCursor, useInputCapture, useKeyboard, useKeyHandler, useScreenContext,
 } from '@/features/keyboard';
 import { DAY_MINUTES, leadLabel, type TaskReminder } from '@/features/reminders/lead';
 import { setTaskReminder } from '@/features/reminders/overrides';
+import { setPersonalPrefs, usePersonalPrefs } from '@/features/settings/prefsStore';
+import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
 import { priorityA11y, priorityLabel, priorityMark, priorityOption } from '@/features/tasks/priority';
+import { TemplatesSheet } from '@/features/tasks/TemplatesSheet';
 import {
-  describeRecurrence, deviceTimeZone, dueDate, formatDue, formatDurationMinutes, instantFor, type PlainDate,
-  type Temporal, today,
+  describeRecurrence, deviceTimeZone, dueBucket, dueDate, formatDue, formatDurationMinutes, instantFor, logicalToday,
+  type PlainDate, type Temporal,
 } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { useLayout } from '@/lib/layoutContext';
 import { datePhrase } from '@/lib/occurrences';
-import { usePersistentState } from '@/lib/persist';
-import { analyzeTask, type Priority, type TaskAnalysis } from '@/lib/shared';
+import { analyzeTask, type Priority, type TaskAnalysis, type TaskToken } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { elevation, radius, space, type, useTheme } from '@/theme';
 
 import { HighlightInput, type PillPalette } from './HighlightInput';
 import { parseErrorMessage } from './messages';
-import { activeMention, applyMention, applyPriority, applyScheduleWord, matchNames, parseChecklistLines, removeTokens } from './suggest';
+import {
+  activeMention, applyMention, applyPriority, applyProject, applyScheduleWord, matchNames, parseChecklistLines,
+  removeTokens, toggleTag,
+} from './suggest';
 
 export const TAB_BAR_HEIGHT = 58;
 
@@ -46,6 +51,10 @@ export interface QuickAddDefaults {
   dueToday?: boolean;
   /** Text to start from, such as a time picked on the timeline. */
   initialText?: string;
+  /** Opens directly in multi-line checklist capture mode when `'checklist'`. */
+  initialMode?: 'default' | 'checklist';
+  /** Overrides sticky rapid multi-add state for this session. */
+  initialKeepOpen?: boolean;
 }
 
 interface QuickAddValue {
@@ -58,40 +67,16 @@ interface QuickAddValue {
 const QuickAddContext = createContext<QuickAddValue>({ open: () => {}, setScreenDefaults: () => {}, setFabHidden: () => {}, fabHidden: false });
 export const useQuickAdd = () => useContext(QuickAddContext);
 
-type KeepOpen = 'on' | 'off';
-const isKeepOpen = (value: string): value is KeepOpen => value === 'on' || value === 'off';
-
-type ToolKind = 'calendar' | 'date' | 'time' | 'duration' | 'recurrence' | 'priority' | 'reminder' | 'notes' | 'plain';
-const baseInserts: { label: string; text: string; icon: IconName; kind?: ToolKind; androidOnly?: boolean }[] = [
-  { label: '달력', text: '', icon: 'calendar', kind: 'calendar' },
-  { label: '오늘', text: '오늘', icon: 'sun', kind: 'date' },
-  { label: '내일', text: '내일', icon: 'sunrise', kind: 'date' },
-  { label: '주말', text: '이번 주말', icon: 'coffee', kind: 'date' },
-  { label: '오전 9시', text: '오전 9시', icon: 'clock', kind: 'time' },
-  { label: '저녁 7시', text: '저녁 7시', icon: 'moon', kind: 'time' },
-  { label: '30분간', text: '30분간', icon: 'watch', kind: 'duration' },
-  { label: '매일', text: '매일', icon: 'repeat', kind: 'recurrence' },
-  { label: '완료 후 반복', text: '매일!', icon: 'check-circle', kind: 'recurrence' },
-  { label: '목록', text: '#', icon: 'hash' },
-  { label: '태그', text: '@', icon: 'tag' },
-  { label: '우선순위', text: 'p1', icon: 'flag', kind: 'priority' },
-  { label: '알림', text: '', icon: 'bell', kind: 'reminder', androidOnly: true },
-  { label: '메모', text: '', icon: 'align-left', kind: 'notes' },
-  { label: '그대로 저장', text: '', icon: 'type', kind: 'plain' },
-];
-
-function insertA11yLabel(item: (typeof baseInserts)[number]): string {
-  switch (item.kind) {
-    case 'calendar': return '달력 열기';
-    case 'priority': return '우선순위 선택';
-    case 'reminder': return '알림 설정';
-    case 'notes': return '메모 입력';
-    case 'plain': return '그대로 저장 전환';
-    default: return item.label + ' 넣기';
-  }
-}
+type OpenPane = null | 'calendar' | 'project' | 'tag' | 'priority' | 'reminder';
 
 const priorities: Priority[] = [1, 2, 3, 4];
+
+const quickTimePresets = [
+  { label: '오전 9시', word: '오전 9시' },
+  { label: '오후 2시', word: '오후 2시' },
+  { label: '저녁 7시', word: '저녁 7시' },
+] as const;
+
 const timedQuickReminders: { value: TaskReminder | undefined; label: string }[] = [
   { value: undefined, label: '기본' },
   { value: 0, label: '정시' },
@@ -138,31 +123,110 @@ function analyzeDraft(text: string, timezone: string, isMultiLine: boolean, plai
   }
 }
 
-function QuickAddSheet({ defaults, frame, onClose }: {
+function presetIconFor(preset: string, timezone: string): IconName {
+  if (preset.startsWith('#')) return 'hash';
+  if (preset.startsWith('@')) return 'tag';
+  try {
+    const { tokens } = analyzeTask({ text: '작업 ' + preset, timezone }, { draft: true });
+    const kind = tokens[0]?.kind;
+    if (kind === 'date') return preset.includes('내일') ? 'sunrise' : preset.includes('주말') ? 'coffee' : 'sun';
+    if (kind === 'time') return 'clock';
+    if (kind === 'duration') return 'watch';
+    if (kind === 'recurrence') return 'repeat';
+    if (kind === 'priority') return 'flag';
+    if (kind === 'project') return 'hash';
+    if (kind === 'tag') return 'tag';
+  } catch {
+    // Fall back to neutral quick icon.
+  }
+  return 'zap';
+}
+
+function EditablePill({
+  icon, label, active, onEdit, onClear, editLabel, clearLabel,
+}: {
+  icon?: IconName;
+  label: string;
+  active?: boolean;
+  onEdit: () => void;
+  onClear?: () => void;
+  editLabel?: string;
+  clearLabel?: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={[
+        styles.editablePill,
+        {
+          borderColor: active ? colors.accent : colors.border,
+          backgroundColor: active ? colors.accentSoft : colors.surfaceMuted,
+        },
+      ]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={editLabel ?? label}
+        onPress={() => {
+          haptic.tap();
+          onEdit();
+        }}
+        style={({ pressed }) => [styles.editablePillMain, { opacity: pressed ? 0.65 : 1 }]}>
+        {icon ? <Icon name={icon} size={12} color={active ? colors.accentText : colors.textMuted} /> : null}
+        <Txt variant="caption" tone={active ? 'accent' : 'default'} style={{ fontWeight: '600' }} numberOfLines={1}>
+          {label}
+        </Txt>
+      </Pressable>
+      {onClear ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={clearLabel ?? `${label} 지우기`}
+          hitSlop={6}
+          onPress={() => {
+            haptic.tap();
+            onClear();
+          }}
+          style={({ pressed }) => [styles.editablePillClose, { opacity: pressed ? 0.5 : 1 }]}>
+          <Icon name="x" size={12} color={active ? colors.accentText : colors.textFaint} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
   defaults: QuickAddDefaults;
   frame: StyleProp<ViewStyle>;
   onClose: () => void;
+  onOpenTemplates: (context: { projectId?: string | null; sectionId?: string | null; dueToday?: boolean }) => void;
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { keyboardMode, blurActiveInput } = useKeyboard();
   useScreenContext('quick-add');
+  const personalPrefs = usePersonalPrefs();
+
   const input = useRef<TextInputInstance>(null);
   const notesInput = useRef<TextInputInstance>(null);
   const notesFocusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [text, setText] = useState(defaults.initialText ?? '');
+  const [cursor, setCursor] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [showNotes, setShowNotes] = useState(false);
   const [plainText, setPlainText] = useState(false);
+  const [checklistMode, setChecklistMode] = useState(defaults.initialMode === 'checklist' && !defaults.parentTaskId);
   const [added, setAdded] = useState(0);
-  const [openPane, setOpenPane] = useState<null | 'priority' | 'calendar' | 'reminder'>(null);
+  const [lastAdded, setLastAdded] = useState<{ ids: string[]; title: string; count: number } | null>(null);
+  const [openPane, setOpenPane] = useState<OpenPane>(null);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [calendarCursor, setCalendarCursor] = useState<PlainDate | null>(null);
   const [calendarMonth, setCalendarMonth] = useState<Temporal.PlainYearMonth | null>(null);
   const [chosenSectionId, setChosenSectionId] = useState<string | null | undefined>(defaults.sectionId);
   const [reminderChoice, setReminderChoice] = useState<TaskReminder | undefined>(undefined);
   const [undated, setUndated] = useState(false);
-  const [keepOpen, setKeepOpen] = usePersistentState<KeepOpen>('dayframe-quickadd-keepopen', 'off', isKeepOpen);
+  const [clearedDefaultProject, setClearedDefaultProject] = useState(false);
+  const [keepOpenOverride, setKeepOpenOverride] = useState<boolean | null>(defaults.initialKeepOpen ?? null);
+
   const [newTaskDate] = useNewTaskDate();
   const { tasks, byId } = useTaskIndex();
   const { data: projects } = useProjects();
@@ -170,26 +234,38 @@ function QuickAddSheet({ defaults, frame, onClose }: {
   const { data: tags } = useTags();
   const actions = useTaskActions();
   const [timezone] = useState(deviceTimeZone);
+
   const parent = defaults.parentTaskId ? byId.get(defaults.parentTaskId) : undefined;
+  const isKeepOpenOn = keepOpenOverride ?? personalPrefs.quickAddKeepOpen;
   const defaultsToToday = !parent && (!!defaults.dueToday || newTaskDate === 'today');
 
-  const inserts = useMemo(
-    () => baseInserts.filter((item) => !item.androidOnly || Platform.OS === 'android'),
-    [],
-  );
+  // Resolve personal default project when no explicit projectId was passed by the calling screen.
+  const effectiveDefaultProjectId = useMemo(() => {
+    if (parent || clearedDefaultProject) return null;
+    const candidate = defaults.projectId !== undefined ? defaults.projectId : personalPrefs.quickAddDefaultProjectId;
+    if (!candidate) return null;
+    if (projects && !projects.some((p) => p.id === candidate)) return null;
+    return candidate;
+  }, [parent, clearedDefaultProject, defaults.projectId, personalPrefs.quickAddDefaultProjectId, projects]);
 
   const multiLines = useMemo(() => (text.includes('\n') ? parseChecklistLines(text) : []), [text]);
   const isMultiLine = multiLines.length >= 2;
+  const firstLine = useMemo(() => {
+    const idx = text.indexOf('\n');
+    return idx >= 0 ? text.slice(0, idx) : text;
+  }, [text]);
 
+  // In checklist mode, parse line 1 so the parent task still gets full NLP pills & highlighting.
+  const analysisSource = checklistMode ? firstLine : text;
   const result = useMemo(
-    () => analyzeDraft(text, timezone, isMultiLine, plainText),
-    [text, timezone, isMultiLine, plainText],
+    () => analyzeDraft(analysisSource, timezone, !checklistMode && isMultiLine, plainText),
+    [analysisSource, timezone, checklistMode, isMultiLine, plainText],
   );
   const { analysis } = result;
   const parsed = plainText ? undefined : (analysis?.task.title ? analysis.task : undefined);
   const draft = plainText ? undefined : analysis?.task;
   const draftProject = draft?.project;
-  const todayDate = useMemo(() => today(timezone), [timezone]);
+  const todayDate = useMemo(() => logicalToday(timezone, personalPrefs.dayStartHour), [timezone, personalPrefs.dayStartHour]);
   const draftPlainDate = draft?.due_at ? dueDate({ due_at: draft.due_at, timezone }) : (defaultsToToday && !undated ? todayDate : null);
 
   useEffect(() => {
@@ -233,23 +309,55 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     onClose();
   };
 
-  // Resolve the effective project (typed #project match or default screen project) so its sections can be chosen inline.
+  const toggleKeepOpen = () => {
+    const next = !isKeepOpenOn;
+    haptic.tap();
+    setKeepOpenOverride(next);
+    if (defaults.initialKeepOpen === undefined) {
+      setPersonalPrefs({ quickAddKeepOpen: next });
+    }
+  };
+
+  // Resolve the effective project (typed #project match or default screen/personal project) so sections can be chosen inline.
   const activeProject = useMemo(() => {
     if (parent) return undefined;
     if (draftProject) {
       return projects?.find((p) => p.name.toLowerCase() === draftProject.toLowerCase());
     }
-    if (defaults.projectId) {
-      return projects?.find((p) => p.id === defaults.projectId);
+    if (effectiveDefaultProjectId) {
+      return projects?.find((p) => p.id === effectiveDefaultProjectId);
     }
     return undefined;
-  }, [parent, draftProject, defaults.projectId, projects]);
+  }, [parent, draftProject, effectiveDefaultProjectId, projects]);
 
   const availableSections = useMemo(
     () => (activeProject ? (sections ?? []).filter((s) => s.project_id === activeProject.id).sort((a, b) => a.position - b.position) : []),
     [activeProject, sections],
   );
   const effectiveSectionId = availableSections.some((s) => s.id === chosenSectionId) ? (chosenSectionId ?? null) : null;
+
+  const tokens: TaskToken[] = !plainText && analysis && analysis.text === analysisSource ? analysis.tokens : [];
+
+  const updateAnalysisLine = (updater: (line: string, lineTokens: TaskToken[]) => string) => {
+    setCursor(null);
+    setText((current) => {
+      if (!checklistMode || !current.includes('\n')) return updater(current, tokens);
+      const newlineIndex = current.indexOf('\n');
+      const head = current.slice(0, newlineIndex);
+      const tail = current.slice(newlineIndex);
+      return updater(head, tokens).replace(/\s+$/, '') + tail;
+    });
+  };
+
+  const buildStickyPrefix = (): string => {
+    if (plainText) return '';
+    const preserved = tokens
+      .filter((t) => t.kind === 'date' || t.kind === 'project' || t.kind === 'tag')
+      .sort((a, b) => a.start - b.start)
+      .map((t) => t.text.trim())
+      .filter(Boolean);
+    return preserved.length > 0 ? preserved.join(' ') + ' ' : '';
+  };
 
   const createSingleLine = (rawLine: string, positionOffset: number, extraNotes?: string | null, overrideParentId?: string) => {
     const targetParentId = overrideParentId ?? parent?.id;
@@ -267,7 +375,7 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     const lineAllDay = fallbackToday ? true : (parsedLine?.all_day ?? true);
     const lineTimed = !!due_at && !lineAllDay;
     const matchedProj = parsedLine?.project ? projects?.find((p) => p.name.toLowerCase() === parsedLine!.project!.toLowerCase()) : undefined;
-    const projectId = targetParentId ? null : (matchedProj ? matchedProj.id : (parsedLine?.project ? null : defaults.projectId ?? null));
+    const projectId = targetParentId ? null : (matchedProj ? matchedProj.id : (parsedLine?.project ? null : effectiveDefaultProjectId));
     const sectionId = !targetParentId && projectId && projectId === activeProject?.id ? effectiveSectionId : null;
     const siblings = tasks.filter((task) => (targetParentId
       ? task.parent_task_id === targetParentId
@@ -298,31 +406,46 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     return id;
   };
 
-  const afterSubmit = (countAdded: number, toastMessage?: string) => {
+  const afterSubmit = (createdIds: string[], summaryTitle: string, countAdded: number, toastMessage?: string) => {
     haptic.success();
-    setText('');
+    const stickyPrefix = isKeepOpenOn ? buildStickyPrefix() : '';
+    setText(stickyPrefix);
+    setCursor(stickyPrefix.length || null);
     setNotes('');
     setShowNotes(false);
     setPlainText(false);
-    setUndated(false);
     closePane();
     setSuggestionIndex(0);
-    setChosenSectionId(defaults.sectionId);
     setReminderChoice(undefined);
+    if (!isKeepOpenOn) {
+      setUndated(false);
+      setClearedDefaultProject(false);
+      setChosenSectionId(defaults.sectionId);
+    }
     if (toastMessage) showToast(toastMessage);
-    if (keepOpen === 'on') {
+    if (isKeepOpenOn) {
       setAdded((count) => count + countAdded);
+      setLastAdded({ ids: createdIds, title: summaryTitle, count: countAdded });
       input.current?.focus();
     } else {
       closeSheet();
     }
   };
 
+  const undoLastAdded = () => {
+    if (!lastAdded) return;
+    haptic.light();
+    for (const id of lastAdded.ids) {
+      actions.remove(id);
+    }
+    setAdded((count) => Math.max(0, count - lastAdded.count));
+    setLastAdded(null);
+    input.current?.focus();
+  };
+
   const submitMultiSeparate = () => {
-    multiLines.forEach((line, index) => {
-      createSingleLine(line, index);
-    });
-    afterSubmit(multiLines.length, `할 일 ${multiLines.length}개를 추가했습니다.`);
+    const ids = multiLines.map((line, index) => createSingleLine(line, index));
+    afterSubmit(ids, `할 일 ${multiLines.length}개`, multiLines.length, isKeepOpenOn ? undefined : `할 일 ${multiLines.length}개를 추가했습니다.`);
   };
 
   const submitMultiAsChecklist = () => {
@@ -332,15 +455,22 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     rest.forEach((line, index) => {
       createSingleLine(line, index, null, parentId);
     });
-    afterSubmit(1, `‘${head}’${josa(head, '와/과')} 하위 작업 ${rest.length}개를 추가했습니다.`);
+    afterSubmit(
+      [parentId],
+      head,
+      1,
+      isKeepOpenOn ? undefined : `‘${head}’${josa(head, '와/과')} 하위 작업 ${rest.length}개를 추가했습니다.`,
+    );
   };
 
   const submit = () => {
     if (isMultiLine) {
-      submitMultiSeparate();
+      if (checklistMode && !parent) submitMultiAsChecklist();
+      else submitMultiSeparate();
       return;
     }
-    const plainTitle = plainText ? text.trim() : '';
+    const singleSource = checklistMode ? firstLine : text;
+    const plainTitle = plainText ? singleSource.trim() : '';
     if (!parsed && !plainTitle) {
       haptic.warning();
       return;
@@ -351,7 +481,7 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     const allDay = fallbackToday ? true : (parsed?.all_day ?? true);
     const isTimed = !!due_at && !allDay;
     const matchedProj = parsed?.project ? projects?.find((p) => p.name.toLowerCase() === parsed.project!.toLowerCase()) : undefined;
-    const projectId = parent ? null : (matchedProj ? matchedProj.id : (parsed?.project ? null : defaults.projectId ?? null));
+    const projectId = parent ? null : (matchedProj ? matchedProj.id : (parsed?.project ? null : effectiveDefaultProjectId));
     const sectionId = !parent && projectId && projectId === activeProject?.id ? effectiveSectionId : null;
     const siblings = tasks.filter((task) => (parent
       ? task.parent_task_id === parent.id
@@ -379,11 +509,14 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     if (savedReminder !== undefined) {
       setTaskReminder(createdId, savedReminder);
     }
-    afterSubmit(1, keepOpen === 'on' ? undefined : `‘${title}’${josa(title, '을/를')} 추가했습니다.`);
+    afterSubmit([createdId], title, 1, isKeepOpenOn ? undefined : `‘${title}’${josa(title, '을/를')} 추가했습니다.`);
   };
 
-  const tokens = !plainText && analysis && analysis.text === text ? analysis.tokens : [];
-  const mention = useMemo(() => (isMultiLine || plainText ? null : activeMention(text)), [text, isMultiLine, plainText]);
+  const effectiveCursor = cursor === null ? text.length : Math.min(cursor, text.length);
+  const mention = useMemo(
+    () => (plainText || (!checklistMode && isMultiLine) ? null : activeMention(text, effectiveCursor)),
+    [text, effectiveCursor, isMultiLine, checklistMode, plainText],
+  );
   const suggestions = useMemo(() => {
     if (!mention) return [];
     const pool = mention.kind === 'project' ? (projects ?? []).map((item) => item.name) : (tags ?? []).map((item) => item.name);
@@ -402,14 +535,24 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     setPlainText(false);
     closePane();
     if (pickedDate === null) {
-      setText((current) => removeTokens(current, tokens, (t) => t.kind === 'date' || t.kind === 'time'));
+      updateAnalysisLine((current, lineTokens) => removeTokens(current, lineTokens, (t) => t.kind === 'date' || t.kind === 'time'));
       setUndated(true);
     } else {
       setUndated(false);
       const phrase = datePhrase(pickedDate, todayDate);
-      setText((current) => applyScheduleWord(current, phrase, 'date', tokens));
+      updateAnalysisLine((current, lineTokens) => applyScheduleWord(current, phrase, 'date', lineTokens));
     }
     input.current?.focus();
+  };
+
+  const applyPickedTime = (word: string | null) => {
+    haptic.tap();
+    setPlainText(false);
+    if (word === null) {
+      updateAnalysisLine((current, lineTokens) => removeTokens(current, lineTokens, (t) => t.kind === 'time'));
+    } else {
+      updateAnalysisLine((current, lineTokens) => applyScheduleWord(current, word, 'time', lineTokens));
+    }
   };
 
   const toggleCalendarPane = () => {
@@ -426,6 +569,15 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     blurActiveInput();
     input.current?.blur();
     notesInput.current?.blur();
+  };
+
+  const togglePane = (pane: Exclude<OpenPane, null | 'calendar'>) => {
+    haptic.tap();
+    if (pane !== 'reminder') setPlainText(false);
+    setCalendarCursor(null);
+    setCalendarMonth(null);
+    setOpenPane((cur) => (cur === pane ? null : pane));
+    if (pane === 'priority') input.current?.focus();
   };
 
   const moveCalendarCursor = (days: number) => {
@@ -453,6 +605,32 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     }
   };
 
+  const toggleChecklistMode = () => {
+    haptic.tap();
+    closePane();
+    setChecklistMode((on) => !on);
+    input.current?.focus();
+  };
+
+  const appendChecklistLine = () => {
+    haptic.tap();
+    setText((current) => (current.endsWith('\n') ? current : current + '\n'));
+    setCursor(null);
+    input.current?.focus();
+  };
+
+  const removeChecklistItem = (itemIndex: number) => {
+    haptic.tap();
+    const rawLines = text.split(/\r?\n/);
+    let nonEmptyIdx = -1;
+    const nextLines = rawLines.filter((line) => {
+      if (line.trim()) nonEmptyIdx += 1;
+      return nonEmptyIdx !== itemIndex;
+    });
+    setText(nextLines.join('\n'));
+    setCursor(null);
+  };
+
   const openAiOrganize = () => {
     haptic.tap();
     const memo = text.trim();
@@ -460,52 +638,82 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     router.push({ pathname: AI_ROUTES.organize, params: memo ? { text: memo } : {} });
   };
 
-  const insert = (item: (typeof baseInserts)[number]) => {
+  const handleOpenTemplates = () => {
     haptic.tap();
-    if (item.kind === 'calendar') {
-      toggleCalendarPane();
-      return;
-    }
-    if (item.kind === 'priority') {
-      setPlainText(false);
-      setCalendarCursor(null);
-      setCalendarMonth(null);
-      setOpenPane((cur) => (cur === 'priority' ? null : 'priority'));
-      input.current?.focus();
-      return;
-    }
-    if (item.kind === 'reminder') {
-      setCalendarCursor(null);
-      setCalendarMonth(null);
-      setOpenPane((cur) => (cur === 'reminder' ? null : 'reminder'));
-      return;
-    }
-    if (item.kind === 'notes') {
-      toggleNotes();
-      return;
-    }
-    if (item.kind === 'plain') {
-      setPlainText((on) => !on);
-      closePane();
-      input.current?.focus();
-      return;
-    }
+    const context = {
+      projectId: activeProject?.id ?? effectiveDefaultProjectId,
+      sectionId: effectiveSectionId,
+      dueToday: defaultsToToday && !undated,
+    };
+    closeSheet();
+    onOpenTemplates(context);
+  };
+
+  const applyPresetChip = (preset: string) => {
+    haptic.tap();
     setPlainText(false);
     closePane();
-    if (item.kind === 'date' || item.kind === 'time' || item.kind === 'duration' || item.kind === 'recurrence') {
-      if (item.kind === 'date') setUndated(false);
-      const scheduleKind = item.kind;
-      setText((current) => applyScheduleWord(current, item.text, scheduleKind, tokens));
-    } else {
-      setText((current) => (current && !/\s$/.test(current) ? current + ' ' : current) + item.text);
+    const trimmed = preset.trim();
+    if (!trimmed) return;
+    if (trimmed.startsWith('#') && trimmed.length > 1) {
+      setClearedDefaultProject(false);
+      updateAnalysisLine((current, lineTokens) => applyProject(current, trimmed.slice(1).replace(/^"|"$/g, ''), lineTokens));
+      input.current?.focus();
+      return;
     }
+    if (trimmed.startsWith('@') && trimmed.length > 1) {
+      updateAnalysisLine((current, lineTokens) => toggleTag(current, trimmed.slice(1).replace(/^"|"$/g, ''), lineTokens));
+      input.current?.focus();
+      return;
+    }
+    try {
+      const probe = analyzeTask({ text: '작업 ' + trimmed, timezone }, { draft: true });
+      const firstKind = probe.tokens[0]?.kind;
+      if (firstKind === 'date' || firstKind === 'time' || firstKind === 'duration' || firstKind === 'recurrence') {
+        if (firstKind === 'date') setUndated(false);
+        const lineCursor = !checklistMode && cursor !== null ? cursor : undefined;
+        updateAnalysisLine((current, lineTokens) => applyScheduleWord(current, trimmed, firstKind, lineTokens, lineCursor));
+        input.current?.focus();
+        return;
+      }
+      if (firstKind === 'priority') {
+        updateAnalysisLine((current, lineTokens) => applyPriority(current, probe.task.priority, lineTokens));
+        input.current?.focus();
+        return;
+      }
+    } catch {
+      // Fall through to plain append.
+    }
+    updateAnalysisLine((current) => (current && !/\s$/.test(current) ? current + ' ' : current) + trimmed + ' ');
+    input.current?.focus();
+  };
+
+  const pickProjectFromPane = (name: string | null) => {
+    haptic.tap();
+    setPlainText(false);
+    if (name === null) {
+      setClearedDefaultProject(true);
+      setChosenSectionId(null);
+      updateAnalysisLine((current, lineTokens) => applyProject(current, null, lineTokens));
+    } else {
+      setClearedDefaultProject(false);
+      updateAnalysisLine((current, lineTokens) => applyProject(current, name, lineTokens));
+    }
+    closePane();
+    input.current?.focus();
+  };
+
+  const pickTagFromPane = (name: string) => {
+    haptic.tap();
+    setPlainText(false);
+    updateAnalysisLine((current, lineTokens) => toggleTag(current, name, lineTokens));
     input.current?.focus();
   };
 
   const pickPriority = (priority: Priority) => {
     haptic.tap();
     setPlainText(false);
-    setText((current) => applyPriority(current, priority, tokens));
+    updateAnalysisLine((current, lineTokens) => applyPriority(current, priority, lineTokens));
     closePane();
     input.current?.focus();
   };
@@ -513,14 +721,15 @@ function QuickAddSheet({ defaults, frame, onClose }: {
   const pickSuggestion = (name: string) => {
     if (!mention) return;
     haptic.tap();
-    setText((current) => applyMention(current, mention, name));
+    const nextText = applyMention(text, mention, name);
+    setText(nextText);
+    setCursor(null);
     setSuggestionIndex(0);
     input.current?.focus();
   };
 
-  const stripToken = (predicate: (token: (typeof tokens)[number]) => boolean) => {
-    haptic.tap();
-    setText((current) => removeTokens(current, tokens, predicate));
+  const stripToken = (predicate: (token: TaskToken) => boolean) => {
+    updateAnalysisLine((current, lineTokens) => removeTokens(current, lineTokens, predicate));
     input.current?.focus();
   };
 
@@ -550,22 +759,10 @@ function QuickAddSheet({ defaults, frame, onClose }: {
       return true;
     }
     if (openPane === 'calendar') {
-      if (matchesCombo(event, 'arrowleft')) {
-        moveCalendarCursor(-1);
-        return true;
-      }
-      if (matchesCombo(event, 'arrowright')) {
-        moveCalendarCursor(1);
-        return true;
-      }
-      if (matchesCombo(event, 'arrowup')) {
-        moveCalendarCursor(-7);
-        return true;
-      }
-      if (matchesCombo(event, 'arrowdown')) {
-        moveCalendarCursor(7);
-        return true;
-      }
+      if (matchesCombo(event, 'arrowleft')) { moveCalendarCursor(-1); return true; }
+      if (matchesCombo(event, 'arrowright')) { moveCalendarCursor(1); return true; }
+      if (matchesCombo(event, 'arrowup')) { moveCalendarCursor(-7); return true; }
+      if (matchesCombo(event, 'arrowdown')) { moveCalendarCursor(7); return true; }
       if (!event.editing && matchesCombo(event, 'enter')) {
         applyPickedDate(calendarCursor ?? draftPlainDate ?? todayDate);
         return true;
@@ -592,30 +789,13 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     if (matchesCombo(event, 'alt+2')) { pickPriority(2); return true; }
     if (matchesCombo(event, 'alt+3')) { pickPriority(3); return true; }
     if (matchesCombo(event, 'alt+4')) { pickPriority(4); return true; }
-    if (matchesCombo(event, 'alt+d')) {
-      haptic.tap();
-      toggleCalendarPane();
-      return true;
-    }
-    if (matchesCombo(event, 'alt+p')) {
-      haptic.tap();
-      setPlainText(false);
-      setCalendarCursor(null);
-      setCalendarMonth(null);
-      setOpenPane((cur) => (cur === 'priority' ? null : 'priority'));
-      input.current?.focus();
-      return true;
-    }
-    if (matchesCombo(event, 'alt+m')) {
-      haptic.tap();
-      toggleNotes();
-      return true;
-    }
+    if (matchesCombo(event, 'alt+d')) { haptic.tap(); toggleCalendarPane(); return true; }
+    if (matchesCombo(event, 'alt+p')) { togglePane('priority'); return true; }
+    if (matchesCombo(event, 'alt+m')) { haptic.tap(); toggleNotes(); return true; }
     if (matchesCombo(event, 'alt+k')) {
-      const next: KeepOpen = keepOpen === 'on' ? 'off' : 'on';
-      haptic.tap();
-      setKeepOpen(next);
-      showToast(next === 'on' ? '계속 추가 모드를 켰습니다.' : '계속 추가 모드를 껐습니다.');
+      const next = !isKeepOpenOn;
+      toggleKeepOpen();
+      showToast(next ? '계속 추가 모드를 켰습니다.' : '계속 추가 모드를 껐습니다.');
       return true;
     }
     if (matchesCombo(event, 'alt+t')) {
@@ -625,52 +805,48 @@ function QuickAddSheet({ defaults, frame, onClose }: {
       input.current?.focus();
       return true;
     }
-    if (Platform.OS === 'android' && matchesCombo(event, 'alt+r')) {
-      haptic.tap();
-      setCalendarCursor(null);
-      setCalendarMonth(null);
-      setOpenPane((cur) => (cur === 'reminder' ? null : 'reminder'));
+    if (Platform.OS !== 'web' && matchesCombo(event, 'alt+r')) {
+      togglePane('reminder');
       return true;
     }
-    if (matchesCombo(event, 'alt+o')) {
-      applyPickedDate(todayDate);
-      return true;
-    }
-    if (matchesCombo(event, 'alt+n')) {
-      applyPickedDate(todayDate.add({ days: 1 }));
-      return true;
-    }
-    if (!parent && matchesCombo(event, 'alt+i')) {
-      openAiOrganize();
-      return true;
-    }
-    if (!event.editing) {
-      return true;
-    }
+    if (matchesCombo(event, 'alt+o')) { applyPickedDate(todayDate); return true; }
+    if (matchesCombo(event, 'alt+n')) { applyPickedDate(todayDate.add({ days: 1 })); return true; }
+    if (!parent && matchesCombo(event, 'alt+i')) { openAiOrganize(); return true; }
+    if (!event.editing) return true;
     return false;
   }, { priority: KEY_PRIORITY.quickAdd });
 
-  const due = draft?.due_at ? formatDue({ due_at: draft.due_at, timezone, all_day: draft.all_day }) : null;
+  const due = draft?.due_at ? formatDue({ due_at: draft.due_at, timezone, all_day: draft.all_day }, personalPrefs.timeFormat) : null;
   const repeat = describeRecurrence(draft?.recurrence_rule ?? null, draft?.recurrence_mode);
   const durationLabel = draft?.duration_minutes ? formatDurationMinutes(draft.duration_minutes) : null;
   const isNewProject = !!draft?.project
     && !projects?.some((project) => project.name.toLowerCase() === draft.project!.toLowerCase());
-  const defaultProject = !draft?.project && defaults.projectId
-    ? projects?.find((project) => project.id === defaults.projectId)?.name : undefined;
+  const defaultProjectName = !draft?.project && effectiveDefaultProjectId
+    ? projects?.find((project) => project.id === effectiveDefaultProjectId)?.name
+    : undefined;
   const selectedSectionName = effectiveSectionId ? availableSections.find((s) => s.id === effectiveSectionId)?.name : undefined;
   const isTimedDraft = !!draft?.due_at && !draft.all_day;
   const quickReminders = isTimedDraft ? timedQuickReminders : allDayQuickReminders;
   const effectiveReminder = normalizeReminderForMode(reminderChoice, isTimedDraft);
   const reminderChipLabel = formatReminderChip(reminderChoice, isTimedDraft);
   const hasChips = !!draft && (due || durationLabel || repeat || draft.project || draft.tags.length > 0 || draft.priority < 4 || reminderChipLabel);
+  const showParsedPills = (checklistMode || !isMultiLine) && (hasChips || defaultProjectName || reminderChipLabel || (defaultsToToday && !due));
   const canSend = (plainText ? !!text.trim() : !!parsed) || isMultiLine;
   const saturday = todayDate.add({ days: (6 - todayDate.dayOfWeek + 7) % 7 || 7 });
   const nextMonday = todayDate.add({ days: 8 - todayDate.dayOfWeek });
+  const hasRawTokens = tokens.length > 0 || plainText;
+  const presetItems = useMemo(
+    () => personalPrefs.quickAddPresets.map((label) => ({ label, icon: presetIconFor(label, timezone) })),
+    [personalPrefs.quickAddPresets, timezone],
+  );
+
   const keyboardHint = openPane === 'calendar'
     ? '←→↑↓ 날짜 이동 · Enter 적용 · Esc 닫기'
     : suggestions.length > 0
       ? '↑↓ 이동 · Tab 선택 · Esc 닫기'
-      : 'Enter 추가 · Ctrl+Enter 저장 · Alt+M 메모 · Alt+1~4 우선순위 · Alt+K 계속 추가 · Esc 닫기';
+      : checklistMode
+        ? 'Enter 줄바꿈 · Ctrl+Enter 체크리스트 저장 · Esc 닫기'
+        : 'Enter 추가 · Ctrl+Enter 저장 · Alt+M 메모 · Alt+1~4 우선순위 · Alt+K 계속 추가 · Esc 닫기';
 
   return (
     <KeyboardAvoidingView behavior="padding" style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -683,39 +859,31 @@ function QuickAddSheet({ defaults, frame, onClose }: {
       <Animated.View
         entering={FadeInDown.duration(180)}
         style={[
-          styles.bar, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, space.md) }, elevation(colors, 2),
+          styles.bar,
+          {
+            backgroundColor: colors.surfaceElevated,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: colors.border,
+            paddingBottom: Math.max(insets.bottom, space.md),
+          },
+          elevation(colors, 2),
           frame,
         ]}>
         <View style={styles.topRow}>
           <Txt variant="caption" tone="muted" numberOfLines={1} style={{ flex: 1 }}>
             {parent
               ? `하위 작업 · ${parent.title}`
-              : activeProject
-                ? `#${activeProject.name}${selectedSectionName ? ` · ${selectedSectionName}` : ''}`
-                : '새 할 일'}
+              : checklistMode
+                ? `체크리스트 만들기${activeProject ? ` · #${activeProject.name}` : ''}`
+                : activeProject
+                  ? `#${activeProject.name}${selectedSectionName ? ` · ${selectedSectionName}` : ''}`
+                  : '새 할 일'}
           </Txt>
-          <Pressable
-            accessibilityRole="switch" accessibilityState={{ checked: keepOpen === 'on' }}
-            accessibilityLabel="계속 추가 모드"
-            onPress={() => {
-              haptic.tap();
-              setKeepOpen(keepOpen === 'on' ? 'off' : 'on');
-            }}
-            style={({ pressed }) => [
-              styles.keepPill,
-              {
-                backgroundColor: keepOpen === 'on' ? colors.accentSoft : colors.surfaceMuted,
-                opacity: pressed ? 0.65 : 1,
-              },
-            ]}>
-            <Icon name="layers" size={12} color={keepOpen === 'on' ? colors.accentText : colors.textMuted} />
-            <Txt variant="caption" tone={keepOpen === 'on' ? 'accent' : 'muted'} style={{ fontWeight: '600' }}>계속 추가</Txt>
-          </Pressable>
           {parent ? null : (
             <Pressable
               accessibilityRole="button" accessibilityLabel="AI로 정리"
               onPress={openAiOrganize}
-              style={({ pressed }) => [styles.keepPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.65 : 1 }]}>
+              style={({ pressed }) => [styles.topPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.65 : 1 }]}>
               <Icon name="zap" size={12} color={colors.textMuted} />
               <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>AI로 정리</Txt>
             </Pressable>
@@ -724,11 +892,31 @@ function QuickAddSheet({ defaults, frame, onClose }: {
         </View>
 
         <HighlightInput
-          ref={input} value={text} onChangeText={setText} tokens={tokens}
-          palette={palette} disableHighlight={plainText} autoFocus onSubmitEditing={submit}
+          ref={input}
+          value={text}
+          onChangeText={(next) => {
+            setText(next);
+            if (lastAdded && next.trim()) setLastAdded(null);
+          }}
+          onSelectionChange={(event) => {
+            setCursor(event.nativeEvent.selection.end);
+          }}
+          tokens={checklistMode && text.includes('\n') ? [] : tokens}
+          palette={palette}
+          disableHighlight={plainText}
+          multilineEnter={checklistMode}
+          autoFocus
+          onSubmitEditing={submit}
           onFocus={() => { if (openPane === 'calendar') closePane(); }}
-          placeholder={parent ? '하위 작업 입력 · 여러 줄 붙여넣기 가능' : '예: 금요일 3시 30분간 회의 #업무 !!!'}
+          placeholder={
+            parent
+              ? '하위 작업 입력 · 여러 줄 붙여넣기 가능'
+              : checklistMode
+                ? '제목 입력 후 Enter로 체크리스트 항목 추가'
+                : '예: 금요일 3시 30분간 회의 #업무 !!!'
+          }
           accessibilityLabel="할 일 입력" />
+
         {showNotes ? (
           <TextInput
             ref={notesInput}
@@ -737,6 +925,7 @@ function QuickAddSheet({ defaults, frame, onClose }: {
             placeholder="메모나 링크를 입력해 주세요" placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
             style={[type.small, styles.notesInput, { backgroundColor: colors.surfaceMuted, color: colors.text }]} />
         ) : null}
+
         {plainText ? (
           <View style={[styles.plainHint, { backgroundColor: colors.surfaceMuted }]}>
             <Icon name="type" size={13} color={colors.textMuted} />
@@ -746,7 +935,40 @@ function QuickAddSheet({ defaults, frame, onClose }: {
             </Pressable>
           </View>
         ) : null}
-        {isMultiLine ? (
+
+        {checklistMode ? (
+          <View style={[styles.checklistBox, { backgroundColor: colors.surfaceMuted }]}>
+            <View style={styles.checklistHeader}>
+              <Icon name="check-square" size={13} color={colors.accentText} />
+              <Txt variant="caption" tone="muted" style={{ flex: 1 }} tabular>
+                {multiLines.length >= 2
+                  ? `제목 1개 · 체크리스트 항목 ${multiLines.length - 1}개`
+                  : '첫 줄은 제목 · Enter로 항목을 이어서 입력'}
+              </Txt>
+              <Pressable hitSlop={6} onPress={appendChecklistLine} accessibilityRole="button" accessibilityLabel="체크리스트 줄 추가">
+                <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>+ 항목 줄</Txt>
+              </Pressable>
+            </View>
+            {multiLines.length >= 2 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6 }}>
+                {multiLines.slice(1).map((item, idx) => (
+                  <View
+                    key={`${idx}-${item}`}
+                    style={[styles.checklistChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <Txt variant="caption" numberOfLines={1} style={{ maxWidth: 150 }}>{item}</Txt>
+                    <Pressable
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${item} 항목 지우기`}
+                      onPress={() => removeChecklistItem(idx + 1)}>
+                      <Icon name="x" size={11} color={colors.textFaint} />
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+          </View>
+        ) : isMultiLine ? (
           <View style={[styles.multiBox, { backgroundColor: colors.surfaceMuted }]}>
             <Txt variant="caption" style={{ fontWeight: '700' }}>
               {multiLines.length}줄을 어떻게 추가할까요?
@@ -759,6 +981,7 @@ function QuickAddSheet({ defaults, frame, onClose }: {
             </View>
           </View>
         ) : null}
+
         {result.error ? (
           <Txt variant="small" tone="danger" style={{ marginTop: 6 }} accessibilityLiveRegion="polite">{result.error}</Txt>
         ) : null}
@@ -789,22 +1012,6 @@ function QuickAddSheet({ defaults, frame, onClose }: {
           </ScrollView>
         ) : null}
 
-        {!isMultiLine && availableSections.length > 0 ? (
-          <ScrollView
-            horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always"
-            contentContainerStyle={{ gap: 6, paddingTop: space.sm }}>
-            <Chip
-              icon="minus" label="섹션 없음" selected={!effectiveSectionId}
-              onPress={() => setChosenSectionId(null)} />
-            {availableSections.map((section) => (
-              <Chip
-                key={section.id} icon="bookmark" label={section.name}
-                selected={effectiveSectionId === section.id}
-                onPress={() => setChosenSectionId(section.id)} />
-            ))}
-          </ScrollView>
-        ) : null}
-
         {openPane === 'calendar' ? (
           <View style={[styles.paneBox, { backgroundColor: colors.surfaceMuted }]}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6 }}>
@@ -822,6 +1029,85 @@ function QuickAddSheet({ defaults, frame, onClose }: {
               today={todayDate}
               onMonthChange={setCalendarMonth}
               onSelect={applyPickedDate} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6, paddingTop: 2 }}>
+              {quickTimePresets.map((tp) => (
+                <Chip key={tp.label} icon="clock" label={tp.label} onPress={() => applyPickedTime(tp.word)} />
+              ))}
+              {isTimedDraft ? (
+                <Chip icon="slash" label="시간 없음" onPress={() => applyPickedTime(null)} />
+              ) : null}
+              {Platform.OS !== 'web' ? (
+                <Chip
+                  icon={effectiveReminder === 'off' ? 'bell-off' : 'bell'}
+                  label={reminderChipLabel ?? '알림'}
+                  selected={reminderChoice !== undefined}
+                  onPress={() => togglePane('reminder')} />
+              ) : null}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {openPane === 'project' && !parent ? (
+          <View style={[styles.paneBox, { backgroundColor: colors.surfaceMuted }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6 }}>
+              <Chip
+                icon="inbox" label="미분류" selected={!activeProject && !draft?.project}
+                onPress={() => pickProjectFromPane(null)} />
+              {(projects ?? []).map((proj) => (
+                <Chip
+                  key={proj.id}
+                  icon="hash"
+                  label={proj.name}
+                  selected={activeProject?.id === proj.id}
+                  onPress={() => pickProjectFromPane(proj.name)} />
+              ))}
+            </ScrollView>
+            {availableSections.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6, paddingTop: 4 }}>
+                <Chip
+                  icon="minus" label="섹션 없음" selected={!effectiveSectionId}
+                  onPress={() => setChosenSectionId(null)} />
+                {availableSections.map((section) => (
+                  <Chip
+                    key={section.id} icon="bookmark" label={section.name}
+                    selected={effectiveSectionId === section.id}
+                    onPress={() => setChosenSectionId(section.id)} />
+                ))}
+              </ScrollView>
+            ) : null}
+          </View>
+        ) : null}
+
+        {openPane === 'tag' ? (
+          <View style={[styles.paneBox, { backgroundColor: colors.surfaceMuted }]}>
+            {tags && tags.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6 }}>
+                {tags.map((tag) => {
+                  const selectedTag = !!draft?.tags.some((t) => t.toLowerCase() === tag.name.toLowerCase());
+                  return (
+                    <Chip
+                      key={tag.id}
+                      icon="tag"
+                      label={tag.name}
+                      selected={selectedTag}
+                      onPress={() => pickTagFromPane(tag.name)} />
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 }}>
+                <Txt variant="caption" tone="muted">@태그명으로 새 태그를 바로 만들 수 있습니다.</Txt>
+                <Pressable
+                  hitSlop={6}
+                  onPress={() => {
+                    closePane();
+                    updateAnalysisLine((current) => (current && !/\s$/.test(current) ? current + ' ' : current) + '@');
+                    input.current?.focus();
+                  }}>
+                  <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>@ 입력</Txt>
+                </Pressable>
+              </View>
+            )}
           </View>
         ) : null}
 
@@ -833,7 +1119,7 @@ function QuickAddSheet({ defaults, frame, onClose }: {
                 <Pressable
                   key={priority} accessibilityRole="button" accessibilityLabel={priorityA11y(priority)} accessibilityState={{ selected: active }}
                   onPress={() => pickPriority(priority)}
-                  style={({ pressed }) => [styles.insert, {
+                  style={({ pressed }) => [styles.presetChip, {
                     flex: 1, justifyContent: 'center', borderColor: active ? colors.accent : colors.border,
                     backgroundColor: active ? colors.accentSoft : 'transparent', opacity: pressed ? 0.6 : 1,
                   }]}>
@@ -865,99 +1151,311 @@ function QuickAddSheet({ defaults, frame, onClose }: {
           </ScrollView>
         ) : null}
 
-        {!isMultiLine && (hasChips || defaultProject || reminderChipLabel || (defaultsToToday && !due)) ? (
+        {showParsedPills ? (
           <View style={styles.chips}>
             {due ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip
-                  icon="calendar" label={due + ' ×'} tone="set"
-                  onPress={() => stripToken((token) => token.kind === 'date' || token.kind === 'time')} />
+                <EditablePill
+                  icon="calendar"
+                  label={due}
+                  active={openPane === 'calendar'}
+                  editLabel={`일정 ${due} 수정`}
+                  clearLabel="일정 지우기"
+                  onEdit={toggleCalendarPane}
+                  onClear={() => stripToken((token) => token.kind === 'date' || token.kind === 'time')} />
               </Animated.View>
             ) : defaultsToToday ? (
-              <Chip
-                icon={undated ? 'slash' : 'calendar'} label={undated ? '날짜 없음' : '오늘 ×'}
-                tone={undated ? undefined : 'set'}
-                onPress={() => {
-                  setUndated((current) => !current);
+              <EditablePill
+                icon={undated ? 'slash' : 'calendar'}
+                label={undated ? '날짜 없음' : '오늘'}
+                active={openPane === 'calendar'}
+                editLabel={undated ? '날짜 선택' : '오늘 일정 변경'}
+                clearLabel="오늘 기본 일정 해제"
+                onEdit={toggleCalendarPane}
+                onClear={undated ? undefined : () => {
+                  setUndated(true);
                   input.current?.focus();
                 }} />
             ) : null}
+
             {durationLabel ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip icon="clock" label={durationLabel + ' ×'} tone="set" onPress={() => stripToken((token) => token.kind === 'duration')} />
+                <EditablePill
+                  icon="clock"
+                  label={durationLabel}
+                  onEdit={toggleCalendarPane}
+                  onClear={() => stripToken((token) => token.kind === 'duration')} />
               </Animated.View>
             ) : null}
+
             {repeat ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip icon="repeat" label={repeat + ' ×'} tone="set" onPress={() => stripToken((token) => token.kind === 'recurrence')} />
+                <EditablePill
+                  icon="repeat"
+                  label={repeat}
+                  onEdit={toggleCalendarPane}
+                  onClear={() => stripToken((token) => token.kind === 'recurrence')} />
               </Animated.View>
             ) : null}
+
             {reminderChipLabel ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip
+                <EditablePill
                   icon={effectiveReminder === 'off' ? 'bell-off' : 'bell'}
-                  label={reminderChipLabel + ' ×'}
-                  tone="set"
-                  onPress={() => setReminderChoice(undefined)} />
+                  label={reminderChipLabel}
+                  active={openPane === 'reminder'}
+                  onEdit={() => togglePane('reminder')}
+                  onClear={() => setReminderChoice(undefined)} />
               </Animated.View>
             ) : null}
+
             {draft?.project ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip
-                  icon="hash" label={draft.project + (selectedSectionName ? ` · ${selectedSectionName}` : '') + (isNewProject ? ' · 새 목록' : '') + ' ×'} tone="set"
-                  onPress={() => stripToken((token) => token.kind === 'project')} />
+                <EditablePill
+                  icon="hash"
+                  label={draft.project + (selectedSectionName ? ` · ${selectedSectionName}` : '') + (isNewProject ? ' · 새 목록' : '')}
+                  active={openPane === 'project'}
+                  editLabel={`목록 ${draft.project} 변경`}
+                  clearLabel="목록 지우기"
+                  onEdit={() => togglePane('project')}
+                  onClear={() => stripToken((token) => token.kind === 'project')} />
               </Animated.View>
-            ) : defaultProject ? (
-              <Chip icon="hash" label={selectedSectionName ? `${defaultProject} · ${selectedSectionName}` : defaultProject} />
+            ) : defaultProjectName ? (
+              <EditablePill
+                icon="hash"
+                label={selectedSectionName ? `${defaultProjectName} · ${selectedSectionName}` : defaultProjectName}
+                active={openPane === 'project'}
+                editLabel={`기본 목록 ${defaultProjectName} 변경`}
+                clearLabel="기본 목록 해제"
+                onEdit={() => togglePane('project')}
+                onClear={() => {
+                  setClearedDefaultProject(true);
+                  setChosenSectionId(null);
+                  input.current?.focus();
+                }} />
             ) : null}
+
             {draft?.tags.map((tag) => (
               <Animated.View key={tag} entering={ZoomIn.duration(140)}>
-                <Chip
-                  icon="tag" label={tag + ' ×'} tone="set"
-                  onPress={() => stripToken((token) => token.kind === 'tag' && token.text.replace(/^@"?|"?$/g, '').toLowerCase() === tag.toLowerCase())} />
+                <EditablePill
+                  icon="tag"
+                  label={tag}
+                  active={openPane === 'tag'}
+                  editLabel={`태그 ${tag} 편집`}
+                  clearLabel={`태그 ${tag} 지우기`}
+                  onEdit={() => togglePane('tag')}
+                  onClear={() => stripToken((token) => token.kind === 'tag' && token.text.replace(/^@"?|"?$/g, '').toLowerCase() === tag.toLowerCase())} />
               </Animated.View>
             ))}
+
             {draft && draft.priority < 4 ? (
               <Animated.View entering={ZoomIn.duration(140)}>
-                <Chip
-                  label={priorityOption(draft.priority) + ' ×'} tone="set"
-                  onPress={() => stripToken((token) => token.kind === 'priority')} />
+                <EditablePill
+                  label={priorityOption(draft.priority)}
+                  active={openPane === 'priority'}
+                  editLabel="우선순위 변경"
+                  clearLabel="우선순위 지우기"
+                  onEdit={() => togglePane('priority')}
+                  onClear={() => stripToken((token) => token.kind === 'priority')} />
               </Animated.View>
             ) : null}
           </View>
         ) : null}
-        <View style={styles.tools}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 6 }} style={{ flex: 1 }}>
-            {inserts.map((item) => {
-              const active = (item.kind === 'calendar' && openPane === 'calendar')
-                || (item.kind === 'priority' && openPane === 'priority')
-                || (item.kind === 'reminder' && (openPane === 'reminder' || reminderChoice !== undefined))
-                || (item.kind === 'notes' && (showNotes || !!notes.trim()))
-                || (item.kind === 'plain' && plainText);
-              return (
-                <Pressable
-                  key={item.label} accessibilityRole="button" accessibilityLabel={insertA11yLabel(item)} onPress={() => insert(item)}
-                  style={({ pressed }) => [styles.insert, {
-                    borderColor: active ? colors.accent : colors.border,
-                    backgroundColor: active ? colors.accentSoft : 'transparent', opacity: pressed ? 0.6 : 1,
-                  }]}>
-                  <Icon name={item.icon} size={13} color={active ? colors.accentText : colors.textFaint} />
-                  <Txt variant="small" tone={active ? 'accent' : 'muted'}>{item.label}</Txt>
-                </Pressable>
-              );
-            })}
+
+        {lastAdded ? (
+          <Animated.View
+            entering={FadeIn.duration(140)}
+            exiting={FadeOut.duration(140)}
+            style={[styles.undoBanner, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+            <Icon name="check" size={13} color={colors.accentText} />
+            <Txt variant="caption" tone="muted" numberOfLines={1} style={{ flex: 1 }}>
+              방금 추가함 · {lastAdded.title}
+            </Txt>
+            <Pressable hitSlop={8} onPress={undoLastAdded} accessibilityRole="button" accessibilityLabel="방금 추가한 할 일 실행 취소">
+              <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>실행 취소</Txt>
+            </Pressable>
+          </Animated.View>
+        ) : null}
+
+        {presetItems.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="always"
+            contentContainerStyle={{ gap: 6 }}
+            style={styles.presetRow}>
+            {presetItems.map((item) => (
+              <Pressable
+                key={item.label}
+                accessibilityRole="button"
+                accessibilityLabel={item.label + ' 넣기'}
+                onPress={() => applyPresetChip(item.label)}
+                style={({ pressed }) => [
+                  styles.presetChip,
+                  { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.65 : 1 },
+                ]}>
+                <Icon name={item.icon} size={12} color={colors.textFaint} />
+                <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>{item.label}</Txt>
+              </Pressable>
+            ))}
           </ScrollView>
-          {added > 0 ? (
-            <Animated.View key={added} entering={ZoomIn.duration(160)} exiting={FadeOut.duration(400)}>
-              <Txt variant="small" tone="muted">{added}개 추가됨</Txt>
-            </Animated.View>
-          ) : null}
-          <Pressable
-            accessibilityRole="button" accessibilityLabel="할 일 추가" accessibilityState={{ disabled: !canSend }} onPress={submit}
-            style={({ pressed }) => [styles.send, { backgroundColor: canSend ? colors.accent : colors.surfaceMuted, opacity: pressed ? 0.8 : 1 }]}>
-            <Icon name="arrow-up" size={20} color={canSend ? colors.onAccent : colors.textFaint} />
-          </Pressable>
+        ) : null}
+
+        <View style={styles.actionBar}>
+          <View style={styles.iconGroup}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="일정 선택"
+              accessibilityState={{ selected: openPane === 'calendar' || !!due }}
+              onPress={() => {
+                haptic.tap();
+                toggleCalendarPane();
+              }}
+              style={({ pressed }) => [
+                styles.barIcon,
+                (openPane === 'calendar' || !!due) && { backgroundColor: colors.accentSoft },
+                { opacity: pressed ? 0.65 : 1 },
+              ]}>
+              <Icon name="calendar" size={18} color={openPane === 'calendar' || !!due ? colors.accentText : colors.textMuted} />
+            </Pressable>
+
+            {!parent ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="목록 선택"
+                accessibilityState={{ selected: openPane === 'project' || !!activeProject }}
+                onPress={() => togglePane('project')}
+                style={({ pressed }) => [
+                  styles.barIcon,
+                  (openPane === 'project' || !!draft?.project) && { backgroundColor: colors.accentSoft },
+                  { opacity: pressed ? 0.65 : 1 },
+                ]}>
+                <Icon name="hash" size={18} color={openPane === 'project' || !!draft?.project ? colors.accentText : colors.textMuted} />
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="태그 선택"
+              accessibilityState={{ selected: openPane === 'tag' || !!draft?.tags.length }}
+              onPress={() => togglePane('tag')}
+              style={({ pressed }) => [
+                styles.barIcon,
+                (openPane === 'tag' || !!draft?.tags.length) && { backgroundColor: colors.accentSoft },
+                { opacity: pressed ? 0.65 : 1 },
+              ]}>
+              <Icon name="tag" size={18} color={openPane === 'tag' || !!draft?.tags.length ? colors.accentText : colors.textMuted} />
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="우선순위 선택"
+              accessibilityState={{ selected: openPane === 'priority' || (!!draft && draft.priority < 4) }}
+              onPress={() => togglePane('priority')}
+              style={({ pressed }) => [
+                styles.barIcon,
+                (openPane === 'priority' || (!!draft && draft.priority < 4)) && { backgroundColor: colors.accentSoft },
+                { opacity: pressed ? 0.65 : 1 },
+              ]}>
+              <Icon name="flag" size={18} color={openPane === 'priority' || (!!draft && draft.priority < 4) ? colors.accentText : colors.textMuted} />
+            </Pressable>
+
+            {!parent ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="체크리스트 모드"
+                accessibilityState={{ selected: checklistMode }}
+                onPress={toggleChecklistMode}
+                style={({ pressed }) => [
+                  styles.barIcon,
+                  checklistMode && { backgroundColor: colors.accentSoft },
+                  { opacity: pressed ? 0.65 : 1 },
+                ]}>
+                <Icon name="check-square" size={18} color={checklistMode ? colors.accentText : colors.textMuted} />
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="메모 입력"
+              accessibilityState={{ selected: showNotes || !!notes.trim() }}
+              onPress={() => {
+                haptic.tap();
+                toggleNotes();
+              }}
+              style={({ pressed }) => [
+                styles.barIcon,
+                (showNotes || !!notes.trim()) && { backgroundColor: colors.accentSoft },
+                { opacity: pressed ? 0.65 : 1 },
+              ]}>
+              <Icon name="align-left" size={18} color={showNotes || !!notes.trim() ? colors.accentText : colors.textMuted} />
+            </Pressable>
+
+            {!parent ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="템플릿 불러오기"
+                onPress={handleOpenTemplates}
+                style={({ pressed }) => [styles.barIcon, { opacity: pressed ? 0.65 : 1 }]}>
+                <Icon name="bookmark" size={18} color={colors.textMuted} />
+              </Pressable>
+            ) : null}
+
+            {hasRawTokens ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="그대로 저장 전환"
+                accessibilityState={{ selected: plainText }}
+                onPress={() => {
+                  haptic.tap();
+                  setPlainText((on) => !on);
+                  closePane();
+                  input.current?.focus();
+                }}
+                style={({ pressed }) => [
+                  styles.barIcon,
+                  plainText && { backgroundColor: colors.accentSoft },
+                  { opacity: pressed ? 0.65 : 1 },
+                ]}>
+                <Icon name="type" size={18} color={plainText ? colors.accentText : colors.textMuted} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View style={styles.sendGroup}>
+            {added > 0 && !lastAdded ? (
+              <Txt variant="caption" tone="muted" tabular>{added}개</Txt>
+            ) : null}
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: isKeepOpenOn }}
+              accessibilityLabel="계속 추가 모드"
+              onPress={toggleKeepOpen}
+              style={({ pressed }) => [
+                styles.keepToggle,
+                {
+                  borderColor: isKeepOpenOn ? colors.accent : colors.border,
+                  backgroundColor: isKeepOpenOn ? colors.accentSoft : 'transparent',
+                  opacity: pressed ? 0.65 : 1,
+                },
+              ]}>
+              <Icon name="plus" size={14} color={isKeepOpenOn ? colors.accentText : colors.textMuted} />
+              <Txt variant="caption" tone={isKeepOpenOn ? 'accent' : 'muted'} style={{ fontWeight: '600' }}>계속</Txt>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="할 일 추가"
+              accessibilityState={{ disabled: !canSend }}
+              onPress={submit}
+              style={({ pressed }) => [
+                styles.send,
+                { backgroundColor: canSend ? colors.accent : colors.surfaceMuted, opacity: pressed ? 0.8 : 1 },
+              ]}>
+              <Icon name="arrow-up" size={20} color={canSend ? colors.onAccent : colors.textFaint} />
+            </Pressable>
+          </View>
         </View>
+
         {keyboardMode ? (
           <Txt variant="caption" tone="muted" numberOfLines={1} ellipsizeMode="tail" style={styles.keyboardHint}>
             {keyboardHint}
@@ -968,16 +1466,59 @@ function QuickAddSheet({ defaults, frame, onClose }: {
   );
 }
 
+/** Floating quick-add button: tap opens QuickAdd immediately; long-press opens quick actions. */
+export function QuickAddFab({
+  onPress, onLongPress, label = '할 일 빠른 추가', quiet = false, bottom, right,
+}: {
+  onPress: () => void;
+  onLongPress?: () => void;
+  label?: string;
+  quiet?: boolean;
+  bottom: number;
+  right: number;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Animated.View
+      entering={ZoomIn.duration(160)} pointerEvents="box-none"
+      style={[styles.fabWrap, { bottom, right }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={320}
+        style={({ pressed }) => [
+          styles.fab,
+          { backgroundColor: quiet ? colors.surface : colors.accent, transform: [{ scale: pressed ? 0.94 : 1 }] },
+          quiet && { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+          elevation(colors, 2),
+        ]}>
+        <Icon name="plus" size={26} color={quiet ? colors.textMuted : colors.onAccent} />
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 /** Hosts the floating add button on every signed-in screen and the entry bar it opens. */
 export function QuickAddProvider({ children }: { children: ReactNode }) {
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { column, twoPane } = useLayout();
   const segments: string[] = useSegments();
   const [active, setActive] = useState<{ key: number; defaults: QuickAddDefaults } | null>(null);
   const [fabHidden, setFabHidden] = useState(false);
+  const [fabMenuOpen, setFabMenuOpen] = useState(false);
+  const [templatesContext, setTemplatesContext] = useState<null | { projectId?: string | null; sectionId?: string | null; dueToday?: boolean }>(null);
+  const [planDayOpen, setPlanDayOpen] = useState(false);
   const screenDefaults = useRef<QuickAddDefaults | null>(null);
   const openKey = useRef(0);
+
+  const { tasks, roots } = useTaskIndex();
+  const { progress: subtaskProgress } = useSubtaskProgress();
+  const overdueTasks = useMemo(
+    () => (planDayOpen ? tasks.filter((t) => !t.parent_task_id && dueBucket(t) === 'overdue') : []),
+    [planDayOpen, tasks],
+  );
 
   const value = useMemo<QuickAddValue>(() => ({
     open: (defaults) => {
@@ -1001,29 +1542,88 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
       : column.maxWidth === undefined ? null : { width: column.maxWidth, maxWidth: '100%', alignSelf: 'center' }
   ), [paneFrame, column.maxWidth]);
 
+  const openFromMenu = (extra: Partial<QuickAddDefaults>) => {
+    setFabMenuOpen(false);
+    value.open({ ...(screenDefaults.current ?? {}), ...extra });
+  };
+
   return (
     <QuickAddContext.Provider value={value}>
       {children}
       {showButton && !active ? (
-        <Animated.View
-          entering={ZoomIn.duration(160)} pointerEvents="box-none"
-          style={[styles.fabWrap, { bottom: insets.bottom + TAB_BAR_HEIGHT + space.lg, right: fabRight }]}>
-          <Pressable
-            accessibilityRole="button" accessibilityLabel={onHabits ? '습관 추가' : '할 일 빠른 추가'}
-            onPress={() => {
-              haptic.light();
-              if (onHabits) router.push('/habit/new');
-              else value.open();
-            }}
-            style={({ pressed }) => [
-              styles.fab, { backgroundColor: quiet ? colors.surface : colors.accent, transform: [{ scale: pressed ? 0.94 : 1 }] },
-              quiet && { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, elevation(colors, 2),
-            ]}>
-            <Icon name="plus" size={26} color={quiet ? colors.textMuted : colors.onAccent} />
-          </Pressable>
-        </Animated.View>
+        <QuickAddFab
+          label={onHabits ? '습관 추가' : '할 일 빠른 추가'}
+          quiet={quiet}
+          bottom={insets.bottom + TAB_BAR_HEIGHT + space.lg}
+          right={fabRight}
+          onPress={() => {
+            haptic.light();
+            if (onHabits) router.push('/habit/new');
+            else value.open();
+          }}
+          onLongPress={onHabits ? undefined : () => {
+            haptic.medium();
+            setFabMenuOpen(true);
+          }} />
       ) : null}
-      {active ? <QuickAddSheet key={active.key} defaults={active.defaults} frame={barFrame} onClose={close} /> : null}
+
+      {active ? (
+        <QuickAddSheet
+          key={active.key}
+          defaults={active.defaults}
+          frame={barFrame}
+          onClose={close}
+          onOpenTemplates={(ctx) => setTemplatesContext(ctx)} />
+      ) : null}
+
+      <Sheet visible={fabMenuOpen} onClose={() => setFabMenuOpen(false)} title="빠른 실행">
+        <Row
+          icon="check-square"
+          label="체크리스트 빠르게 만들기"
+          detail="Enter로 항목 연속 입력"
+          onPress={() => openFromMenu({ initialMode: 'checklist' })} />
+        <Row
+          icon="bookmark"
+          label="템플릿 불러오기"
+          detail="자주 쓰는 체크리스트"
+          onPress={() => {
+            setFabMenuOpen(false);
+            const cur = screenDefaults.current;
+            setTemplatesContext({
+              projectId: cur?.projectId,
+              sectionId: cur?.sectionId,
+              dueToday: cur?.dueToday,
+            });
+          }} />
+        <Row
+          icon="layers"
+          label="연속 추가 모드"
+          detail="목록·태그·날짜 유지"
+          onPress={() => openFromMenu({ initialKeepOpen: true })} />
+        <Row
+          icon="compass"
+          label="오늘 하루 정리"
+          detail="밀린 일정 · 추천 작업"
+          onPress={() => {
+            setFabMenuOpen(false);
+            setPlanDayOpen(true);
+          }} />
+      </Sheet>
+
+      <TemplatesSheet
+        visible={templatesContext !== null}
+        onClose={() => setTemplatesContext(null)}
+        projectId={templatesContext?.projectId}
+        sectionId={templatesContext?.sectionId}
+        dueToday={templatesContext?.dueToday} />
+
+      <PlanDaySheet
+        visible={planDayOpen}
+        onClose={() => setPlanDayOpen(false)}
+        overdue={overdueTasks}
+        allOpen={tasks}
+        openRoots={roots}
+        subtaskProgress={subtaskProgress} />
     </QuickAddContext.Provider>
   );
 }
@@ -1035,7 +1635,7 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row', alignItems: 'center', gap: space.sm, marginBottom: 4,
   },
-  keepPill: {
+  topPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, height: 26, borderRadius: radius.pill,
   },
   notesInput: {
@@ -1046,22 +1646,64 @@ const styles = StyleSheet.create({
     marginTop: space.sm, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: 7,
     flexDirection: 'row', alignItems: 'center', gap: 6,
   },
+  checklistBox: {
+    marginTop: space.sm, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: 8, gap: 6,
+  },
+  checklistHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  checklistChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, height: 26,
+    borderRadius: radius.sm, borderWidth: StyleSheet.hairlineWidth,
+  },
   multiBox: {
     marginTop: space.sm, borderRadius: radius.md, padding: space.md, gap: space.sm,
   },
   paneBox: {
     marginTop: space.sm, borderRadius: radius.md, padding: space.sm, gap: space.xs,
   },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: space.md },
-  tools: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.md },
-  keyboardHint: { marginTop: space.sm },
-  insert: {
-    flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 10, height: 30,
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: space.sm },
+  editablePill: {
+    flexDirection: 'row', alignItems: 'center', borderRadius: radius.sm, borderWidth: 1, height: 30, overflow: 'hidden',
   },
+  editablePillMain: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 8, paddingRight: 6, height: '100%',
+  },
+  editablePillClose: {
+    paddingRight: 7, paddingLeft: 2, height: '100%', justifyContent: 'center', alignItems: 'center',
+  },
+  undoBanner: {
+    marginTop: space.sm, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: space.md, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  presetRow: {
+    marginTop: space.sm,
+  },
+  presetChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: radius.pill,
+    paddingHorizontal: 10, height: 28,
+  },
+  actionBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.xs, marginTop: space.sm,
+  },
+  iconGroup: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 1,
+  },
+  barIcon: {
+    flex: 1, maxWidth: 36, height: 34, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center',
+  },
+  sendGroup: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  keepToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 3, height: 34, paddingHorizontal: 9,
+    borderRadius: radius.pill, borderWidth: 1,
+  },
+  keyboardHint: { marginTop: space.sm },
   suggestion: {
     flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.sm, paddingHorizontal: 10, height: 30,
   },
-  send: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  send: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   fabWrap: { position: 'absolute' },
   fab: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
 });

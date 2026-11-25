@@ -7,6 +7,7 @@ import { type AccentId, DEFAULT_ACCENT, parseAccent } from '@/features/settings/
 import { type Colors, colorsFor } from './tokens';
 
 export { ACCENTS, type AccentId, type AccentPalette } from '@/features/settings/palettes';
+export { type MotionConfig, SPRING_GENTLE, SPRING_SNAPPY, TIMING_FAST, TIMING_SHEET, useMotion } from './motion';
 export type { Colors } from './tokens';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -18,16 +19,19 @@ export const radius = { sm: 8, md: 10, lg: 14, xl: 20, pill: 999 } as const;
  * each fontWeight from the family registered in app.config.ts; the web build falls back to the system font.
  */
 export const fontFamily = Platform.OS === 'android' ? 'Pretendard' : undefined;
+const androidFontFix = Platform.OS === 'android' ? ({ includeFontPadding: false } as const) : ({} as const);
 
 export const type = {
-  title: { fontSize: 26, lineHeight: 32, fontFamily, fontWeight: '800', letterSpacing: -0.3 },
-  heading: { fontSize: 20, lineHeight: 26, fontFamily, fontWeight: '700', letterSpacing: -0.2 },
-  section: { fontSize: 14, lineHeight: 20, fontFamily, fontWeight: '700' },
-  body: { fontSize: 16, lineHeight: 22, fontFamily, fontWeight: '400' },
-  bodyStrong: { fontSize: 16, lineHeight: 22, fontFamily, fontWeight: '600' },
-  small: { fontSize: 13, lineHeight: 18, fontFamily, fontWeight: '400' },
-  smallStrong: { fontSize: 13, lineHeight: 18, fontFamily, fontWeight: '600' },
-  caption: { fontSize: 11, lineHeight: 14, fontFamily, fontWeight: '500' },
+  title: { fontSize: 26, lineHeight: 32, fontFamily, fontWeight: '800', letterSpacing: -0.3, ...androidFontFix },
+  heading: { fontSize: 20, lineHeight: 26, fontFamily, fontWeight: '700', letterSpacing: -0.2, ...androidFontFix },
+  section: { fontSize: 14, lineHeight: 20, fontFamily, fontWeight: '700', letterSpacing: -0.1, ...androidFontFix },
+  body: { fontSize: 16, lineHeight: 22, fontFamily, fontWeight: '400', letterSpacing: -0.15, ...androidFontFix },
+  bodyStrong: { fontSize: 16, lineHeight: 22, fontFamily, fontWeight: '600', letterSpacing: -0.15, ...androidFontFix },
+  small: { fontSize: 13, lineHeight: 18, fontFamily, fontWeight: '400', ...androidFontFix },
+  smallStrong: { fontSize: 13, lineHeight: 18, fontFamily, fontWeight: '600', ...androidFontFix },
+  meta: { fontSize: 12, lineHeight: 16, fontFamily, fontWeight: '400', ...androidFontFix },
+  metaStrong: { fontSize: 12, lineHeight: 16, fontFamily, fontWeight: '600', ...androidFontFix },
+  caption: { fontSize: 11, lineHeight: 14, fontFamily, fontWeight: '500', ...androidFontFix },
 } as const;
 
 /** A soft lift for cards and floating controls that reads the same on both platforms. */

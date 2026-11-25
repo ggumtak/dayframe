@@ -1,5 +1,5 @@
-import { type ReactNode, useEffect } from 'react';
-import { type LayoutChangeEvent, View } from 'react-native';
+import { type ReactNode, useCallback, useEffect, useRef } from 'react';
+import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { type SharedValue, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
@@ -15,12 +15,14 @@ interface Drag {
   heights: SharedValue<number[]>;
 }
 
-function SortableRow({ index, count, drag, enabled, onDrop, onHold, children }: {
-  index: number; count: number; drag: Drag; enabled: boolean; onDrop: (from: number, to: number) => void;
+function SortableRow({ index, count, drag, enabled, onCancelDrop, onScheduleDrop, onHold, children }: {
+  index: number; count: number; drag: Drag; enabled: boolean;
+  onCancelDrop: () => void;
+  onScheduleDrop: (from: number, to: number) => void;
   /** A long press released without moving: the row is not dragged, so it can offer a menu instead. */
   onHold?: () => void; children: ReactNode;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { active, target, offset, heights } = drag;
 
   const slotFor = (translation: number) => {
@@ -50,6 +52,7 @@ function SortableRow({ index, count, drag, enabled, onDrop, onHold, children }: 
     .activateAfterLongPress(280)
     .runOnJS(true)
     .onStart(() => {
+      onCancelDrop();
       haptic.medium();
       offset.set(0);
       target.set(index);
@@ -66,21 +69,25 @@ function SortableRow({ index, count, drag, enabled, onDrop, onHold, children }: 
     })
     .onEnd((event) => {
       if (active.get() !== index) return;
+      onCancelDrop();
       if (onHold && Math.abs(event.translationY) < 8 && Math.abs(event.translationX) < 8) {
         offset.set(withTiming(0, { duration: 120 }));
         active.set(-1);
+        target.set(-1);
         onHold();
         return;
       }
       const slot = target.get();
       offset.set(withTiming(settle(slot), { duration: 140 }));
       // Commit after the row has slid into its slot, so the list re-renders in place.
-      setTimeout(() => onDrop(index, slot), 150);
+      onScheduleDrop(index, slot);
     })
     .onFinalize((_event, success) => {
       if (!success && active.get() === index) {
+        onCancelDrop();
         offset.set(withTiming(0, { duration: 140 }));
         active.set(-1);
+        target.set(-1);
       }
     });
 
@@ -101,10 +108,30 @@ function SortableRow({ index, count, drag, enabled, onDrop, onHold, children }: 
     };
   });
 
-  const raised = { backgroundColor: colors.surface, borderRadius: 12, ...elevation(colors, 2) };
-  const lifted = useAnimatedStyle(() => (active.value === index
-    ? raised
-    : { backgroundColor: 'transparent', borderRadius: 0, shadowOpacity: 0, elevation: 0 }));
+  const raised = isDark
+    ? {
+      backgroundColor: colors.surfaceElevated,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      ...elevation(colors, 2),
+    }
+    : {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      borderWidth: 0,
+      borderColor: 'transparent',
+      ...elevation(colors, 2),
+    };
+  const resting = {
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    shadowOpacity: 0,
+    elevation: 0,
+  };
+  const lifted = useAnimatedStyle(() => (active.value === index ? raised : resting));
 
   const measure = (event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout;
@@ -125,7 +152,7 @@ function SortableRow({ index, count, drag, enabled, onDrop, onHold, children }: 
 export function SortableList<T>({ items, keyOf, renderItem, onReorder, onHold, enabled = true }: {
   items: T[];
   keyOf: (item: T) => string;
-  renderItem: (item: T) => ReactNode;
+  renderItem: (item: T, index: number) => ReactNode;
   onReorder: (items: T[], moved: T) => void;
   /** Long press and release in place; long press and move still drags. */
   onHold?: (item: T) => void;
@@ -137,32 +164,67 @@ export function SortableList<T>({ items, keyOf, renderItem, onReorder, onHold, e
   const heights = useSharedValue<number[]>([]);
   const drag: Drag = { active, target, offset, heights };
   const order = items.map(keyOf).join('|');
+  const dropTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useRef({ items, onReorder });
+
+  useEffect(() => {
+    latest.current = { items, onReorder };
+  });
+
+  const cancelDrop = useCallback(() => {
+    if (dropTimer.current) {
+      clearTimeout(dropTimer.current);
+      dropTimer.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancelDrop, [cancelDrop]);
 
   useEffect(() => {
     // Rows now sit in their new slots; clear the transforms that got them there.
     active.set(-1);
+    target.set(-1);
     offset.set(0);
-  }, [order, active, offset]);
+  }, [order, active, target, offset]);
 
-  const drop = (from: number, to: number) => {
-    if (from === to || !items[from]) {
-      active.set(-1);
-      offset.set(0);
-      return;
+  useEffect(() => {
+    // Trim stale trailing measurements whenever items shrink.
+    const current = heights.get();
+    if (current.length > items.length) {
+      heights.set(current.slice(0, items.length));
     }
-    const next = items.slice();
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    onReorder(next, moved);
-  };
+  }, [items.length, heights]);
+
+  const scheduleDrop = useCallback((from: number, to: number) => {
+    cancelDrop();
+    dropTimer.current = setTimeout(() => {
+      dropTimer.current = null;
+      const { items: currentItems, onReorder: reorder } = latest.current;
+      if (from === to || !currentItems[from] || to < 0 || to >= currentItems.length) {
+        active.set(-1);
+        target.set(-1);
+        offset.set(0);
+        return;
+      }
+      const next = currentItems.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      // Reset drag state cleanly even if the caller rejects or no-ops the reorder.
+      active.set(-1);
+      target.set(-1);
+      offset.set(0);
+      reorder(next, moved);
+    }, 150);
+  }, [active, cancelDrop, offset, target]);
 
   return (
     <View>
       {items.map((item, index) => (
         <SortableRow
-          key={keyOf(item)} index={index} count={items.length} drag={drag} enabled={enabled} onDrop={drop}
+          key={keyOf(item)} index={index} count={items.length} drag={drag} enabled={enabled}
+          onCancelDrop={cancelDrop} onScheduleDrop={scheduleDrop}
           onHold={onHold ? () => onHold(item) : undefined}>
-          {renderItem(item)}
+          {renderItem(item, index)}
         </SortableRow>
       ))}
     </View>

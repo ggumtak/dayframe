@@ -7,7 +7,8 @@ import { Chip, Icon, type IconName, Row, Sheet, Txt } from '@/components/ui';
 import { useProjects, useSections, useSubtaskProgress, useTagNames, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { KEY_PRIORITY, matchesCombo, useKeyHandler } from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
-import { describeRecurrence, formatDue, formatDurationMinutes, today } from '@/lib/dates';
+import { usePersonalPrefs } from '@/features/settings/prefsStore';
+import { describeRecurrence, deviceTimeZone, formatDue, formatDurationMinutes, logicalToday, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import type { Priority, Task } from '@/lib/shared';
@@ -15,16 +16,19 @@ import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
 import { listColor } from './listColors';
+import { useDailyFocus } from './mitStore';
 import { priorityA11y, priorityOption } from './priority';
 import { useProjectMetaMap } from './projectMeta';
 import { toMarkdownChecklist, useTaskFlow } from './useTaskFlow';
 
 /** A neutral quick action: no action here outranks the others, so none takes a colour. */
-function Action({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+function Action({ icon, label, accessibilityLabel, onPress }: {
+  icon: IconName; label: string; accessibilityLabel?: string; onPress: () => void;
+}) {
   const { colors } = useTheme();
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
+      accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} onPress={onPress}
       style={({ pressed }) => [styles.action, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 }]}>
       <Icon name={icon} size={20} color={colors.textMuted} />
       <Txt variant="caption">{label}</Txt>
@@ -51,16 +55,18 @@ export function TaskMenu({
 }
 
 function TaskMenuContent({
-  task, onClose, onSchedule, onStartSelect, onBreakdown,
+  task: opened, onClose, onSchedule, onStartSelect, onBreakdown,
 }: {
   task: Task; onClose: () => void; onSchedule: (task: Task) => void; onStartSelect?: (task: Task) => void;
   onBreakdown?: (task: Task) => void;
 }) {
   const { colors, isDark } = useTheme();
+  const prefs = usePersonalPrefs();
   const projectMeta = useProjectMetaMap();
   const flow = useTaskFlow();
   const actions = useTaskActions();
-  const { children } = useTaskIndex();
+  const { byId, children } = useTaskIndex();
+  const task = byId.get(opened.id) ?? opened;
   const { completedChildren } = useSubtaskProgress();
   const { data: projects } = useProjects();
   const { data: sections } = useSections();
@@ -68,8 +74,13 @@ function TaskMenuContent({
   const quickAdd = useQuickAdd();
   const [movingProject, setMovingProject] = useState(false);
 
+  const logicalDate = logicalToday(deviceTimeZone(), prefs.dayStartHour).toString();
+  const dailyFocus = useDailyFocus(logicalDate);
+  const isMit = dailyFocus.isMit(task.id);
+  const isEvening = dailyFocus.isEvening(task.id);
+
   const now = today(task.timezone);
-  const due = formatDue(task);
+  const due = formatDue(task, prefs.timeFormat);
   const repeat = describeRecurrence(task.recurrence_rule, task.recurrence_mode);
   const durationLabel = task.duration_minutes ? formatDurationMinutes(task.duration_minutes) : null;
   const projectName = task.project_id ? projects?.find((item) => item.id === task.project_id)?.name : undefined;
@@ -84,10 +95,30 @@ function TaskMenuContent({
   const openFocus = () => run(() => router.navigate({
     pathname: '/focus',
     params: {
-      taskId: task.id, at: String(Date.now()),
-      ...(task.duration_minutes ? { duration: String(task.duration_minutes) } : {}),
+      taskId: task.id,
+      title: task.title,
+      autostart: '1',
+      at: String(Date.now()),
+      ...(task.duration_minutes ? { duration: String(task.duration_minutes), minutes: String(task.duration_minutes) } : {}),
     },
   }));
+
+  const toggleMit = () => {
+    const result = dailyFocus.toggleMit(task.id);
+    if (result.full) {
+      haptic.warning();
+      showToast('오늘의 핵심은 최대 3개까지 고정할 수 있습니다.');
+      return;
+    }
+    haptic.tap();
+    showToast(isMit ? '오늘의 핵심에서 해제했습니다.' : '오늘의 핵심으로 고정했습니다.');
+  };
+
+  const toggleEvening = () => {
+    dailyFocus.toggleEvening(task.id);
+    haptic.tap();
+    showToast(isEvening ? '오늘 저녁에서 해제했습니다.' : '오늘 저녁으로 옮겼습니다.');
+  };
 
   const copyTask = () => run(() => {
     const payload = openSubs.length + doneSubs.length > 0
@@ -130,7 +161,7 @@ function TaskMenuContent({
         || matchesCombo(event, '4')
       ) {
         haptic.tap();
-        run(() => actions.update(task.id, { priority: Number(event.key) as Priority }));
+        actions.update(task.id, { priority: Number(event.key) as Priority });
         return true;
       }
       if (matchesCombo(event, 'u') && !task.parent_task_id) {
@@ -169,10 +200,10 @@ function TaskMenuContent({
       </View>
 
       <View style={styles.actions}>
-        <Action icon="check" label="완료" onPress={() => run(() => flow.complete(task))} />
+        <Action icon="play" label="집중" accessibilityLabel="집중 시작" onPress={openFocus} />
         <Action icon="sun" label="오늘" onPress={() => run(() => flow.reschedule(task, now))} />
         <Action icon="sunrise" label="내일" onPress={() => run(() => flow.reschedule(task, now.add({ days: 1 })))} />
-        <Action icon="calendar" label="날짜·시간" onPress={() => run(() => onSchedule(task))} />
+        <Action icon="calendar" label="일정" accessibilityLabel="날짜·시간" onPress={() => run(() => onSchedule(task))} />
       </View>
 
       <View style={styles.priorities}>
@@ -183,11 +214,12 @@ function TaskMenuContent({
               key={priority} accessibilityRole="button" accessibilityLabel={priorityA11y(priority)} accessibilityState={{ selected: active }}
               onPress={() => {
                 haptic.tap();
-                run(() => actions.update(task.id, { priority }));
+                actions.update(task.id, { priority });
               }}
               style={[styles.priority, { borderColor: active ? colors.accent : colors.border, backgroundColor: active ? colors.accentSoft : 'transparent' }]}>
+              {active ? <Icon name="check" size={11} color={colors.accentText} /> : null}
               <Txt
-                variant="caption" numberOfLines={1} maxFontSizeMultiplier={1.3}
+                variant="caption" numberOfLines={1} maxFontSizeMultiplier={1.25}
                 style={{ color: active ? colors.accentText : colors.textMuted, fontWeight: active ? '700' : '600', flexShrink: 1 }}>
                 {priorityOption(priority)}
               </Txt>
@@ -215,6 +247,29 @@ function TaskMenuContent({
       </View>
 
       <ScrollView style={{ maxHeight: 320, marginTop: space.sm }}>
+        <Row icon="check" label="완료" onPress={() => run(() => flow.complete(task))} />
+        {!task.parent_task_id ? (
+          <>
+            <Row
+              icon="star"
+              label={isMit ? '오늘의 핵심 해제' : '오늘의 핵심 고정'}
+              detail={`${dailyFocus.mitIds.length}/3`}
+              trailing={isMit ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
+              onPress={toggleMit} />
+            <Row
+              icon="moon"
+              label={isEvening ? '오늘 저녁 해제' : '오늘 저녁으로'}
+              trailing={isEvening ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
+              onPress={toggleEvening} />
+          </>
+        ) : null}
+        {task.recurrence_rule ? (
+          <Row
+            icon="skip-forward"
+            label="이번 반복 건너뛰기"
+            detail={repeat ?? undefined}
+            onPress={() => run(() => flow.skipOccurrence(task))} />
+        ) : null}
         {!task.parent_task_id && projects?.length ? (
           <>
             <Row
@@ -279,7 +334,6 @@ function TaskMenuContent({
         <Row
           icon="copy" label="할 일 복제" detail={openSubs.length + doneSubs.length > 0 ? `하위 ${openSubs.length + doneSubs.length}개 포함` : undefined}
           onPress={() => run(() => flow.duplicate(task, { openSubtasks: openSubs, completedSubtasks: doneSubs, tagNames: tagNames.get(task.id) }))} />
-        <Row icon="clock" label="이 할 일로 집중 시작" detail={durationLabel ?? undefined} onPress={openFocus} />
         <Row icon="clipboard" label={openSubs.length + doneSubs.length > 0 ? '체크리스트 복사' : '제목 복사'} onPress={copyTask} />
         <Row icon="maximize-2" label="자세히 보기" onPress={() => run(() => router.push({ pathname: '/task/[id]', params: { id: task.id } }))} />
         <Row icon="trash-2" label="삭제" tone="danger" onPress={() => run(() => flow.remove(task))} />
@@ -292,9 +346,9 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: space.sm },
   action: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, height: 64, borderRadius: radius.md },
   priorities: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  // Four across on a 360dp screen: "가장 높음" at caption size with a 12px flag fits in a quarter of the row.
+  // Four across on a 360dp screen: "가장 높음" at caption size with an active checkmark fits in a quarter of the row.
   priority: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, height: 38, paddingHorizontal: 4,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, height: 38, paddingHorizontal: 3,
     borderRadius: radius.md, borderWidth: 1,
   },
   durations: { flexDirection: 'row', gap: 6, marginTop: space.sm },

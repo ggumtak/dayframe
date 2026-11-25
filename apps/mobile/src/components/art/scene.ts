@@ -7,6 +7,8 @@
 //
 // This file must stay free of React and React Native imports: node runs it directly (type stripping).
 
+import { contrastRatio, mixHex, relativeLuminance } from '../../theme/color.ts';
+
 /** The theme colours the artwork reads. A structural subset of the app's `Colors`. */
 export interface ArtColors {
   background: string;
@@ -69,54 +71,45 @@ export interface Art {
 
 // ---- colour maths ----------------------------------------------------------------------------------------
 
-function parseHex(hex: string): [number, number, number] | null {
+function normalizeHex(hex: string): string | null {
   const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return null;
   const s = m[1].length === 3 ? m[1].split('').map((ch) => ch + ch).join('') : m[1];
-  return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
+  return '#' + s.toUpperCase();
 }
-
-const toHex = (rgb: number[]) => '#' + rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('').toUpperCase();
 
 /** Blends `a` towards `b` by `t` (0 = a, 1 = b). Non-hex input falls back to whichever side dominates. */
 export function mix(a: string, b: string, t: number): string {
-  const ca = parseHex(a);
-  const cb = parseHex(b);
+  const ca = normalizeHex(a);
+  const cb = normalizeHex(b);
   if (!ca || !cb) return t < 0.5 ? a : b;
-  return toHex(ca.map((v, i) => v + (cb[i] - v) * t));
-}
-
-function luminance(hex: string): number {
-  const c = parseHex(hex);
-  if (!c) return 0;
-  const [r, g, b] = c.map((v) => {
-    const s = v / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return mixHex(ca, cb, Math.min(1, Math.max(0, t)));
 }
 
 /** WCAG contrast ratio between two hex colours. */
 export function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (hi + 0.05) / (lo + 0.05);
+  const ca = normalizeHex(a);
+  const cb = normalizeHex(b);
+  if (!ca || !cb) return 1;
+  return contrastRatio(ca, cb);
 }
 
 export function artPalette(c: ArtColors): ArtPalette {
   // On a dark theme `surface` is darker than `surfaceMuted`, so paper would read as a hole in the ground disc.
   // There the disc sinks towards the background and paper lifts towards the border instead.
-  const dark = luminance(c.background) < 0.2;
+  const bgHex = normalizeHex(c.background);
+  const dark = bgHex ? relativeLuminance(bgHex) < 0.2 : false;
   return {
     bg: c.background,
     paper: dark ? mix(c.surfaceMuted, c.border, 0.5) : c.surface,
     ground: dark ? mix(c.background, c.surfaceMuted, 0.7) : c.surfaceMuted,
     faint: c.border,
     line: mix(c.border, c.textFaint, 0.55),
-    // Monochrome by design (DESIGN.md): the accent is kept for the one shape that matters; its echoes and the old
-    // warm touches (sparkles, sun, moon) are drawn in the same neutrals as the rest of the piece.
+    // Strictly 1-hue (DESIGN.md): tonal depth follows the same surface→accent ramp as `accentRamp` (22% / 50% / 100%),
+    // while the old warm touches (sparkles, sun, moon) stay neutral cool grey.
     accent: c.accent,
-    accentSoft: dark ? mix(c.background, c.border, 0.8) : mix(c.surfaceMuted, c.border, 0.6),
-    accentMid: mix(c.border, c.textFaint, 0.35),
+    accentSoft: mixHex(c.surface, c.accent, 0.22),
+    accentMid: mixHex(c.surface, c.accent, 0.5),
     warm: mix(c.border, c.textFaint, 0.55),
     warmSoft: dark ? mix(c.background, c.surfaceMuted, 0.7) : c.surfaceMuted,
     onAccent: c.onAccent,

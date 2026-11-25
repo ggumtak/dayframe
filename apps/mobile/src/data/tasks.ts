@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo, useSyncExternalStore } from 'react';
 
 import { api, ApiFailure } from '@/lib/api';
-import { deviceTimeZone, dueBucket, dueMinutes, instantFor, sameInstant, Temporal, today } from '@/lib/dates';
+import { deviceTimeZone, dueBucket, dueDate, dueMinutes, instantFor, sameInstant, Temporal, today } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
 import {
   movedOccurrenceSlot, nextOccurrence, occurrenceFloor, type Project, type Section, type SectionInput, type SectionPatch,
@@ -267,15 +267,52 @@ queryClient.setMutationDefaults(writes.reorderTasks, {
   onSettled: () => settle(keys.tasks),
 });
 
+/** Rescheduled `{ due_at, all_day }` for an overdue task; drops a wall-clock time that has already passed today. */
+export function rescheduledOverdueFields(
+  task: Pick<Task, 'due_at' | 'timezone' | 'all_day'>,
+  nowMs: number = Date.now(),
+): { due_at: string; all_day: boolean } {
+  const targetDay = today(task.timezone);
+  const candidate = instantFor(targetDay, dueMinutes(task), task.timezone);
+  if (!task.all_day && Date.parse(candidate) < nowMs) {
+    return { due_at: instantFor(targetDay, null, task.timezone), all_day: true };
+  }
+  return { due_at: candidate, all_day: task.all_day };
+}
+
 queryClient.setMutationDefaults(writes.rescheduleOverdue, {
   scope,
-  mutationFn: () => api.rescheduleOverdue(),
+  mutationFn: async () => {
+    const now = Date.now();
+    const pastWallClock = (await api.openTasks()).filter((task) => (
+      dueBucket(task) === 'overdue' && !task.all_day && rescheduledOverdueFields(task, now).all_day
+    ));
+    let converted = 0;
+    for (const task of pastWallClock) {
+      const next = rescheduledOverdueFields(task, now);
+      try {
+        await api.updateTask(task.id, next);
+        converted += 1;
+      } catch (error) {
+        if (!(error instanceof ApiFailure && error.status === 404)) throw error;
+      }
+    }
+    const result = await api.rescheduleOverdue();
+    return { count: result.count + converted };
+  },
   onMutate: async () => {
     await hold(keys.tasks);
-    // Mirrors the server: keep each task's wall time and move only its date.
-    editTasks((tasks) => tasks.map((task) => (dueBucket(task) === 'overdue'
-      ? { ...task, due_at: instantFor(today(task.timezone), dueMinutes(task), task.timezone) }
-      : task)));
+    const now = Date.now();
+    editTasks((tasks) => tasks.map((task) => {
+      if (dueBucket(task) !== 'overdue') return task;
+      const next = rescheduledOverdueFields(task, now);
+      return {
+        ...task,
+        ...next,
+        ...(next.all_day && !task.all_day ? { occurrence_at: null } : {}),
+        ...(next.all_day && task.recurrence_rule ? { recurrence_local_time: null } : {}),
+      };
+    }));
   },
   onSettled: () => settle(keys.tasks),
 });
@@ -296,6 +333,108 @@ queryClient.setMutationDefaults(writes.setTaskTags, {
     ]);
   },
   onSettled: () => settle(keys.taskTags),
+});
+
+export interface UpdateSectionVars { id: string; patch: SectionPatch }
+export interface RenameVars { id: string; name: string }
+
+queryClient.setMutationDefaults(writes.createSection, {
+  scope,
+  mutationFn: (input: SectionInput) => api.createSection(input),
+  onSuccess: (section: Section) => {
+    queryClient.setQueryData<Section[]>(keys.sections, (list) => [...(list ?? []).filter((item) => item.id !== section.id), section]);
+  },
+  onSettled: () => settle(keys.sections),
+});
+
+queryClient.setMutationDefaults(writes.updateSection, {
+  scope,
+  mutationFn: ({ id, patch }: UpdateSectionVars) => api.updateSection(id, patch),
+  onMutate: async ({ id, patch }: UpdateSectionVars) => {
+    await hold(keys.sections);
+    queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.map((section) => (section.id === id ? { ...section, ...patch } : section)));
+  },
+  onSettled: () => settle(keys.sections),
+});
+
+queryClient.setMutationDefaults(writes.deleteSection, {
+  scope,
+  mutationFn: (id: string) => api.deleteSection(id),
+  onMutate: async (id: string) => {
+    await hold(keys.sections, keys.tasks);
+    queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.filter((section) => section.id !== id));
+    editTasks((tasks) => tasks.map((task) => (task.section_id === id ? { ...task, section_id: null } : task)));
+  },
+  onSettled: () => settle(keys.sections, keys.tasks),
+});
+
+queryClient.setMutationDefaults(writes.createProject, {
+  scope,
+  mutationFn: (name: string) => api.createProject({ name }),
+  onSuccess: (project: Project) => {
+    queryClient.setQueryData<Project[]>(keys.projects, (list) => [...(list ?? []).filter((item) => item.id !== project.id), project]);
+  },
+  onSettled: () => settle(keys.projects),
+});
+
+queryClient.setMutationDefaults(writes.updateProject, {
+  scope,
+  mutationFn: ({ id, name }: RenameVars) => api.updateProject(id, { name }),
+  onMutate: async ({ id, name }: RenameVars) => {
+    await hold(keys.projects);
+    queryClient.setQueryData<Project[]>(keys.projects, (list) => list?.map((project) => (project.id === id ? { ...project, name } : project)));
+  },
+  onSettled: () => settle(keys.projects),
+});
+
+queryClient.setMutationDefaults(writes.deleteProject, {
+  scope,
+  mutationFn: (id: string) => api.deleteProject(id),
+  onMutate: async (id: string) => {
+    await hold(keys.projects, keys.sections, keys.tasks);
+    queryClient.setQueryData<Project[]>(keys.projects, (list) => list?.filter((project) => project.id !== id));
+    queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.filter((section) => section.project_id !== id));
+    editTasks((tasks) => {
+      const dropped = new Set<string>();
+      for (const task of tasks) {
+        if (task.project_id === id) {
+          for (const item of withDescendants(tasks, task.id)) dropped.add(item);
+        }
+      }
+      return tasks.filter((task) => !dropped.has(task.id));
+    });
+  },
+  onSettled: () => settle(keys.projects, keys.sections, keys.tasks, keys.taskTags, keys.completedTasks),
+});
+
+queryClient.setMutationDefaults(writes.createTag, {
+  scope,
+  mutationFn: (name: string) => api.createTag(name),
+  onSuccess: (tag: Tag) => {
+    queryClient.setQueryData<Tag[]>(keys.tags, (list) => [...(list ?? []).filter((item) => item.id !== tag.id), tag]);
+  },
+  onSettled: () => settle(keys.tags),
+});
+
+queryClient.setMutationDefaults(writes.updateTag, {
+  scope,
+  mutationFn: ({ id, name }: RenameVars) => api.updateTag(id, name),
+  onMutate: async ({ id, name }: RenameVars) => {
+    await hold(keys.tags);
+    queryClient.setQueryData<Tag[]>(keys.tags, (list) => list?.map((tag) => (tag.id === id ? { ...tag, name } : tag)));
+  },
+  onSettled: () => settle(keys.tags),
+});
+
+queryClient.setMutationDefaults(writes.deleteTag, {
+  scope,
+  mutationFn: (id: string) => api.deleteTag(id),
+  onMutate: async (id: string) => {
+    await hold(keys.tags, keys.taskTags);
+    queryClient.setQueryData<Tag[]>(keys.tags, (list) => list?.filter((tag) => tag.id !== id));
+    queryClient.setQueryData<TaskTag[]>(keys.taskTags, (links) => links?.filter((link) => link.tag_id !== id));
+  },
+  onSettled: () => settle(keys.tags, keys.taskTags),
 });
 
 /** Creates the tag if needed and attaches it. Needs a connection, since a new tag has no ID to queue against. */
@@ -360,13 +499,23 @@ export const useCompletedTasks = () => useQuery({
   queryKey: keys.completedTasks, queryFn: api.completedTasks, staleTime: 60_000, meta: { persist: false },
 });
 
-export const byPosition = (a: Task, b: Task) => a.position - b.position || (a.id < b.id ? -1 : 1);
+export const byPosition = (a: Task, b: Task) => a.position - b.position || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-/** Sorts scheduled work the way a day is read: timed/earliest items in order, then by priority. */
+/** Sorts scheduled work the way a day is read: by calendar day, timed items chronologically before all-day items, undated last. */
 export function bySchedule(a: Task, b: Task): number {
-  const aMs = a.due_at ? Date.parse(a.due_at) : Number.POSITIVE_INFINITY;
-  const bMs = b.due_at ? Date.parse(b.due_at) : Number.POSITIVE_INFINITY;
-  if (aMs !== bMs) return aMs - bMs;
+  const aDate = dueDate(a);
+  const bDate = dueDate(b);
+  if (!aDate && !bDate) return a.priority - b.priority || byPosition(a, b);
+  if (!aDate) return 1;
+  if (!bDate) return -1;
+  const dayOrder = Temporal.PlainDate.compare(aDate, bDate);
+  if (dayOrder !== 0) return dayOrder;
+  if (a.all_day !== b.all_day) return a.all_day ? 1 : -1;
+  if (!a.all_day) {
+    const aMs = a.due_at ? Date.parse(a.due_at) : Number.POSITIVE_INFINITY;
+    const bMs = b.due_at ? Date.parse(b.due_at) : Number.POSITIVE_INFINITY;
+    if (aMs !== bMs) return aMs - bMs;
+  }
   return a.priority - b.priority || byPosition(a, b);
 }
 
@@ -383,30 +532,9 @@ export function byTitle(a: Task, b: Task): number {
 
 /** Create, rename, or delete a section inside a project; deleting clears task section links on the server. */
 export function useSectionActions() {
-  const create = useMutation({
-    mutationFn: (input: SectionInput) => api.createSection(input),
-    onSuccess: (section) => {
-      queryClient.setQueryData<Section[]>(keys.sections, (list) => [...(list ?? []).filter((item) => item.id !== section.id), section]);
-    },
-    onSettled: () => settle(keys.sections),
-  });
-  const rename = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: SectionPatch }) => api.updateSection(id, patch),
-    onMutate: async ({ id, patch }) => {
-      await hold(keys.sections);
-      queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.map((section) => (section.id === id ? { ...section, ...patch } : section)));
-    },
-    onSettled: () => settle(keys.sections),
-  });
-  const remove = useMutation({
-    mutationFn: (id: string) => api.deleteSection(id),
-    onMutate: async (id) => {
-      await hold(keys.sections, keys.tasks);
-      queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.filter((section) => section.id !== id));
-      editTasks((tasks) => tasks.map((task) => (task.section_id === id ? { ...task, section_id: null } : task)));
-    },
-    onSettled: () => settle(keys.sections, keys.tasks),
-  });
+  const create = useMutation<Section, Error, SectionInput>({ mutationKey: writes.createSection, scope });
+  const rename = useMutation<Section, Error, UpdateSectionVars>({ mutationKey: writes.updateSection, scope });
+  const remove = useMutation<void, Error, string>({ mutationKey: writes.deleteSection, scope });
   return {
     create: (projectId: string, name: string, position?: number, onSuccess?: (section: Section) => void) =>
       create.mutate({ project_id: projectId, name, ...(position !== undefined ? { position } : {}) }, { onSuccess }),
@@ -418,39 +546,9 @@ export function useSectionActions() {
 
 /** Create, rename, or delete a project; deleting cascades to its tasks on the server. */
 export function useProjectActions() {
-  const create = useMutation({
-    mutationFn: (name: string) => api.createProject({ name }),
-    onSuccess: (project) => {
-      queryClient.setQueryData<Project[]>(keys.projects, (list) => [...(list ?? []).filter((item) => item.id !== project.id), project]);
-    },
-    onSettled: () => settle(keys.projects),
-  });
-  const rename = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => api.updateProject(id, { name }),
-    onMutate: async ({ id, name }) => {
-      await hold(keys.projects);
-      queryClient.setQueryData<Project[]>(keys.projects, (list) => list?.map((project) => (project.id === id ? { ...project, name } : project)));
-    },
-    onSettled: () => settle(keys.projects),
-  });
-  const remove = useMutation({
-    mutationFn: (id: string) => api.deleteProject(id),
-    onMutate: async (id) => {
-      await hold(keys.projects, keys.sections, keys.tasks);
-      queryClient.setQueryData<Project[]>(keys.projects, (list) => list?.filter((project) => project.id !== id));
-      queryClient.setQueryData<Section[]>(keys.sections, (list) => list?.filter((section) => section.project_id !== id));
-      editTasks((tasks) => {
-        const dropped = new Set<string>();
-        for (const task of tasks) {
-          if (task.project_id === id) {
-            for (const item of withDescendants(tasks, task.id)) dropped.add(item);
-          }
-        }
-        return tasks.filter((task) => !dropped.has(task.id));
-      });
-    },
-    onSettled: () => settle(keys.projects, keys.sections, keys.tasks, keys.taskTags, keys.completedTasks),
-  });
+  const create = useMutation<Project, Error, string>({ mutationKey: writes.createProject, scope });
+  const rename = useMutation<Project, Error, RenameVars>({ mutationKey: writes.updateProject, scope });
+  const remove = useMutation<void, Error, string>({ mutationKey: writes.deleteProject, scope });
   return {
     create: (name: string, onSuccess?: (project: Project) => void) => create.mutate(name, { onSuccess }),
     rename: (id: string, name: string) => rename.mutate({ id, name }),
@@ -459,26 +557,13 @@ export function useProjectActions() {
   };
 }
 
-/** Rename or delete a tag; deleting removes its links from tasks on the server. */
+/** Create, rename, or delete a tag; deleting removes its links from tasks on the server. */
 export function useTagActions() {
-  const rename = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => api.updateTag(id, name),
-    onMutate: async ({ id, name }) => {
-      await hold(keys.tags);
-      queryClient.setQueryData<Tag[]>(keys.tags, (list) => list?.map((tag) => (tag.id === id ? { ...tag, name } : tag)));
-    },
-    onSettled: () => settle(keys.tags),
-  });
-  const remove = useMutation({
-    mutationFn: (id: string) => api.deleteTag(id),
-    onMutate: async (id) => {
-      await hold(keys.tags, keys.taskTags);
-      queryClient.setQueryData<Tag[]>(keys.tags, (list) => list?.filter((tag) => tag.id !== id));
-      queryClient.setQueryData<TaskTag[]>(keys.taskTags, (links) => links?.filter((link) => link.tag_id !== id));
-    },
-    onSettled: () => settle(keys.tags, keys.taskTags),
-  });
+  const create = useMutation<Tag, Error, string>({ mutationKey: writes.createTag, scope });
+  const rename = useMutation<Tag, Error, RenameVars>({ mutationKey: writes.updateTag, scope });
+  const remove = useMutation<void, Error, string>({ mutationKey: writes.deleteTag, scope });
   return {
+    create: (name: string, onSuccess?: (tag: Tag) => void) => create.mutate(name, { onSuccess }),
     rename: (id: string, name: string) => rename.mutate({ id, name }),
     remove: (id: string) => remove.mutate(id),
   };

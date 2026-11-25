@@ -12,7 +12,7 @@ for (const palette of ACCENTS) {
   for (const dark of [false, true]) {
     const mode = dark ? 'dark' : 'light';
     const c = colorsFor(dark, palette.id);
-    const pages = [c.background, c.surface, c.surfaceMuted];
+    const pages = [c.background, c.surface, c.surfaceElevated, c.surfaceMuted];
 
     test(`${palette.label} ${mode}: text on a filled accent reaches 4.5:1`, () => {
       assert.ok(ratio(c.onAccent, c.accent) >= 4.5, `${c.onAccent} on ${c.accent}: ${ratio(c.onAccent, c.accent).toFixed(2)}`);
@@ -26,6 +26,7 @@ for (const palette of ACCENTS) {
 
     test(`${palette.label} ${mode}: accent graphics (rings, cells, checked boxes) reach 3:1 on the surface`, () => {
       assert.ok(ratio(c.accent, c.surface) >= 3, `${ratio(c.accent, c.surface).toFixed(2)}`);
+      assert.ok(ratio(c.accent, c.surfaceElevated) >= 3, `${ratio(c.accent, c.surfaceElevated).toFixed(2)}`);
       assert.ok(ratio(c.accent, c.background) >= 3);
     });
 
@@ -45,7 +46,7 @@ for (const palette of ACCENTS) {
 for (const dark of [false, true]) {
   const mode = dark ? 'dark' : 'light';
   const c = colorsFor(dark, 'blue');
-  const pages = [c.background, c.surface, c.surfaceMuted];
+  const pages = [c.background, c.surface, c.surfaceElevated, c.surfaceMuted];
 
   test(`${mode}: text levels — text and textMuted reach 4.5:1, textFaint and controls 3:1, on every page tone`, () => {
     for (const page of pages) {
@@ -69,17 +70,19 @@ test('dark mode is tuned on its own: desaturated red, off-white text, no pure bl
   const light = colorsFor(false, 'blue');
   const dark = colorsFor(true, 'blue');
   assert.ok(toOklch(dark.danger).c < toOklch(light.danger).c * 0.85);
-  for (const key of ['text', 'textMuted', 'textFaint', 'onAccent'] as const) {
+  for (const key of ['text', 'textMuted', 'textFaint', 'onAccent', 'surfaceElevated'] as const) {
     assert.notEqual(dark[key].toUpperCase(), '#FFFFFF');
     assert.notEqual(dark[key].toUpperCase(), '#000000');
   }
   assert.notEqual(dark.background.toUpperCase(), '#000000');
+  assert.ok(relativeLuminance(dark.surfaceElevated) > relativeLuminance(dark.surface), 'surfaceElevated lifts above dark surface');
 });
 
 test('one neutral temperature: every grey is a faint cool tint of the same hue family', () => {
   for (const base of [BASES.light, BASES.dark]) {
     const greys = [base.surfaceMuted, base.border, base.control, base.text, base.textMuted, base.textFaint];
     if (base.background !== '#FFFFFF') greys.push(base.background, base.surface);
+    if (base.surfaceElevated !== '#FFFFFF') greys.push(base.surfaceElevated);
     for (const grey of greys) {
       const { c, h } = toOklch(grey);
       assert.ok(c < 0.03, `${grey} chroma ${c.toFixed(3)}`);

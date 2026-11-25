@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
 import type { IconName } from '@/components/ui';
+import { registerAccountStoreReset } from '@/lib/localStore';
 import type { Priority } from '@/lib/shared';
 
 export interface ChecklistTemplate {
@@ -10,6 +11,8 @@ export interface ChecklistTemplate {
   icon: IconName;
   notes?: string;
   priority?: Priority;
+  defaultDurationMinutes?: number;
+  tags?: string[];
   items: string[];
   builtin?: boolean;
 }
@@ -62,31 +65,82 @@ export const builtinTemplates: ChecklistTemplate[] = [
 const KEY = 'dayframe-checklist-templates';
 let customTemplates: ChecklistTemplate[] = [];
 let loaded: Promise<ChecklistTemplate[]> | undefined;
+let changedBeforeLoad = false;
+let loadGeneration = 0;
 const listeners = new Set<() => void>();
 
 function notify() {
   listeners.forEach((listener) => listener());
 }
 
+function sanitizeTemplate(raw: unknown): ChecklistTemplate | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.id !== 'string' || typeof obj.title !== 'string') return null;
+  const items = Array.isArray(obj.items)
+    ? obj.items.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  const tags = Array.isArray(obj.tags)
+    ? obj.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+    : undefined;
+  const defaultDurationMinutes = typeof obj.defaultDurationMinutes === 'number'
+    && Number.isFinite(obj.defaultDurationMinutes)
+    && obj.defaultDurationMinutes > 0
+    ? Math.round(obj.defaultDurationMinutes)
+    : undefined;
+  const priority = obj.priority === 1 || obj.priority === 2 || obj.priority === 3 || obj.priority === 4
+    ? obj.priority
+    : undefined;
+  return {
+    id: obj.id,
+    title: obj.title,
+    icon: (typeof obj.icon === 'string' ? obj.icon : 'check-square') as IconName,
+    ...(typeof obj.notes === 'string' && obj.notes.trim() ? { notes: obj.notes } : {}),
+    ...(priority ? { priority } : {}),
+    ...(defaultDurationMinutes ? { defaultDurationMinutes } : {}),
+    ...(tags && tags.length > 0 ? { tags } : {}),
+    items,
+    builtin: false,
+  };
+}
+
 export function loadCustomTemplates(): Promise<ChecklistTemplate[]> {
-  loaded ??= AsyncStorage.getItem(KEY)
-    .then((raw) => {
-      if (!raw) return customTemplates;
-      const parsed = JSON.parse(raw) as ChecklistTemplate[];
-      if (Array.isArray(parsed)) customTemplates = parsed;
-      notify();
-      return customTemplates;
-    })
-    .catch(() => customTemplates);
+  if (!loaded) {
+    const generation = loadGeneration;
+    loaded = AsyncStorage.getItem(KEY)
+      .then((raw) => {
+        if (generation !== loadGeneration || changedBeforeLoad || !raw) return customTemplates;
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          customTemplates = parsed.map(sanitizeTemplate).filter((item): item is ChecklistTemplate => item !== null);
+          notify();
+        }
+        return customTemplates;
+      })
+      .catch(() => customTemplates);
+  }
   return loaded;
 }
 
 export function saveCustomTemplate(template: Omit<ChecklistTemplate, 'id' | 'builtin'>): ChecklistTemplate {
+  const tags = template.tags?.map((tag) => tag.trim()).filter(Boolean);
+  const defaultDurationMinutes = typeof template.defaultDurationMinutes === 'number'
+    && Number.isFinite(template.defaultDurationMinutes)
+    && template.defaultDurationMinutes > 0
+    ? Math.round(template.defaultDurationMinutes)
+    : undefined;
   const created: ChecklistTemplate = {
-    ...template,
+    title: template.title,
+    icon: template.icon,
+    items: template.items,
+    ...(template.notes?.trim() ? { notes: template.notes } : {}),
+    ...(template.priority ? { priority: template.priority } : {}),
+    ...(defaultDurationMinutes ? { defaultDurationMinutes } : {}),
+    ...(tags && tags.length > 0 ? { tags } : {}),
     id: 'custom-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
     builtin: false,
   };
+  changedBeforeLoad = true;
   customTemplates = [created, ...customTemplates];
   loaded = Promise.resolve(customTemplates);
   notify();
@@ -95,11 +149,37 @@ export function saveCustomTemplate(template: Omit<ChecklistTemplate, 'id' | 'bui
 }
 
 export function deleteCustomTemplate(id: string): void {
+  changedBeforeLoad = true;
   customTemplates = customTemplates.filter((item) => item.id !== id);
   loaded = Promise.resolve(customTemplates);
   notify();
   AsyncStorage.setItem(KEY, JSON.stringify(customTemplates)).catch(() => {});
 }
+
+export function restoreCustomTemplate(template: ChecklistTemplate, index = 0): void {
+  if (customTemplates.some((item) => item.id === template.id)) return;
+  changedBeforeLoad = true;
+  const safeIndex = Math.max(0, Math.min(customTemplates.length, index));
+  const next = [...customTemplates];
+  next.splice(safeIndex, 0, { ...template, builtin: false });
+  customTemplates = next;
+  loaded = Promise.resolve(customTemplates);
+  notify();
+  AsyncStorage.setItem(KEY, JSON.stringify(customTemplates)).catch(() => {});
+}
+
+export async function resetCustomTemplates(): Promise<void> {
+  loadGeneration += 1;
+  changedBeforeLoad = false;
+  loaded = Promise.resolve([]);
+  if (customTemplates.length > 0) {
+    customTemplates = [];
+    notify();
+  }
+  await AsyncStorage.removeItem(KEY).catch(() => {});
+}
+
+registerAccountStoreReset(() => resetCustomTemplates());
 
 export function useChecklistTemplates(): { custom: ChecklistTemplate[]; builtin: ChecklistTemplate[] } {
   const custom = useSyncExternalStore((listener) => {

@@ -25,13 +25,17 @@ import { Icon, IconButton, type IconName, Txt } from '@/components/ui';
 import { useProjects, useTagNames, useTaskIndex } from '@/data/tasks';
 import { AI_ROUTES } from '@/features/ai/routes';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
-import { TAB_ICONS, TAB_LABELS } from '@/features/settings/tabBar';
+import { DENSITIES, type Density } from '@/features/settings/prefs';
+import { setPersonalPrefs, usePersonalPrefs } from '@/features/settings/prefsStore';
+import { TAB_ICONS, TAB_LABELS, type TabName, visibleTabs } from '@/features/settings/tabBar';
+import { useTabBarConfig } from '@/features/settings/tabBarStore';
 import { priorityMark } from '@/features/tasks/priority';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { formatDue, isPastDue } from '@/lib/dates';
-import { haptic } from '@/lib/haptics';
+import { haptic, setHapticsEnabled, useHapticsEnabled } from '@/lib/haptics';
 import { matchScore, searchTasks } from '@/lib/search';
 import type { Task } from '@/lib/shared';
+import { showToast } from '@/lib/toast';
 import { elevation, fontFamily, radius, space, type, useTheme } from '@/theme';
 
 import { useInputCapture, useKeyboard, useKeyHandler } from './manager';
@@ -40,6 +44,28 @@ import { type HardwareKeyEvent, KEY_PRIORITY } from './types';
 
 const PALETTE_MAX_WIDTH = 540;
 const MAX_TASK_RESULTS = 8;
+
+const DENSITY_LABELS: Record<Density, string> = {
+  compact: '컴팩트',
+  default: '기본',
+  comfortable: '여유롭게',
+};
+
+const TAB_ROUTES: Record<TabName, Href> = {
+  index: '/',
+  inbox: '/inbox',
+  upcoming: '/upcoming',
+  habits: '/habits',
+  focus: '/focus',
+};
+
+const TAB_KEYWORDS: Record<TabName, readonly string[]> = {
+  index: ['today', '홈', '오늘 할 일'],
+  inbox: ['inbox', '프로젝트', '할 일 목록'],
+  upcoming: ['upcoming', '달력', '일정', '캘린더'],
+  habits: ['habits', '루틴'],
+  focus: ['focus', '타이머', '뽀모도로', '스톱워치'],
+};
 
 type PaletteGroupId = 'quick' | 'navigate' | 'project' | 'tasks';
 
@@ -126,7 +152,7 @@ function KeycapBadge({ combo, active }: { combo: string; active: boolean }) {
 }
 
 function CommandPaletteOverlay() {
-  const { colors } = useTheme();
+  const { colors, isDark, setMode } = useTheme();
   const insets = useSafeAreaInsets();
   const { paletteOpen, closePalette, openHelp, blurActiveInput } = useKeyboard();
   const { data: projects } = useProjects();
@@ -134,6 +160,9 @@ function CommandPaletteOverlay() {
   const tagNames = useTagNames();
   const quickAdd = useQuickAdd();
   const flow = useTaskFlow();
+  const tabConfig = useTabBarConfig();
+  const personal = usePersonalPrefs();
+  const hapticsOn = useHapticsEnabled();
 
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -181,175 +210,214 @@ function CommandPaletteOverlay() {
     router.push(href);
   }, []);
 
-  const quickCommands = useMemo<PaletteItem[]>(() => [
-    {
-      id: 'quick:new-task',
-      group: 'quick',
-      icon: 'plus',
-      label: '새 할 일 추가',
-      shortcut: 'q',
-      keywords: ['추가', '할일', 'quick add', 'task', 'new'],
-      keepKeyboard: true,
-      run: () => quickAdd.open(),
-    },
-    {
-      id: 'quick:new-habit',
-      group: 'quick',
-      icon: 'plus-circle',
-      label: '새 습관 만들기',
-      shortcut: 'shift+n',
-      keywords: ['습관', '루틴', 'habit', 'new'],
-      run: () => pushScreen('/habit/new'),
-    },
-    {
-      id: 'quick:search',
-      group: 'quick',
-      icon: 'search',
-      label: '검색 열기',
-      shortcut: '/',
-      keywords: ['찾기', '필터', 'search', 'find'],
-      keepKeyboard: true,
-      run: () => pushScreen('/search'),
-    },
-    {
-      id: 'quick:ai-organize',
-      group: 'quick',
-      icon: 'edit-3',
-      label: 'AI 메모 정리',
-      keywords: ['ai', '비서', '메모', '정리', 'organize'],
-      run: () => pushScreen(AI_ROUTES.organize),
-    },
-    {
-      id: 'quick:ai-plan',
-      group: 'quick',
-      icon: 'clock',
-      label: 'AI 하루 계획',
-      keywords: ['ai', '비서', '계획', '일정', 'plan'],
-      run: () => pushScreen(AI_ROUTES.plan),
-    },
-    {
-      id: 'quick:ai-review',
-      group: 'quick',
-      icon: 'bar-chart-2',
-      label: 'AI 주간 돌아보기',
-      keywords: ['ai', '비서', '주간', '회고', '돌아보기', 'review'],
-      run: () => pushScreen(AI_ROUTES.review),
-    },
-    {
-      id: 'quick:help',
-      group: 'quick',
-      icon: 'command',
-      label: '키보드 단축키 안내',
-      shortcut: '?',
-      keywords: ['단축키', '도움말', '키보드', 'shortcuts', 'help'],
-      run: () => openHelp(),
-    },
-  ], [openHelp, pushScreen, quickAdd]);
+  const quickCommands = useMemo<PaletteItem[]>(() => {
+    const nextDensity = DENSITIES[(DENSITIES.indexOf(personal.density) + 1) % DENSITIES.length];
+    return [
+      {
+        id: 'quick:new-task',
+        group: 'quick',
+        icon: 'plus',
+        label: '새 할 일 추가',
+        shortcut: 'q',
+        keywords: ['추가', '할일', 'quick add', 'task', 'new'],
+        keepKeyboard: true,
+        run: () => quickAdd.open(),
+      },
+      {
+        id: 'quick:new-habit',
+        group: 'quick',
+        icon: 'plus-circle',
+        label: '새 습관 만들기',
+        shortcut: 'shift+n',
+        keywords: ['습관', '루틴', 'habit', 'new'],
+        run: () => pushScreen('/habit/new'),
+      },
+      {
+        id: 'quick:focus-25',
+        group: 'quick',
+        icon: 'play-circle',
+        label: '25분 집중 바로 시작',
+        keywords: ['focus', '집중', '타이머', '뽀모도로', '25분', '시작'],
+        run: () => navigateTab('/focus?minutes=25&autostart=1' as Href),
+      },
+      {
+        id: 'quick:search',
+        group: 'quick',
+        icon: 'search',
+        label: '검색 열기',
+        shortcut: '/',
+        keywords: ['찾기', '필터', 'search', 'find'],
+        keepKeyboard: true,
+        run: () => pushScreen('/search'),
+      },
+      {
+        id: 'quick:toggle-dark',
+        group: 'quick',
+        icon: isDark ? 'sun' : 'moon',
+        label: '다크 모드 전환',
+        detail: isDark ? '현재 다크 모드 → 라이트' : '현재 라이트 모드 → 다크',
+        keywords: ['dark', 'light', 'theme', '테마', '다크', '라이트', '화면 모드'],
+        run: () => {
+          const next = isDark ? 'light' : 'dark';
+          setMode(next);
+          showToast(next === 'dark' ? '다크 모드로 전환했습니다.' : '라이트 모드로 전환했습니다.');
+        },
+      },
+      {
+        id: 'quick:cycle-density',
+        group: 'quick',
+        icon: 'align-justify',
+        label: '표시 밀도 변경',
+        detail: `현재 ${DENSITY_LABELS[personal.density]} → ${DENSITY_LABELS[nextDensity]}`,
+        keywords: ['density', '밀도', '컴팩트', '여유롭게', '간격', '외관'],
+        run: () => {
+          setPersonalPrefs({ density: nextDensity });
+          showToast(`표시 밀도를 '${DENSITY_LABELS[nextDensity]}'(으)로 변경했습니다.`);
+        },
+      },
+      {
+        id: 'quick:toggle-haptics',
+        group: 'quick',
+        icon: 'smartphone',
+        label: '진동 피드백 전환',
+        detail: hapticsOn ? '현재 켜짐 → 끄기' : '현재 꺼짐 → 켜기',
+        keywords: ['haptics', '진동', '햅틱', '터치', '피드백'],
+        run: () => {
+          const next = !hapticsOn;
+          setHapticsEnabled(next);
+          if (next) haptic.tap();
+          showToast(next ? '진동 피드백을 켰습니다.' : '진동 피드백을 껐습니다.');
+        },
+      },
+      {
+        id: 'quick:personalization',
+        group: 'quick',
+        icon: 'sliders',
+        label: '맞춤 설정 열기',
+        keywords: ['personalization', '맞춤', '야행성', '스와이프', '제스처', '설정'],
+        run: () => pushScreen('/personalization'),
+      },
+      {
+        id: 'quick:ai-organize',
+        group: 'quick',
+        icon: 'edit-3',
+        label: 'AI 메모 정리',
+        keywords: ['ai', '비서', '메모', '정리', 'organize'],
+        run: () => pushScreen(AI_ROUTES.organize),
+      },
+      {
+        id: 'quick:ai-plan',
+        group: 'quick',
+        icon: 'clock',
+        label: 'AI 하루 계획',
+        keywords: ['ai', '비서', '계획', '일정', 'plan'],
+        run: () => pushScreen(AI_ROUTES.plan),
+      },
+      {
+        id: 'quick:ai-review',
+        group: 'quick',
+        icon: 'bar-chart-2',
+        label: 'AI 주간 돌아보기',
+        keywords: ['ai', '비서', '주간', '회고', '돌아보기', 'review'],
+        run: () => pushScreen(AI_ROUTES.review),
+      },
+      {
+        id: 'quick:help',
+        group: 'quick',
+        icon: 'command',
+        label: '키보드 단축키 안내',
+        shortcut: '?',
+        keywords: ['단축키', '도움말', '키보드', 'shortcuts', 'help'],
+        run: () => openHelp(),
+      },
+    ];
+  }, [hapticsOn, isDark, navigateTab, openHelp, personal.density, pushScreen, quickAdd, setMode]);
 
-  const navigationCommands = useMemo<PaletteItem[]>(() => [
-    {
-      id: 'nav:today',
-      group: 'navigate',
-      icon: TAB_ICONS.index,
-      label: TAB_LABELS.index,
-      shortcut: '1',
-      keywords: ['today', '홈', '오늘 할 일'],
-      run: () => navigateTab('/'),
-    },
-    {
-      id: 'nav:inbox',
-      group: 'navigate',
-      icon: TAB_ICONS.inbox,
-      label: TAB_LABELS.inbox,
-      shortcut: '2',
-      keywords: ['inbox', '프로젝트', '할 일 목록'],
-      run: () => navigateTab('/inbox'),
-    },
-    {
-      id: 'nav:upcoming',
-      group: 'navigate',
-      icon: TAB_ICONS.upcoming,
-      label: TAB_LABELS.upcoming,
-      shortcut: '3',
-      keywords: ['upcoming', '달력', '일정', '캘린더'],
-      run: () => navigateTab('/upcoming'),
-    },
-    {
-      id: 'nav:habits',
-      group: 'navigate',
-      icon: TAB_ICONS.habits,
-      label: TAB_LABELS.habits,
-      shortcut: '4',
-      keywords: ['habits', '루틴'],
-      run: () => navigateTab('/habits'),
-    },
-    {
-      id: 'nav:focus',
-      group: 'navigate',
-      icon: TAB_ICONS.focus,
-      label: TAB_LABELS.focus,
-      shortcut: '5',
-      keywords: ['focus', '타이머', '뽀모도로', '스톱워치'],
-      run: () => navigateTab('/focus'),
-    },
-    {
-      id: 'nav:completed',
-      group: 'navigate',
-      icon: 'check-circle',
-      label: '완료한 일',
-      keywords: ['completed', '완료', '기록'],
-      run: () => pushScreen('/completed'),
-    },
-    {
-      id: 'nav:routines',
-      group: 'navigate',
-      icon: 'star',
-      label: '습관 갤러리',
-      keywords: ['routines', '추천 습관', '템플릿'],
-      run: () => pushScreen('/routines'),
-    },
-    {
-      id: 'nav:habit-overview',
-      group: 'navigate',
-      icon: 'grid',
-      label: '습관 기록 한눈에 보기',
-      keywords: ['habit overview', '주간', '월간', '통계'],
-      run: () => pushScreen('/habit/overview'),
-    },
-    {
-      id: 'nav:assistant',
-      group: 'navigate',
-      icon: 'zap',
-      label: 'AI 비서',
-      keywords: ['assistant', 'ai', '인공지능'],
-      run: () => pushScreen(AI_ROUTES.hub),
-    },
-    {
-      id: 'nav:settings',
-      group: 'navigate',
-      icon: 'settings',
-      label: '설정',
-      shortcut: ',',
-      keywords: ['settings', '환경설정'],
-      run: () => pushScreen('/settings'),
-    },
-    {
-      id: 'nav:appearance',
-      group: 'navigate',
-      icon: 'droplet',
-      label: '테마 설정',
-      keywords: ['appearance', 'theme', '다크 모드', '라이트 모드', '강조색', '외관'],
-      run: () => pushScreen('/appearance'),
-    },
-    {
-      id: 'nav:tab-bar',
-      group: 'navigate',
-      icon: 'sidebar',
-      label: '탭 바 설정',
-      keywords: ['tab bar', '하단 탭', '탭 순서'],
-      run: () => pushScreen('/tab-bar'),
-    },
-  ], [navigateTab, pushScreen]);
+  const navigationCommands = useMemo<PaletteItem[]>(() => {
+    const visible = visibleTabs(tabConfig);
+    const shortcutByTab = new Map<TabName, string>();
+    visible.forEach((tab, idx) => {
+      shortcutByTab.set(tab, String(idx + 1));
+    });
+    const orderedTabs: TabName[] = [
+      ...visible,
+      ...tabConfig.order.filter((tab) => !shortcutByTab.has(tab)),
+    ];
+    const tabItems: PaletteItem[] = orderedTabs.map((tab) => {
+      const shortcut = shortcutByTab.get(tab);
+      return {
+        id: `nav:${tab === 'index' ? 'today' : tab}`,
+        group: 'navigate',
+        icon: TAB_ICONS[tab],
+        label: TAB_LABELS[tab],
+        detail: shortcut ? undefined : '숨긴 탭',
+        shortcut,
+        keywords: TAB_KEYWORDS[tab],
+        run: () => navigateTab(TAB_ROUTES[tab]),
+      };
+    });
+
+    return [
+      ...tabItems,
+      {
+        id: 'nav:completed',
+        group: 'navigate',
+        icon: 'check-circle',
+        label: '완료한 일',
+        keywords: ['completed', '완료', '기록'],
+        run: () => pushScreen('/completed'),
+      },
+      {
+        id: 'nav:routines',
+        group: 'navigate',
+        icon: 'star',
+        label: '습관 갤러리',
+        keywords: ['routines', '추천 습관', '템플릿'],
+        run: () => pushScreen('/routines'),
+      },
+      {
+        id: 'nav:habit-overview',
+        group: 'navigate',
+        icon: 'grid',
+        label: '습관 기록 한눈에 보기',
+        keywords: ['habit overview', '주간', '월간', '통계'],
+        run: () => pushScreen('/habit/overview'),
+      },
+      {
+        id: 'nav:assistant',
+        group: 'navigate',
+        icon: 'zap',
+        label: 'AI 비서',
+        keywords: ['assistant', 'ai', '인공지능'],
+        run: () => pushScreen(AI_ROUTES.hub),
+      },
+      {
+        id: 'nav:settings',
+        group: 'navigate',
+        icon: 'settings',
+        label: '설정',
+        shortcut: ',',
+        keywords: ['settings', '환경설정'],
+        run: () => pushScreen('/settings'),
+      },
+      {
+        id: 'nav:appearance',
+        group: 'navigate',
+        icon: 'droplet',
+        label: '외관 설정',
+        keywords: ['appearance', 'theme', '테마', '다크 모드', '라이트 모드', '강조색', '외관', '밀도'],
+        run: () => pushScreen('/appearance'),
+      },
+      {
+        id: 'nav:tab-bar',
+        group: 'navigate',
+        icon: 'sidebar',
+        label: '탭 바 설정',
+        keywords: ['tab bar', '하단 탭', '탭 순서'],
+        run: () => pushScreen('/tab-bar'),
+      },
+    ];
+  }, [navigateTab, pushScreen, tabConfig]);
 
   const projectCommands = useMemo<PaletteItem[]>(() => (
     (projects ?? []).map((project) => ({
@@ -368,7 +436,7 @@ function CommandPaletteOverlay() {
     const matched = searchTasks(tasks, query, { projectNames, tagNames }).slice(0, MAX_TASK_RESULTS);
     return matched.map((task) => {
       const projectName = task.project_id ? projectNames.get(task.project_id) : undefined;
-      const due = formatDue(task);
+      const due = formatDue(task, personal.timeFormat);
       const priority = task.priority < 4 ? priorityMark(task.priority) : '';
       const metaParts = [
         priority,
@@ -387,7 +455,7 @@ function CommandPaletteOverlay() {
         run: () => router.push({ pathname: '/task/[id]', params: { id: task.id } }),
       };
     });
-  }, [projectNames, query, tagNames, tasks]);
+  }, [personal.timeFormat, projectNames, query, tagNames, tasks]);
 
   const { flatItems, renderRows } = useMemo(() => {
     const groups: { id: PaletteGroupId; items: PaletteItem[] }[] = [

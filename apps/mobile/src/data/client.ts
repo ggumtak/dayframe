@@ -1,12 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import { defaultShouldDehydrateQuery, focusManager, MutationCache, onlineManager, QueryCache, QueryClient } from '@tanstack/react-query';
+import {
+  defaultShouldDehydrateQuery, focusManager, MutationCache, onlineManager, QueryCache, QueryClient, useIsMutating,
+} from '@tanstack/react-query';
 import type { PersistQueryClientOptions } from '@tanstack/react-query-persist-client';
 import { AppState, Platform } from 'react-native';
 
 import { ApiFailure, errorMessage, isPermanentFailure, isUnreachable } from '@/lib/api';
 import { auth } from '@/lib/auth';
+import { resetAccountLocalStores } from '@/lib/localStore';
 import { showToast } from '@/lib/toast';
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -85,9 +88,14 @@ export async function resumeWrites(): Promise<void> {
   await queryClient.invalidateQueries();
 }
 
+/** Number of optimistic writes currently in flight or queued while offline. */
+export function usePendingWriteCount(): number {
+  return useIsMutating({ mutationKey: ['write'] });
+}
+
 /** Forgets one account's data before another signs in on the same device. */
 export async function clearLocalData(): Promise<void> {
   queryClient.getMutationCache().clear();
   queryClient.clear();
-  await AsyncStorage.removeItem(CACHE_KEY);
+  await Promise.all([AsyncStorage.removeItem(CACHE_KEY), resetAccountLocalStores()]);
 }

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Button, Icon, type IconName, Loading, Txt } from '@/components/ui';
+import { Button, EmptyState, Icon, type IconName, Loading, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabitDetails, useHabits } from '@/data/habits';
 import { nextPosition, useProjects, useTasks } from '@/data/tasks';
@@ -17,6 +17,7 @@ import { useAiRequest } from '@/features/ai/useAiRequest';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { api } from '@/lib/api';
 import { deviceTimeZone, formatMinutes, Temporal, today } from '@/lib/dates';
+import type { TaskCompletion } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
@@ -30,8 +31,8 @@ function List({ icon, title, items }: { icon: IconName; title: string; items: st
         <Icon name={icon} size={16} color={colors.textMuted} />
         <Txt variant="section" accessibilityRole="header">{title}</Txt>
       </View>
-      {items.map((item) => (
-        <View key={item} style={{ flexDirection: 'row', gap: space.sm }}>
+      {items.map((item, idx) => (
+        <View key={`${item}-${idx}`} style={{ flexDirection: 'row', gap: space.sm }}>
           <View style={[styles.bullet, { backgroundColor: colors.textFaint }]} />
           <Txt variant="body" style={{ flex: 1 }}>{item}</Txt>
         </View>
@@ -77,6 +78,12 @@ export default function Review() {
     return () => { active = false; };
   }, []);
 
+  const buildFacts = (completionRows: TaskCompletion[]) => gatherWeek({
+    range, timeZone: zone, completions: completionRows, openTasks: openTasks ?? [], habits: habitList,
+    habitLogs: new Map([...details].map(([id, detail]) => [id, detail.logs])), focusSessions: focusSessions ?? [],
+    listNames: new Map((projects ?? []).map((project) => [project.id, project.name])),
+  });
+
   const facts = useMemo(() => gatherWeek({
     range, timeZone: zone, completions: completions.data ?? [], openTasks: openTasks ?? [], habits: habitList,
     habitLogs: new Map([...details].map(([id, detail]) => [id, detail.logs])), focusSessions: focusSessions ?? [],
@@ -86,8 +93,18 @@ export default function Review() {
   }), [range.from, range.to, zone, completions.data, openTasks, habitList, details, focusSessions, projects]);
 
   const make = async () => {
+    let completionRows = completions.data;
+    if (!completions.isSuccess || completionRows === undefined) {
+      const refetched = await completions.refetch();
+      if (refetched.isError || !refetched.data) {
+        showToast('완료 기록을 불러오지 못했습니다. 연결을 확인해 주세요.', { tone: 'error' });
+        return;
+      }
+      completionRows = refetched.data;
+    }
+    const freshFacts = buildFacts(completionRows);
     const result = await request.run((signal) => runAi({
-      feature: 'review', system: REVIEW_SYSTEM, user: reviewUser(nowContext(Temporal.Now.instant(), zone), facts),
+      feature: 'review', system: REVIEW_SYSTEM, user: reviewUser(nowContext(Temporal.Now.instant(), zone), freshFacts),
       schema: reviewSchema(), effort: 'medium', signal,
     }));
     if (!result) return;
@@ -97,21 +114,21 @@ export default function Review() {
     setAdded(new Set());
   };
 
-  const addTask = (title: string) => {
+  const addTask = (key: string, title: string) => {
     const inbox = (openTasks ?? []).filter((task) => !task.parent_task_id && !task.project_id);
     flow.create({ input: { title, priority: 4, timezone: zone, position: nextPosition(inbox) } });
-    setAdded((current) => new Set(current).add(title));
+    setAdded((current) => new Set(current).add(key));
     showToast('할 일로 추가했습니다.');
   };
 
   const { state } = request;
-  const ready = !completions.isPending;
   const focusTotal = facts.focus.reduce((sum, day) => sum + day.minutes, 0);
   const shown = state.status === 'idle' || state.status === 'done' ? cached : null;
   const stale = shown && (shown.range.to !== range.to);
+  const completionsUnavailable = !completions.isSuccess && !completions.isLoading;
 
   let body;
-  if (cached === undefined || !ready) body = <Loading />;
+  if (cached === undefined) body = <Loading />;
   else if (state.status === 'loading') body = <AiLoading message="지난 7일의 기록을 정리하고 있습니다" onCancel={request.cancel} />;
   else if (state.status === 'error') body = <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void make()} />;
   else if (shown) {
@@ -131,21 +148,35 @@ export default function Review() {
               <Icon name="compass" size={16} color={colors.textMuted} />
               <Txt variant="section" accessibilityRole="header">다음 주 제안</Txt>
             </View>
-            {review.suggestions.map((item) => (
-              <View key={item.title} style={{ gap: space.sm }}>
-                <Txt variant="body">{item.title}</Txt>
-                {item.asTask ? (
-                  <Button
-                    label={added.has(item.title) ? '추가됨' : '할 일로 추가'} icon={added.has(item.title) ? 'check' : 'plus'}
-                    kind="secondary" disabled={added.has(item.title)} onPress={() => addTask(item.title)}
-                    style={{ alignSelf: 'flex-start', minHeight: 36 }} />
-                ) : null}
-              </View>
-            ))}
+            {review.suggestions.map((item, idx) => {
+              const suggestionKey = `${item.title}-${idx}`;
+              const isAdded = added.has(suggestionKey);
+              return (
+                <View key={suggestionKey} style={{ gap: space.sm }}>
+                  <Txt variant="body">{item.title}</Txt>
+                  {item.asTask ? (
+                    <Button
+                      label={isAdded ? '추가됨' : '할 일로 추가'} icon={isAdded ? 'check' : 'plus'}
+                      kind="secondary" disabled={isAdded} onPress={() => addTask(suggestionKey, item.title)}
+                      style={{ alignSelf: 'flex-start', minHeight: 36 }} />
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         ) : null}
         <UsageLine result={shown} />
       </>
+    );
+  } else if (completions.isLoading) {
+    body = <Loading />;
+  } else if (completionsUnavailable) {
+    body = (
+      <EmptyState
+        icon="wifi-off"
+        title="완료 기록을 불러오지 못했습니다"
+        message="지난 7일의 완료 기록을 가져와야 주간 돌아보기를 만들 수 있습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+        action={<Button label="다시 시도" icon="refresh-cw" onPress={() => void completions.refetch()} />} />
     );
   } else {
     body = (
@@ -163,7 +194,8 @@ export default function Review() {
     );
   }
 
-  const footer = state.status === 'loading' || state.status === 'error' || cached === undefined || !ready ? undefined : (
+  const canMake = shown ? true : completions.isSuccess;
+  const footer = state.status === 'loading' || state.status === 'error' || cached === undefined || !canMake ? undefined : (
     <Button
       label={shown ? '다시 만들기' : '돌아보기 만들기'} icon={shown ? 'refresh-cw' : 'zap'} kind={shown && !stale ? 'secondary' : 'primary'}
       onPress={() => void make()} />
