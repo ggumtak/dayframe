@@ -11,6 +11,7 @@ import { type HabitLook, HabitLookPicker, QuoteField } from '@/features/habits/H
 import { deleteHabitMeta, HABIT_TIME_GROUPS, setHabitMeta, useHabitMetaMap } from '@/features/habits/habitMeta';
 import { Heatmap, heatmapWidth } from '@/features/habits/Heatmap';
 import { computeHabitStrength } from '@/features/habits/strength';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler, useScreenContext, useScreenFocused } from '@/features/keyboard';
 import { HabitReminderChips } from '@/features/reminders/ReminderChips';
 import { type PlainDate, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -29,6 +30,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export default function HabitDetail() {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('habit-detail', isFocused);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: habits, isLoading } = useHabits();
   const { data: logs } = useHabitLogs(id);
@@ -50,8 +53,117 @@ export default function HabitDetail() {
     return map;
   }, [logs, habit]);
 
+  const day = habit ? today(habit.timezone) : null;
+  const perDay = habit?.cadence === 'daily' ? habit.target_count : 1;
+
+  const toggle = (date: PlainDate) => {
+    if (!habit) return;
+    const key = date.toString();
+    const done = marks.get(key) === 'done';
+    haptic.light();
+    actions.setLog({ habitId: habit.id, date: key, status: done ? null : 'completed', count: done ? 0 : perDay });
+  };
+
+  const saveLook = () => {
+    if (!habit || !editing) return;
+    setHabitMeta(habit.id, { emoji: editing.emoji, color: editing.color, quote: editing.quote.trim() || undefined });
+    haptic.success();
+    setEditing(null);
+  };
+
+  const rename = () => {
+    if (!habit) return;
+    const next = (name ?? '').trim();
+    if (next && next !== habit.name) actions.rename(habit.id, next);
+    setName(null);
+  };
+
+  const removeHabit = () => {
+    if (!habit) return;
+    setConfirm(false);
+    deleteHabitMeta(habit.id);
+    actions.remove(habit.id);
+    router.back();
+  };
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing || event.modal || !habit || !day) return false;
+      if (matchesCombo(event, 'space') || matchesCombo(event, 'x')) {
+        if (!event.repeat) toggle(day);
+        return true;
+      }
+      if (matchesCombo(event, 'e')) {
+        if (!event.repeat) {
+          haptic.tap();
+          setName(habit.name);
+        }
+        return true;
+      }
+      if (matchesCombo(event, 'f')) {
+        if (!habit.archived_at) {
+          if (!event.repeat) {
+            haptic.tap();
+            router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } });
+          }
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'delete')) {
+        if (!event.repeat) {
+          haptic.tap();
+          setConfirm(true);
+        }
+        return true;
+      }
+      if (matchesCombo(event, 'escape') || matchesCombo(event, 'backspace')) {
+        if (!event.repeat) router.back();
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused && !!habit && name === null && editing === null && !confirm },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (matchesCombo(event, 'escape')) {
+        if (!event.repeat) setConfirm(false);
+        return true;
+      }
+      if (matchesCombo(event, 'enter')) {
+        if (!event.repeat) {
+          haptic.warning();
+          removeHabit();
+        }
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && !!habit && confirm },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'mod+enter')) {
+        if (!event.repeat) {
+          if (name !== null) {
+            if (name.trim()) rename();
+          } else if (editing !== null) {
+            saveLook();
+          }
+        }
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && !!habit && (name !== null || editing !== null) },
+  );
+
   if (isLoading) return <Screen><Loading /></Screen>;
-  if (!habit) {
+  if (!habit || !day) {
     return (
       <Screen>
         <EmptyState
@@ -61,35 +173,14 @@ export default function HabitDetail() {
     );
   }
 
-  const day = today(habit.timezone);
   const unit = habit.cadence === 'weekly' ? '주' : '일';
   const rate = stats?.completion_rate;
-  const perDay = habit.cadence === 'daily' ? habit.target_count : 1;
   const strength = computeHabitStrength(habit, logs ?? [], day);
   const trendGlyph = strength.trend === 'up' ? ' ↑' : strength.trend === 'down' ? ' ↓' : '';
-
-  const toggle = (date: PlainDate) => {
-    const key = date.toString();
-    const done = marks.get(key) === 'done';
-    haptic.light();
-    actions.setLog({ habitId: habit.id, date: key, status: done ? null : 'completed', count: done ? 0 : perDay });
-  };
 
   const meta = habitMeta[habit.id];
   const look = habitLook(habit.name, meta);
   const openLook = () => setEditing({ emoji: meta?.emoji, color: meta?.color, quote: meta?.quote ?? '' });
-  const saveLook = () => {
-    if (!editing) return;
-    setHabitMeta(habit.id, { emoji: editing.emoji, color: editing.color, quote: editing.quote.trim() || undefined });
-    haptic.success();
-    setEditing(null);
-  };
-
-  const rename = () => {
-    const next = (name ?? '').trim();
-    if (next && next !== habit.name) actions.rename(habit.id, next);
-    setName(null);
-  };
 
   return (
     <Screen>
@@ -213,12 +304,7 @@ export default function HabitDetail() {
         <View style={{ gap: space.sm }}>
           <Button
             label="삭제" kind="danger"
-            onPress={() => {
-              setConfirm(false);
-              deleteHabitMeta(habit.id);
-              actions.remove(habit.id);
-              router.back();
-            }} />
+            onPress={removeHabit} />
           <Button label="취소" kind="secondary" onPress={() => setConfirm(false)} />
         </View>
       </Sheet>

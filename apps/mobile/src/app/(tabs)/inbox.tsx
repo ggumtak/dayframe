@@ -10,11 +10,14 @@ import {
   byPosition, byPriority, bySchedule, byTitle, useCompletedTasks, useProjectActions, useProjects,
   useSectionActions, useSections, useSubtaskProgress, useTaskActions, useTaskIndex,
 } from '@/data/tasks';
+import {
+  type HardwareKeyEvent, KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor, useScreenContext, useScreenFocused, useTaskShortcuts,
+} from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
 import { LIST_COLORS, listColor, listColorEntry } from '@/features/tasks/listColors';
 import { deleteProjectMeta, PROJECT_COLORS, PROJECT_ICONS, setProjectMeta, useProjectMetaMap } from '@/features/tasks/projectMeta';
-import { TaskListSheets, TaskRows, useTaskListModel } from '@/features/tasks/TaskList';
+import { positionsFor, TaskListSheets, TaskRows, useTaskListModel } from '@/features/tasks/TaskList';
 import { TemplatesSheet } from '@/features/tasks/TemplatesSheet';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useMinute } from '@/lib/clock';
@@ -47,6 +50,8 @@ const filterOptions: { value: ListFilter; label: string; icon?: IconName }[] = [
   { value: 'priority', label: '중요', icon: 'flag' },
   { value: 'checklist', label: '하위 작업', icon: 'check-square' },
 ];
+const FILTER_ORDER: readonly ListFilter[] = ['all', 'due', 'undated', 'priority', 'checklist'];
+const taskIdOf = (task: Task) => task.id;
 
 type DoneWindow = 'today' | '3' | '7' | '30' | 'all';
 const doneWindows: { value: DoneWindow; label: string; short: string }[] = [
@@ -62,6 +67,8 @@ const isSortMode = (value: string): value is SortMode => value in sortLabels;
 
 export default function Inbox() {
   const { colors, isDark } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('inbox', isFocused);
   const { roots, isLoading, refetch } = useTaskIndex();
   const { data: projects } = useProjects();
   const projectMeta = useProjectMetaMap();
@@ -210,16 +217,16 @@ export default function Inbox() {
     setSelectedIds(new Set([task.id]));
   }, []);
 
-  const selectScope = (next: Scope) => {
+  const selectScope = useCallback((next: Scope) => {
     setSelectedIds(null);
     setListFilter('all');
     setScope(next);
-  };
+  }, [setScope]);
 
-  const selectFilter = (next: ListFilter) => {
+  const selectFilter = useCallback((next: ListFilter) => {
     setSelectedIds(null);
     setListFilter(next);
-  };
+  }, []);
 
   const toggleSectionCollapse = (id: string) => {
     haptic.tap();
@@ -231,18 +238,18 @@ export default function Inbox() {
     });
   };
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
-  };
+  }, [refetch]);
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setProjectName('');
     setProjectColor(PROJECT_COLORS[(projects?.length ?? 0) % PROJECT_COLORS.length]);
     setProjectIcon('hash');
     setEditor({ mode: 'create' });
-  };
+  }, [projects?.length]);
 
   const openRename = () => {
     if (!selected) return;
@@ -324,7 +331,129 @@ export default function Inbox() {
     ? `${tasks.length}개 · ${canSortManually ? '길게 눌러 순서 변경' : effectiveScope === 'all' && sort === 'manual' ? '목록별' : sortLabels[sort]}`
     : undefined;
 
-  const unsectionedTasks = hasSections ? tasks.filter((t) => !t.section_id || !projectSections.some((s) => s.id === t.section_id)) : tasks;
+  const unsectionedTasks = useMemo(
+    () => (hasSections ? tasks.filter((t) => !t.section_id || !projectSections.some((s) => s.id === t.section_id)) : tasks),
+    [hasSections, tasks, projectSections],
+  );
+
+  const visibleTasks = useMemo(() => {
+    if (allProjectGroups && allProjectGroups.length > 0) {
+      return allProjectGroups.flatMap((group) => (!selectedIds && collapsedSections.has(group.key) ? [] : group.tasks));
+    }
+    if (hasSections) {
+      return [
+        ...unsectionedTasks,
+        ...projectSections.flatMap((section) => (!selectedIds && collapsedSections.has(section.id) ? [] : tasks.filter((t) => t.section_id === section.id))),
+      ];
+    }
+    return tasks;
+  }, [allProjectGroups, collapsedSections, hasSections, projectSections, selectedIds, tasks, unsectionedTasks]);
+
+  const scopeOrder = useMemo<Scope[]>(
+    () => ['all', 'inbox', ...(projects ?? []).map((p) => p.id)],
+    [projects],
+  );
+
+  const anySheetOpen = pickingSort || projectMenu || showTemplates || pickingDoneWindow || !!editor || !!sectionEditor || !!managingSection || confirmDelete || !!sheets.scheduling || !!sheets.menu;
+
+  const cursor = useListCursor(visibleTasks, taskIdOf, {
+    enabled: isFocused && !anySheetOpen,
+    scrollRef,
+    estimatedRowHeight: 64,
+    headerOffset: 100,
+  });
+
+  const reorderTask = useCallback((task: Task, delta: -1 | 1) => {
+    const list = hasSections
+      ? (task.section_id && projectSections.some((s) => s.id === task.section_id)
+        ? tasks.filter((t) => t.section_id === task.section_id)
+        : unsectionedTasks)
+      : tasks;
+    const idx = list.findIndex((t) => t.id === task.id);
+    const target = idx + delta;
+    if (idx < 0 || target < 0 || target >= list.length) return;
+    const ordered = [...list];
+    [ordered[idx], ordered[target]] = [ordered[target], ordered[idx]];
+    model.reorder(positionsFor(ordered, task));
+    haptic.tap();
+  }, [hasSections, model, projectSections, tasks, unsectionedTasks]);
+
+  const onBeforeTaskKey = useCallback((event: HardwareKeyEvent) => {
+    if (event.editing) return false;
+    if (matchesCombo(event, '[')) {
+      const idx = scopeOrder.indexOf(effectiveScope);
+      const nextIdx = idx <= 0 ? scopeOrder.length - 1 : idx - 1;
+      selectScope(scopeOrder[nextIdx]);
+      haptic.tap();
+      return true;
+    }
+    if (matchesCombo(event, ']')) {
+      const idx = scopeOrder.indexOf(effectiveScope);
+      const nextIdx = idx < 0 || idx >= scopeOrder.length - 1 ? 0 : idx + 1;
+      selectScope(scopeOrder[nextIdx]);
+      haptic.tap();
+      return true;
+    }
+    if (matchesCombo(event, 'shift+[') || matchesCombo(event, 'shift+]')) {
+      const dir = matchesCombo(event, 'shift+[') ? -1 : 1;
+      const idx = FILTER_ORDER.indexOf(listFilter);
+      const nextIdx = (idx + dir + FILTER_ORDER.length) % FILTER_ORDER.length;
+      selectFilter(FILTER_ORDER[nextIdx]);
+      haptic.tap();
+      return true;
+    }
+    if (matchesCombo(event, 'shift+p')) {
+      if (!event.repeat) openCreate();
+      return true;
+    }
+    if (matchesCombo(event, 'shift+b')) {
+      if (!event.repeat) setShowTemplates(true);
+      return true;
+    }
+    if (matchesCombo(event, 'shift+o')) {
+      if (!event.repeat) setPickingSort(true);
+      return true;
+    }
+    if (matchesCombo(event, 'r')) {
+      if (!event.repeat) {
+        void refresh();
+        showToast('새로고침했습니다.');
+      }
+      return true;
+    }
+    return false;
+  }, [effectiveScope, listFilter, openCreate, refresh, scopeOrder, selectFilter, selectScope]);
+
+  useTaskShortcuts(cursor, {
+    enabled: isFocused && !anySheetOpen,
+    selecting: !!selectedIds,
+    onToggleSelect: toggleSelect,
+    onStartSelect: startSelect,
+    onSchedule: sheets.setScheduling,
+    onOpenMenu: sheets.setMenu,
+    onToggleSubtasks: model.toggleSubtasks,
+    onAddSubtask: model.addSubtask,
+    onReorder: canSortManually ? reorderTask : undefined,
+    onBefore: onBeforeTaskKey,
+  });
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'mod+enter')) {
+        if (event.repeat) return true;
+        if (editor) {
+          saveProject();
+          return true;
+        }
+        if (sectionEditor) {
+          saveSection();
+          return true;
+        }
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && (!!editor || !!sectionEditor) },
+  );
 
   return (
     <Screen>
@@ -430,7 +559,7 @@ export default function Inbox() {
                   {!collapsed ? (
                     <TaskRows
                       model={model} tasks={group.tasks} hideProject selectedIds={selectedIds}
-                      onToggleSelect={toggleSelect} />
+                      onToggleSelect={toggleSelect} focusedTaskId={cursor.focusedId} />
                   ) : null}
                 </View>
               );
@@ -440,7 +569,7 @@ export default function Inbox() {
               {unsectionedTasks.length > 0 ? (
                 <TaskRows
                   key={effectiveScope} model={model} tasks={unsectionedTasks} sortable={canSortManually}
-                  selectedIds={selectedIds} onToggleSelect={toggleSelect} />
+                  selectedIds={selectedIds} onToggleSelect={toggleSelect} focusedTaskId={cursor.focusedId} />
               ) : null}
               {projectSections.map((section) => {
                 const sectionTasks = tasks.filter((t) => t.section_id === section.id);
@@ -469,7 +598,7 @@ export default function Inbox() {
                       sectionTasks.length > 0 ? (
                         <TaskRows
                           model={model} tasks={sectionTasks} sortable={canSortManually}
-                          selectedIds={selectedIds} onToggleSelect={toggleSelect} />
+                          selectedIds={selectedIds} onToggleSelect={toggleSelect} focusedTaskId={cursor.focusedId} />
                       ) : (
                         <Pressable
                           onPress={() => quickAdd.open({ projectId: selected!.id, sectionId: section.id })}
@@ -493,7 +622,7 @@ export default function Inbox() {
             <>
               <TaskRows
                 key={effectiveScope + '-' + listFilter} model={model} tasks={tasks} sortable={canSortManually}
-                selectedIds={selectedIds} onToggleSelect={toggleSelect} />
+                selectedIds={selectedIds} onToggleSelect={toggleSelect} focusedTaskId={cursor.focusedId} />
               {selected ? (
                 <Pressable
                   accessibilityRole="button" accessibilityLabel="섹션으로 나누기" onPress={openCreateSection}

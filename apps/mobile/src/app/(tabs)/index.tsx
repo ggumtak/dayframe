@@ -10,14 +10,21 @@ import { useHabits } from '@/data/habits';
 import { byPriority, bySchedule, useDoneToday, useProjects, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
 import { AI_ROUTES } from '@/features/ai';
 import { TodayHabits } from '@/features/habits/TodayHabits';
+import {
+  type HardwareKeyEvent, KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor,
+  useScreenContext, useScreenFocused, useTaskShortcuts,
+} from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
 import { DoneToday } from '@/features/tasks/DoneToday';
 import { EisenhowerView } from '@/features/tasks/EisenhowerView';
 import { dismissOnboarding, STARTER_CHECKLIST, useOnboardingDismissed } from '@/features/tasks/onboarding';
 import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
+import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
+import { TaskMenu } from '@/features/tasks/TaskMenu';
 import { Timeline } from '@/features/tasks/Timeline';
+import { useTodayFoldedGroups } from '@/features/tasks/todayFold';
 import { OverdueStrip, TodayGroups } from '@/features/tasks/TodayGroups';
 import { buildShareText, createTodayReuser, deriveToday, type TodayGrouping } from '@/features/tasks/todayList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
@@ -55,9 +62,12 @@ const groupLabels: Record<TodayGrouping, string> = {
 const isTodayView = (value: string): value is TodayView => value === 'list' || value === 'timeline' || value === 'matrix';
 const isTodaySort = (value: string): value is TodaySort => value in sortLabels;
 const isTodayGrouping = (value: string): value is TodayGrouping => value in groupLabels;
+const taskId = (task: Task) => task.id;
 
 export default function Today() {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('today', isFocused);
   const { tasks, roots, isLoading, isError, refetch } = useTaskIndex();
   const { progress: subtaskProgress } = useSubtaskProgress();
   const { data: sessions } = useFocusSessions();
@@ -75,10 +85,13 @@ export default function Today() {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
+  const [kbdSchedule, setKbdSchedule] = useState<Task | null>(null);
+  const [kbdMenu, setKbdMenu] = useState<Task | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const scrollRef = useRef<ScrollViewInstance>(null);
   useTabScrollTop('index', scrollRef);
   const { data: projects } = useProjects();
+  const foldedGroups = useTodayFoldedGroups();
 
   const minute = useMinute();
   const timeZone = deviceTimeZone();
@@ -101,6 +114,21 @@ export default function Today() {
   );
   const allVisibleToday = useMemo(() => [...overdue, ...due], [overdue, due]);
   const grouped = grouping !== 'none';
+
+  const visibleListTasks = useMemo(() => {
+    if (mainView !== 'list') return [];
+    if (!grouped) return allVisibleToday;
+    return groups.flatMap((group) => (
+      !selectedIds && foldedGroups.has(group.key) ? [] : [...group.overdue, ...group.due]
+    ));
+  }, [mainView, grouped, allVisibleToday, groups, selectedIds, foldedGroups]);
+
+  const cursor = useListCursor(visibleListTasks, taskId, {
+    enabled: isFocused && mainView === 'list',
+    scrollRef,
+    estimatedRowHeight: 64,
+    headerOffset: 120,
+  });
 
   const remaining = overdue.length + due.length;
   const summary = remaining || done.length
@@ -125,22 +153,97 @@ export default function Today() {
     setSelectedIds(new Set([task.id]));
   }, []);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
-  };
+  }, [refetch]);
 
-  const moveOverdue = () => {
+  const moveOverdue = useCallback(() => {
     haptic.success();
     flow.rescheduleOverdue();
     showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
-  };
+  }, [flow, overdue.length]);
 
-  const openPlanning = () => {
+  const openPlanning = useCallback(() => {
     haptic.tap();
     setPlanning(true);
-  };
+  }, []);
+
+  const handleAddSubtask = useCallback((task: Task) => {
+    quickAdd.open({ parentTaskId: task.id });
+  }, [quickAdd]);
+
+  const handleTodayKey = useCallback((event: HardwareKeyEvent): boolean => {
+    if (event.editing || event.modal) return false;
+
+    if (matchesCombo(event, 'tab') || matchesCombo(event, ']')) {
+      if (!event.repeat) {
+        const views: TodayView[] = twoPane ? ['list', 'matrix'] : ['list', 'timeline', 'matrix'];
+        const currentIndex = Math.max(0, views.indexOf(mainView));
+        const next = views[(currentIndex + 1) % views.length];
+        setSelectedIds(null);
+        setView(next);
+        haptic.tap();
+      }
+      return true;
+    }
+    if (matchesCombo(event, 'shift+tab') || matchesCombo(event, '[')) {
+      if (!event.repeat) {
+        const views: TodayView[] = twoPane ? ['list', 'matrix'] : ['list', 'timeline', 'matrix'];
+        const currentIndex = Math.max(0, views.indexOf(mainView));
+        const next = views[(currentIndex - 1 + views.length) % views.length];
+        setSelectedIds(null);
+        setView(next);
+        haptic.tap();
+      }
+      return true;
+    }
+    if (matchesCombo(event, 'p')) {
+      if (!event.repeat) openPlanning();
+      return true;
+    }
+    if (matchesCombo(event, 'shift+o')) {
+      if (!event.repeat) {
+        haptic.tap();
+        setOptionsOpen(true);
+      }
+      return true;
+    }
+    if (matchesCombo(event, 'shift+t')) {
+      if (overdue.length > 0) {
+        if (!event.repeat) moveOverdue();
+        return true;
+      }
+      return false;
+    }
+    if (matchesCombo(event, 'r')) {
+      if (!event.repeat) {
+        void refresh();
+        showToast('새로고침했습니다.');
+      }
+      return true;
+    }
+    return false;
+  }, [twoPane, mainView, setView, openPlanning, overdue.length, moveOverdue, refresh]);
+
+  const todayShortcutsEnabled = isFocused && !planning && !optionsOpen && !kbdSchedule && !kbdMenu;
+
+  useTaskShortcuts(cursor, {
+    enabled: todayShortcutsEnabled && mainView === 'list',
+    selecting: !!selectedIds,
+    onToggleSelect: toggleSelect,
+    onStartSelect: startSelect,
+    onSchedule: setKbdSchedule,
+    onOpenMenu: setKbdMenu,
+    onAddSubtask: handleAddSubtask,
+    onBefore: handleTodayKey,
+  });
+
+  useKeyHandler(handleTodayKey, {
+    priority: KEY_PRIORITY.screen,
+    enabled: todayShortcutsEnabled && mainView !== 'list',
+  });
 
   const shareToday = () => {
     const names = new Map((projects ?? []).map((project) => [project.id, project.name]));
@@ -228,7 +331,8 @@ export default function Today() {
     <Timeline
       tasks={due} sessions={sessions ?? []} timeZone={timeZone} overdueCount={twoPane ? 0 : overdue.length}
       onComplete={flow.complete} onAddAt={addAt} onRescheduleTime={rescheduleOnTimeline}
-      onPlanOverdue={() => setPlanning(true)} />
+      onPlanOverdue={() => setPlanning(true)}
+      keyboardActive={isFocused && mainView === 'timeline' && !planning && !optionsOpen} />
   );
 
   const hasCustomViewBar = mainView === 'list' && remaining > 0 && (grouping !== 'project' || sort !== 'schedule');
@@ -288,7 +392,9 @@ export default function Today() {
           ) : null}
 
           {isLoading ? <Loading /> : mainView === 'timeline' ? timeline : mainView === 'matrix' ? (
-            <EisenhowerView roots={roots} subtaskProgress={subtaskProgress} refreshing={refreshing} onRefresh={refresh} />
+            <EisenhowerView
+              roots={roots} subtaskProgress={subtaskProgress} refreshing={refreshing} onRefresh={refresh}
+              keyboardActive={isFocused && mainView === 'matrix' && !planning && !optionsOpen} />
           ) : (
             <ScrollView
               ref={scrollRef}
@@ -331,7 +437,9 @@ export default function Today() {
                     <OverdueStrip count={overdue.length} onSpread={overdue.length >= 2 ? openPlanning : undefined} onMoveToday={moveOverdue} />
                   ) : null}
                   {groups.length ? (
-                    <TodayGroups groups={groups} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                    <TodayGroups
+                      groups={groups} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect}
+                      focusedTaskId={cursor.focusedId} />
                   ) : (
                     allDoneCard
                   )}
@@ -365,7 +473,8 @@ export default function Today() {
                           </View>
                         )} />
                       <TaskList
-                        tasks={overdue} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                        tasks={overdue} selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect}
+                        focusedTaskId={cursor.focusedId} />
                     </>
                   ) : null}
                   {due.length ? (
@@ -374,7 +483,8 @@ export default function Today() {
                         title="오늘" count={due.length}
                         action={sort !== 'schedule' ? <Txt variant="caption" tone="muted">{sortLabels[sort]}</Txt> : undefined} />
                       <TaskList
-                        tasks={due} hideDate selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                        tasks={due} hideDate selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect}
+                        focusedTaskId={cursor.focusedId} />
                     </>
                   ) : overdue.length ? (
                     <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 할 일이 없습니다.</Txt>
@@ -409,6 +519,9 @@ export default function Today() {
       <PlanDaySheet
         visible={planning} onClose={() => setPlanning(false)}
         overdue={overdue} allOpen={tasks} openRoots={roots} subtaskProgress={subtaskProgress} />
+
+      <ScheduleSheet task={kbdSchedule} onClose={() => setKbdSchedule(null)} onPick={flow.reschedule} />
+      <TaskMenu task={kbdMenu} onClose={() => setKbdMenu(null)} onSchedule={setKbdSchedule} onStartSelect={startSelect} />
 
       {optionsOpen ? (
         <Sheet visible onClose={closeOptions} title="보기 옵션">

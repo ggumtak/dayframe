@@ -12,10 +12,16 @@ import { Chip, Icon, IconButton, type IconName, Txt } from '@/components/ui';
 import { useNewTaskDate } from '@/data/session';
 import { nextPosition, useProjects, useSections, useTags, useTaskActions, useTaskIndex } from '@/data/tasks';
 import { AI_ROUTES } from '@/features/ai/routes';
+import {
+  KEY_PRIORITY, matchesCombo, moveCursor, useInputCapture, useKeyboard, useKeyHandler, useScreenContext,
+} from '@/features/keyboard';
 import { DAY_MINUTES, leadLabel, type TaskReminder } from '@/features/reminders/lead';
 import { setTaskReminder } from '@/features/reminders/overrides';
 import { priorityA11y, priorityLabel, priorityMark, priorityOption } from '@/features/tasks/priority';
-import { describeRecurrence, deviceTimeZone, dueDate, formatDue, formatDurationMinutes, instantFor, type PlainDate, today } from '@/lib/dates';
+import {
+  describeRecurrence, deviceTimeZone, dueDate, formatDue, formatDurationMinutes, instantFor, type PlainDate,
+  type Temporal, today,
+} from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { useLayout } from '@/lib/layoutContext';
@@ -139,13 +145,20 @@ function QuickAddSheet({ defaults, frame, onClose }: {
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { keyboardMode, blurActiveInput } = useKeyboard();
+  useScreenContext('quick-add');
   const input = useRef<TextInputInstance>(null);
+  const notesInput = useRef<TextInputInstance>(null);
+  const notesFocusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [text, setText] = useState(defaults.initialText ?? '');
   const [notes, setNotes] = useState('');
   const [showNotes, setShowNotes] = useState(false);
   const [plainText, setPlainText] = useState(false);
   const [added, setAdded] = useState(0);
   const [openPane, setOpenPane] = useState<null | 'priority' | 'calendar' | 'reminder'>(null);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [calendarCursor, setCalendarCursor] = useState<PlainDate | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState<Temporal.PlainYearMonth | null>(null);
   const [chosenSectionId, setChosenSectionId] = useState<string | null | undefined>(defaults.sectionId);
   const [reminderChoice, setReminderChoice] = useState<TaskReminder | undefined>(undefined);
   const [undated, setUndated] = useState(false);
@@ -177,6 +190,7 @@ function QuickAddSheet({ defaults, frame, onClose }: {
   const draft = plainText ? undefined : analysis?.task;
   const draftProject = draft?.project;
   const todayDate = useMemo(() => today(timezone), [timezone]);
+  const draftPlainDate = draft?.due_at ? dueDate({ due_at: draft.due_at, timezone }) : (defaultsToToday && !undated ? todayDate : null);
 
   useEffect(() => {
     const length = defaults.initialText?.length ?? 0;
@@ -189,6 +203,13 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     return () => clearTimeout(timer);
   }, [defaults.initialText]);
 
+  useEffect(() => () => {
+    if (notesFocusTimer.current) {
+      clearTimeout(notesFocusTimer.current);
+      notesFocusTimer.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
       onClose();
@@ -200,7 +221,14 @@ function QuickAddSheet({ defaults, frame, onClose }: {
   const recognised = { background: colors.accentSoft, foreground: colors.accentText };
   const palette: PillPalette = { schedule: recognised, project: recognised, tag: recognised, priority: recognised };
 
+  const closePane = () => {
+    setOpenPane(null);
+    setCalendarCursor(null);
+    setCalendarMonth(null);
+  };
+
   const closeSheet = () => {
+    blurActiveInput();
     Keyboard.dismiss();
     onClose();
   };
@@ -277,7 +305,8 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     setShowNotes(false);
     setPlainText(false);
     setUndated(false);
-    setOpenPane(null);
+    closePane();
+    setSuggestionIndex(0);
     setChosenSectionId(defaults.sectionId);
     setReminderChoice(undefined);
     if (toastMessage) showToast(toastMessage);
@@ -360,11 +389,18 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     const pool = mention.kind === 'project' ? (projects ?? []).map((item) => item.name) : (tags ?? []).map((item) => item.name);
     return matchNames(pool, mention.query);
   }, [mention, projects, tags]);
+  const mentionKey = mention ? `${mention.kind}:${mention.query}` : '';
+  const [lastMentionKey, setLastMentionKey] = useState(mentionKey);
+  if (mentionKey !== lastMentionKey) {
+    setLastMentionKey(mentionKey);
+    setSuggestionIndex(0);
+  }
+  const activeSuggestion = suggestions.length ? Math.min(suggestionIndex, suggestions.length - 1) : -1;
 
   const applyPickedDate = (pickedDate: PlainDate | null) => {
     haptic.tap();
     setPlainText(false);
-    setOpenPane(null);
+    closePane();
     if (pickedDate === null) {
       setText((current) => removeTokens(current, tokens, (t) => t.kind === 'date' || t.kind === 'time'));
       setUndated(true);
@@ -376,39 +412,86 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     input.current?.focus();
   };
 
+  const toggleCalendarPane = () => {
+    setPlainText(false);
+    if (openPane === 'calendar') {
+      closePane();
+      input.current?.focus();
+      return;
+    }
+    const initialDate = draftPlainDate ?? todayDate;
+    setCalendarCursor(initialDate);
+    setCalendarMonth(initialDate.toPlainYearMonth());
+    setOpenPane('calendar');
+    blurActiveInput();
+    input.current?.blur();
+    notesInput.current?.blur();
+  };
+
+  const moveCalendarCursor = (days: number) => {
+    const base = calendarCursor ?? draftPlainDate ?? todayDate;
+    const next = days < 0 ? base.subtract({ days: -days }) : base.add({ days });
+    setCalendarCursor(next);
+    setCalendarMonth(next.toPlainYearMonth());
+  };
+
+  const toggleNotes = () => {
+    if (openPane === 'calendar') closePane();
+    const next = !showNotes;
+    setShowNotes(next);
+    if (notesFocusTimer.current) {
+      clearTimeout(notesFocusTimer.current);
+      notesFocusTimer.current = null;
+    }
+    if (next) {
+      notesFocusTimer.current = setTimeout(() => {
+        notesFocusTimer.current = null;
+        notesInput.current?.focus();
+      }, 40);
+    } else {
+      input.current?.focus();
+    }
+  };
+
+  const openAiOrganize = () => {
+    haptic.tap();
+    const memo = text.trim();
+    closeSheet();
+    router.push({ pathname: AI_ROUTES.organize, params: memo ? { text: memo } : {} });
+  };
+
   const insert = (item: (typeof baseInserts)[number]) => {
     haptic.tap();
     if (item.kind === 'calendar') {
-      setPlainText(false);
-      const next = openPane === 'calendar' ? null : 'calendar';
-      setOpenPane(next);
-      if (next === 'calendar') Keyboard.dismiss();
-      else input.current?.focus();
+      toggleCalendarPane();
       return;
     }
     if (item.kind === 'priority') {
       setPlainText(false);
+      setCalendarCursor(null);
+      setCalendarMonth(null);
       setOpenPane((cur) => (cur === 'priority' ? null : 'priority'));
       input.current?.focus();
       return;
     }
     if (item.kind === 'reminder') {
+      setCalendarCursor(null);
+      setCalendarMonth(null);
       setOpenPane((cur) => (cur === 'reminder' ? null : 'reminder'));
       return;
     }
     if (item.kind === 'notes') {
-      if (openPane === 'calendar') setOpenPane(null);
-      setShowNotes((open) => !open);
+      toggleNotes();
       return;
     }
     if (item.kind === 'plain') {
       setPlainText((on) => !on);
-      setOpenPane(null);
+      closePane();
       input.current?.focus();
       return;
     }
     setPlainText(false);
-    setOpenPane(null);
+    closePane();
     if (item.kind === 'date' || item.kind === 'time' || item.kind === 'duration' || item.kind === 'recurrence') {
       if (item.kind === 'date') setUndated(false);
       const scheduleKind = item.kind;
@@ -421,8 +504,9 @@ function QuickAddSheet({ defaults, frame, onClose }: {
 
   const pickPriority = (priority: Priority) => {
     haptic.tap();
+    setPlainText(false);
     setText((current) => applyPriority(current, priority, tokens));
-    setOpenPane(null);
+    closePane();
     input.current?.focus();
   };
 
@@ -430,6 +514,7 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     if (!mention) return;
     haptic.tap();
     setText((current) => applyMention(current, mention, name));
+    setSuggestionIndex(0);
     input.current?.focus();
   };
 
@@ -439,8 +524,133 @@ function QuickAddSheet({ defaults, frame, onClose }: {
     input.current?.focus();
   };
 
+  useInputCapture({
+    tab: suggestions.length > 0,
+    arrows: suggestions.length > 0 || openPane === 'calendar',
+    enabled: true,
+  });
+
+  useKeyHandler((event) => {
+    if (matchesCombo(event, 'escape')) {
+      if (openPane !== null) {
+        closePane();
+        input.current?.focus();
+      } else {
+        closeSheet();
+      }
+      return true;
+    }
+    if (matchesCombo(event, 'mod+shift+enter')) {
+      if (isMultiLine && !parent) submitMultiAsChecklist();
+      else submit();
+      return true;
+    }
+    if (matchesCombo(event, 'mod+enter')) {
+      submit();
+      return true;
+    }
+    if (openPane === 'calendar') {
+      if (matchesCombo(event, 'arrowleft')) {
+        moveCalendarCursor(-1);
+        return true;
+      }
+      if (matchesCombo(event, 'arrowright')) {
+        moveCalendarCursor(1);
+        return true;
+      }
+      if (matchesCombo(event, 'arrowup')) {
+        moveCalendarCursor(-7);
+        return true;
+      }
+      if (matchesCombo(event, 'arrowdown')) {
+        moveCalendarCursor(7);
+        return true;
+      }
+      if (!event.editing && matchesCombo(event, 'enter')) {
+        applyPickedDate(calendarCursor ?? draftPlainDate ?? todayDate);
+        return true;
+      }
+    }
+    if (openPane !== 'calendar' && suggestions.length > 0) {
+      if (matchesCombo(event, 'arrowdown') || matchesCombo(event, 'ctrl+j')) {
+        const next = moveCursor(activeSuggestion, 1, suggestions.length);
+        if (next >= 0) setSuggestionIndex(next);
+        return true;
+      }
+      if (matchesCombo(event, 'arrowup')) {
+        const next = moveCursor(activeSuggestion, -1, suggestions.length);
+        if (next >= 0) setSuggestionIndex(next);
+        return true;
+      }
+      if (matchesCombo(event, 'tab')) {
+        const picked = suggestions[activeSuggestion >= 0 ? activeSuggestion : 0];
+        if (picked) pickSuggestion(picked);
+        return true;
+      }
+    }
+    if (matchesCombo(event, 'alt+1')) { pickPriority(1); return true; }
+    if (matchesCombo(event, 'alt+2')) { pickPriority(2); return true; }
+    if (matchesCombo(event, 'alt+3')) { pickPriority(3); return true; }
+    if (matchesCombo(event, 'alt+4')) { pickPriority(4); return true; }
+    if (matchesCombo(event, 'alt+d')) {
+      haptic.tap();
+      toggleCalendarPane();
+      return true;
+    }
+    if (matchesCombo(event, 'alt+p')) {
+      haptic.tap();
+      setPlainText(false);
+      setCalendarCursor(null);
+      setCalendarMonth(null);
+      setOpenPane((cur) => (cur === 'priority' ? null : 'priority'));
+      input.current?.focus();
+      return true;
+    }
+    if (matchesCombo(event, 'alt+m')) {
+      haptic.tap();
+      toggleNotes();
+      return true;
+    }
+    if (matchesCombo(event, 'alt+k')) {
+      const next: KeepOpen = keepOpen === 'on' ? 'off' : 'on';
+      haptic.tap();
+      setKeepOpen(next);
+      showToast(next === 'on' ? '계속 추가 모드를 켰습니다.' : '계속 추가 모드를 껐습니다.');
+      return true;
+    }
+    if (matchesCombo(event, 'alt+t')) {
+      haptic.tap();
+      setPlainText((on) => !on);
+      closePane();
+      input.current?.focus();
+      return true;
+    }
+    if (Platform.OS === 'android' && matchesCombo(event, 'alt+r')) {
+      haptic.tap();
+      setCalendarCursor(null);
+      setCalendarMonth(null);
+      setOpenPane((cur) => (cur === 'reminder' ? null : 'reminder'));
+      return true;
+    }
+    if (matchesCombo(event, 'alt+o')) {
+      applyPickedDate(todayDate);
+      return true;
+    }
+    if (matchesCombo(event, 'alt+n')) {
+      applyPickedDate(todayDate.add({ days: 1 }));
+      return true;
+    }
+    if (!parent && matchesCombo(event, 'alt+i')) {
+      openAiOrganize();
+      return true;
+    }
+    if (!event.editing) {
+      return true;
+    }
+    return false;
+  }, { priority: KEY_PRIORITY.quickAdd });
+
   const due = draft?.due_at ? formatDue({ due_at: draft.due_at, timezone, all_day: draft.all_day }) : null;
-  const draftPlainDate = draft?.due_at ? dueDate({ due_at: draft.due_at, timezone }) : (defaultsToToday && !undated ? todayDate : null);
   const repeat = describeRecurrence(draft?.recurrence_rule ?? null, draft?.recurrence_mode);
   const durationLabel = draft?.duration_minutes ? formatDurationMinutes(draft.duration_minutes) : null;
   const isNewProject = !!draft?.project
@@ -456,6 +666,11 @@ function QuickAddSheet({ defaults, frame, onClose }: {
   const canSend = (plainText ? !!text.trim() : !!parsed) || isMultiLine;
   const saturday = todayDate.add({ days: (6 - todayDate.dayOfWeek + 7) % 7 || 7 });
   const nextMonday = todayDate.add({ days: 8 - todayDate.dayOfWeek });
+  const keyboardHint = openPane === 'calendar'
+    ? '←→↑↓ 날짜 이동 · Enter 적용 · Esc 닫기'
+    : suggestions.length > 0
+      ? '↑↓ 이동 · Tab 선택 · Esc 닫기'
+      : 'Enter 추가 · Ctrl+Enter 저장 · Alt+M 메모 · Alt+1~4 우선순위 · Alt+K 계속 추가 · Esc 닫기';
 
   return (
     <KeyboardAvoidingView behavior="padding" style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -499,12 +714,7 @@ function QuickAddSheet({ defaults, frame, onClose }: {
           {parent ? null : (
             <Pressable
               accessibilityRole="button" accessibilityLabel="AI로 정리"
-              onPress={() => {
-                haptic.tap();
-                const memo = text.trim();
-                closeSheet();
-                router.push({ pathname: AI_ROUTES.organize, params: memo ? { text: memo } : {} });
-              }}
+              onPress={openAiOrganize}
               style={({ pressed }) => [styles.keepPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.65 : 1 }]}>
               <Icon name="zap" size={12} color={colors.textMuted} />
               <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>AI로 정리</Txt>
@@ -516,13 +726,14 @@ function QuickAddSheet({ defaults, frame, onClose }: {
         <HighlightInput
           ref={input} value={text} onChangeText={setText} tokens={tokens}
           palette={palette} disableHighlight={plainText} autoFocus onSubmitEditing={submit}
-          onFocus={() => { if (openPane === 'calendar') setOpenPane(null); }}
+          onFocus={() => { if (openPane === 'calendar') closePane(); }}
           placeholder={parent ? '하위 작업 입력 · 여러 줄 붙여넣기 가능' : '예: 금요일 3시 30분간 회의 #업무 !!!'}
           accessibilityLabel="할 일 입력" />
         {showNotes ? (
           <TextInput
+            ref={notesInput}
             value={notes} onChangeText={setNotes} multiline maxLength={10000}
-            onFocus={() => { if (openPane === 'calendar') setOpenPane(null); }}
+            onFocus={() => { if (openPane === 'calendar') closePane(); }}
             placeholder="메모나 링크를 입력해 주세요" placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
             style={[type.small, styles.notesInput, { backgroundColor: colors.surfaceMuted, color: colors.text }]} />
         ) : null}
@@ -556,15 +767,25 @@ function QuickAddSheet({ defaults, frame, onClose }: {
           <ScrollView
             horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always"
             contentContainerStyle={{ gap: 6, paddingTop: space.sm }}>
-            {suggestions.map((name) => (
-              <Pressable
-                key={name} accessibilityRole="button" accessibilityLabel={(mention.kind === 'project' ? '목록 ' : '태그 ') + name}
-                onPress={() => pickSuggestion(name)}
-                style={({ pressed }) => [styles.suggestion, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 }]}>
-                <Icon name={mention.kind === 'project' ? 'hash' : 'tag'} size={12} color={colors.textMuted} />
-                <Txt variant="smallStrong">{name}</Txt>
-              </Pressable>
-            ))}
+            {suggestions.map((name, index) => {
+              const highlighted = keyboardMode && index === activeSuggestion;
+              return (
+                <Pressable
+                  key={name} accessibilityRole="button" accessibilityLabel={(mention.kind === 'project' ? '목록 ' : '태그 ') + name}
+                  accessibilityState={{ selected: highlighted }}
+                  onPress={() => pickSuggestion(name)}
+                  style={({ pressed }) => [
+                    styles.suggestion,
+                    highlighted
+                      ? { backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accent }
+                      : { backgroundColor: colors.surfaceMuted, borderWidth: 1, borderColor: 'transparent' },
+                    { opacity: pressed ? 0.6 : 1 },
+                  ]}>
+                  <Icon name={mention.kind === 'project' ? 'hash' : 'tag'} size={12} color={highlighted ? colors.accentText : colors.textMuted} />
+                  <Txt variant="smallStrong" tone={highlighted ? 'accent' : 'default'}>{name}</Txt>
+                </Pressable>
+              );
+            })}
           </ScrollView>
         ) : null}
 
@@ -596,8 +817,10 @@ function QuickAddSheet({ defaults, frame, onClose }: {
             </ScrollView>
             <MonthCalendar
               initial={draftPlainDate ?? todayDate}
-              selected={draftPlainDate}
+              month={calendarMonth ?? (calendarCursor ?? draftPlainDate ?? todayDate).toPlainYearMonth()}
+              selected={calendarCursor ?? draftPlainDate}
               today={todayDate}
+              onMonthChange={setCalendarMonth}
               onSelect={applyPickedDate} />
           </View>
         ) : null}
@@ -735,6 +958,11 @@ function QuickAddSheet({ defaults, frame, onClose }: {
             <Icon name="arrow-up" size={20} color={canSend ? colors.onAccent : colors.textFaint} />
           </Pressable>
         </View>
+        {keyboardMode ? (
+          <Txt variant="caption" tone="muted" numberOfLines={1} ellipsizeMode="tail" style={styles.keyboardHint}>
+            {keyboardHint}
+          </Txt>
+        ) : null}
       </Animated.View>
     </KeyboardAvoidingView>
   );
@@ -826,6 +1054,7 @@ const styles = StyleSheet.create({
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: space.md },
   tools: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.md },
+  keyboardHint: { marginTop: space.sm },
   insert: {
     flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 10, height: 30,
   },

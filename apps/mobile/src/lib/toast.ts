@@ -11,6 +11,15 @@ export interface Toast {
 type Listener = (toast: Toast) => void;
 const listeners = new Set<Listener>();
 let counter = 0;
+let activeActionTrigger: (() => boolean) | null = null;
+
+export function setActiveToastTrigger(fn: (() => boolean) | null): void {
+  activeActionTrigger = fn;
+}
+
+export function triggerActiveToastAction(): boolean {
+  return activeActionTrigger ? activeActionTrigger() : false;
+}
 
 /** Shows a short message from anywhere, including outside React (query caches, timers). */
 export function showToast(message: string, options: Omit<Toast, 'id' | 'message'> = {}): void {

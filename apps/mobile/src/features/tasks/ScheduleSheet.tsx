@@ -4,6 +4,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimens
 import { MonthCalendar } from '@/components/MonthCalendar';
 import { Button, Chip, Icon, IconButton, Row, Sheet, Txt } from '@/components/ui';
 import { useTaskActions, useTaskIndex } from '@/data/tasks';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler } from '@/features/keyboard';
 import { parseErrorMessage } from '@/features/quick-add/messages';
 import { reminderSummary } from '@/features/reminders/lead';
 import { useReminderOverrides } from '@/features/reminders/overrides';
@@ -192,6 +193,92 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
   // The alert preview follows the time chosen here, before it is saved.
   const previewDue = useMemo(() => (current ? instantFor(current, minutes, task.timezone) : null), [current, minutes, task.timezone]);
   const chevron = <Icon name="chevron-right" size={18} color={colors.textFaint} />;
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'escape')) {
+        if (timeText !== null) {
+          setTimeText(null);
+          return true;
+        }
+        if (typing) {
+          setTyping(false);
+          return true;
+        }
+        if (pane !== 'main') {
+          back();
+          return true;
+        }
+        onClose();
+        return true;
+      }
+
+      if (matchesCombo(event, 'mod+enter')) {
+        if (typing && parsedText?.patch) {
+          applyTyped();
+          return true;
+        }
+        if (timeText !== null && typedMinutes !== null) {
+          applyTypedTime();
+          return true;
+        }
+      }
+
+      if (event.editing) return false;
+
+      if (pane === 'main') {
+        if (matchesCombo(event, '1') || matchesCombo(event, 't')) {
+          choose(now);
+          return true;
+        }
+        if (matchesCombo(event, '2') || matchesCombo(event, 'w')) {
+          choose(now.add({ days: 1 }));
+          return true;
+        }
+        if (matchesCombo(event, '3')) {
+          choose(saturday);
+          return true;
+        }
+        if (matchesCombo(event, '4')) {
+          choose(monday);
+          return true;
+        }
+        if (matchesCombo(event, '0') || matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
+          if (current) {
+            choose(null);
+            return true;
+          }
+        }
+        if (matchesCombo(event, 'i')) {
+          setTyping((open) => !open);
+          return true;
+        }
+        if (matchesCombo(event, 'r')) {
+          setPane('repeat');
+          return true;
+        }
+        if (Platform.OS === 'android' && matchesCombo(event, 'b')) {
+          setPane('reminder');
+          return true;
+        }
+        if (matchesCombo(event, '+') || matchesCombo(event, '=')) {
+          nudgeMinutes(15);
+          return true;
+        }
+        if (matchesCombo(event, '-')) {
+          nudgeMinutes(-15);
+          return true;
+        }
+        if (matchesCombo(event, 'enter') && timeChanged) {
+          choose(current ?? now);
+          return true;
+        }
+      }
+
+      return true;
+    },
+    { priority: KEY_PRIORITY.sheet },
+  );
 
   return (
     <Sheet visible onClose={pane === 'main' ? onClose : back} title={paneTitles[pane]}>

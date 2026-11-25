@@ -8,6 +8,9 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import Animated, { FadeIn, SlideInDown, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useKeyHandler } from '@/features/keyboard/manager';
+import { matchesCombo } from '@/features/keyboard/normalize';
+import { KEY_PRIORITY } from '@/features/keyboard/types';
 import { haptic } from '@/lib/haptics';
 import { useLayout } from '@/lib/layoutContext';
 import { elevation, radius, space, type, useTheme } from '@/theme';
@@ -268,6 +271,17 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
   const insets = useSafeAreaInsets();
   const { sheet } = useLayout();
   const translateY = useSharedValue(0);
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'escape')) {
+        if (!event.repeat) onClose();
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: visible },
+  );
 
   const drag = Gesture.Pan()
     .runOnJS(true)

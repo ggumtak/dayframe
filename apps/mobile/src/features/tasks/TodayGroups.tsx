@@ -38,12 +38,13 @@ export function OverdueStrip({ count, onSpread, onMoveToday }: { count: number; 
   );
 }
 
-const GroupSection = memo(function GroupSection({ group, model, folded, selectedIds, onToggleSelect }: {
+const GroupSection = memo(function GroupSection({ group, model, folded, selectedIds, onToggleSelect, focusedTaskId }: {
   group: TodayGroup;
   model: TaskListModel;
   folded: boolean;
   selectedIds: Set<string> | null;
   onToggleSelect: (task: Task) => void;
+  focusedTaskId?: string | null;
 }) {
   const { colors } = useTheme();
   const quickAdd = useQuickAdd();
@@ -92,12 +93,12 @@ const GroupSection = memo(function GroupSection({ group, model, folded, selected
           {group.overdue.length ? (
             <TaskRows
               model={model} tasks={group.overdue} hideProject={!!group.hideProject}
-              selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
+              selectedIds={selectedIds} onToggleSelect={onToggleSelect} focusedTaskId={focusedTaskId} />
           ) : null}
           {group.due.length ? (
             <TaskRows
               model={model} tasks={group.due} hideDate hideProject={!!group.hideProject}
-              selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
+              selectedIds={selectedIds} onToggleSelect={onToggleSelect} focusedTaskId={focusedTaskId} />
           ) : null}
         </View>
       )}
@@ -105,11 +106,12 @@ const GroupSection = memo(function GroupSection({ group, model, folded, selected
   );
 });
 
-export const TodayGroups = memo(function TodayGroups({ groups, selectedIds, onToggleSelect, onStartSelect }: {
+export const TodayGroups = memo(function TodayGroups({ groups, selectedIds, onToggleSelect, onStartSelect, focusedTaskId }: {
   groups: TodayGroup[];
   selectedIds: Set<string> | null;
   onToggleSelect: (task: Task) => void;
   onStartSelect: (task: Task) => void;
+  focusedTaskId?: string | null;
 }) {
   const { model, sheets } = useTaskListModel();
   const folded = useTodayFoldedGroups();
@@ -118,7 +120,7 @@ export const TodayGroups = memo(function TodayGroups({ groups, selectedIds, onTo
       {groups.map((group) => (
         <GroupSection
           key={group.key} group={group} model={model} folded={!selectedIds && folded.has(group.key)}
-          selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
+          selectedIds={selectedIds} onToggleSelect={onToggleSelect} focusedTaskId={focusedTaskId} />
       ))}
       <TaskListSheets sheets={sheets} onStartSelect={onStartSelect} />
     </View>

@@ -17,6 +17,7 @@ import { ToastHost } from '@/components/ToastHost';
 import { EmptyState } from '@/components/ui';
 import { persistOptions, queryClient, resumeWrites } from '@/data/client';
 import { SessionProvider, useSession } from '@/data/session';
+import { CommandPalette, GlobalShortcuts, KeyboardProvider, ShortcutHelpSheet } from '@/features/keyboard';
 import { QuickAddProvider, TAB_BAR_HEIGHT, useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BackgroundSync } from '@/features/reminders/BackgroundSync';
 import { UpdateProvider } from '@/features/update/useUpdate';
@@ -100,11 +101,16 @@ function App() {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <UpdateProvider>
         {signedIn ? (
-          <QuickAddProvider>
-            <Routes signedIn />
-            <BackgroundSync />
-            <SignedInToast />
-          </QuickAddProvider>
+          <KeyboardProvider>
+            <QuickAddProvider>
+              <Routes signedIn />
+              <BackgroundSync />
+              <SignedInToast />
+              <GlobalShortcuts />
+              <CommandPalette />
+              <ShortcutHelpSheet />
+            </QuickAddProvider>
+          </KeyboardProvider>
         ) : (
           <>
             <Routes signedIn={false} />

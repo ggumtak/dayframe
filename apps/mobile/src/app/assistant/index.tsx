@@ -7,6 +7,7 @@ import { useAiKeyStatus } from '@/features/ai/keyStore';
 import { AI_MODELS } from '@/features/ai/models';
 import { useAiPrefs } from '@/features/ai/prefs';
 import { AI_ROUTES } from '@/features/ai/routes';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler, useScreenFocused } from '@/features/keyboard';
 import { radius, space, useTheme } from '@/theme';
 
 const FEATURES: { icon: IconName; name: string; description: string; route: string }[] = [
@@ -44,9 +45,30 @@ function FeatureCard({ icon, name, description, onPress, highlight }: {
 
 /** AI 비서: the four features, and the way to the key when none is saved. */
 export default function AssistantHub() {
+  const isFocused = useScreenFocused();
   const { ready, hasKey } = useAiKeyStatus();
   const { model } = useAiPrefs();
   const modelName = AI_MODELS.find((item) => item.id === model)?.name ?? model;
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (!event.ctrl && !event.alt && !event.meta && !event.shift && ['1', '2', '3', '4'].includes(event.key)) {
+        const feature = FEATURES[Number(event.key) - 1];
+        if (feature) {
+          if (!event.repeat) router.push(feature.route as never);
+          return true;
+        }
+      }
+      if (matchesCombo(event, 'escape') || matchesCombo(event, 'backspace')) {
+        if (!event.repeat) router.back();
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused },
+  );
+
   return (
     <AiScreen
       title="AI 비서" subtitle={hasKey ? `${modelName} · 내 Anthropic 키` : undefined}

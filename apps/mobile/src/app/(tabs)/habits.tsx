@@ -3,25 +3,34 @@ import { useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 
 import { EmptyHabits } from '@/components/art';
-import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, Txt } from '@/components/ui';
-import { periodProgress, useHabitDetails, useHabits } from '@/data/habits';
-import { dayMet, logsByDate } from '@/features/habits/goal';
+import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, Sheet, Txt } from '@/components/ui';
+import { useHabitActions, useHabitDetails, useHabits } from '@/data/habits';
+import { nextCheckIn } from '@/features/habits/checkIn';
+import { dayMet, logsByDate, periodProgress } from '@/features/habits/goal';
 import { HabitCard } from '@/features/habits/HabitCard';
 import { HABIT_TIME_GROUPS, type HabitTimeOfDay, useHabitMetaMap } from '@/features/habits/habitMeta';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor, useScreenContext, useScreenFocused } from '@/features/keyboard';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, Temporal, today, weekdayName, weekStart } from '@/lib/dates';
+import { haptic } from '@/lib/haptics';
+import type { Habit, HabitLog } from '@/lib/shared';
 import { useTabScrollTop } from '@/lib/tabScroll';
-import type { HabitLog } from '@/lib/shared';
+import { showToast } from '@/lib/toast';
 import { space, useTheme } from '@/theme';
 
 const NO_LOGS: HabitLog[] = [];
+const habitId = (habit: Habit) => habit.id;
 
 export default function Habits() {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('habits', isFocused);
   const { data, isLoading, refetch } = useHabits();
+  const habitActions = useHabitActions();
   const habitMeta = useHabitMetaMap();
   const [refreshing, setRefreshing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [kbdMenuHabit, setKbdMenuHabit] = useState<Habit | null>(null);
   const scrollRef = useRef<ScrollViewInstance>(null);
   useTabScrollTop('habits', scrollRef);
   // Re-renders the cards when the date rolls over, so a check-in always lands on the current day.
@@ -66,11 +75,141 @@ export default function Habits() {
       .filter((group) => group.items.length > 0);
   }, [habits, habitMeta, hasTimeGroups]);
 
+  const orderedHabits = useMemo(() => groupedHabits.flatMap((group) => group.items), [groupedHabits]);
+  const cursor = useListCursor(orderedHabits, habitId, {
+    enabled: isFocused,
+    scrollRef,
+    estimatedRowHeight: 132,
+    headerOffset: 150,
+  });
+
   const refresh = async () => {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
   };
+
+  const kbdMenuDate = kbdMenuHabit ? today(kbdMenuHabit.timezone).toString() : '';
+  const kbdMenuLogs = kbdMenuHabit ? (details.get(kbdMenuHabit.id)?.logs ?? NO_LOGS) : NO_LOGS;
+  const kbdMenuTodayLog = kbdMenuHabit ? logsByDate(kbdMenuLogs).get(kbdMenuDate) : undefined;
+
+  const markKbdMenuHabit = (status: 'skipped' | 'frozen' | null) => {
+    if (!kbdMenuHabit) return;
+    habitActions.setLog({ habitId: kbdMenuHabit.id, date: kbdMenuDate, status, count: 0 });
+    setKbdMenuHabit(null);
+  };
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing || event.modal) return false;
+      if (matchesCombo(event, 'j') || matchesCombo(event, 'arrowdown')) {
+        cursor.move(1);
+        return true;
+      }
+      if (matchesCombo(event, 'k') || matchesCombo(event, 'arrowup')) {
+        cursor.move(-1);
+        return true;
+      }
+      if (matchesCombo(event, 'home')) {
+        cursor.moveFirst();
+        return true;
+      }
+      if (matchesCombo(event, 'shift+g') || matchesCombo(event, 'end')) {
+        cursor.moveLast();
+        return true;
+      }
+      if (matchesCombo(event, 'o')) {
+        if (!event.repeat) router.push('/habit/overview');
+        return true;
+      }
+      if (matchesCombo(event, 'g')) {
+        if (!event.repeat) router.push('/routines');
+        return true;
+      }
+      if (matchesCombo(event, 'r')) {
+        if (!event.repeat) {
+          void refresh();
+          showToast('새로고침했습니다.');
+        }
+        return true;
+      }
+
+      const habit = cursor.focusedItem;
+      if (habit) {
+        if (matchesCombo(event, 'space') || matchesCombo(event, 'x')) {
+          if (!event.repeat) {
+            const date = today(habit.timezone).toString();
+            const logs = details.get(habit.id)?.logs ?? NO_LOGS;
+            const todayCount = logsByDate(logs).get(date)?.count ?? 0;
+            const progress = periodProgress(habit, logs, date);
+            const next = nextCheckIn(habit, todayCount, progress);
+            if (next.reaches) haptic.success();
+            else haptic.light();
+            habitActions.setLog({ habitId: habit.id, date, status: next.status, count: next.count });
+          }
+          return true;
+        }
+        if (matchesCombo(event, 'enter')) {
+          if (!event.repeat) router.push({ pathname: '/habit/[id]', params: { id: habit.id } });
+          return true;
+        }
+        if (matchesCombo(event, 'f')) {
+          if (!event.repeat) {
+            haptic.tap();
+            router.navigate({ pathname: '/focus', params: { habitId: habit.id, at: String(Date.now()) } });
+          }
+          return true;
+        }
+        if (matchesCombo(event, 'm')) {
+          if (!event.repeat) {
+            haptic.tap();
+            setKbdMenuHabit(habit);
+          }
+          return true;
+        }
+        if (matchesCombo(event, 'escape')) {
+          if (!event.repeat) cursor.clear();
+          return true;
+        }
+      }
+
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused && !kbdMenuHabit },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (matchesCombo(event, 'escape')) {
+        if (!event.repeat) setKbdMenuHabit(null);
+        return true;
+      }
+      if (matchesCombo(event, '1') || matchesCombo(event, 's')) {
+        if (!event.repeat) {
+          haptic.tap();
+          markKbdMenuHabit('skipped');
+        }
+        return true;
+      }
+      if (matchesCombo(event, '2') || matchesCombo(event, 'f')) {
+        if (!event.repeat) {
+          haptic.tap();
+          markKbdMenuHabit('frozen');
+        }
+        return true;
+      }
+      if (matchesCombo(event, '0') || matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
+        if (kbdMenuTodayLog && !event.repeat) {
+          haptic.light();
+          markKbdMenuHabit(null);
+        }
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && !!kbdMenuHabit },
+  );
 
   return (
     <Screen>
@@ -137,7 +276,7 @@ export default function Habits() {
                   {group.items.map((habit) => (
                     <HabitCard
                       key={habit.id} habit={habit} logs={details.get(habit.id)?.logs ?? NO_LOGS} stats={details.get(habit.id)?.stats}
-                      meta={habitMeta[habit.id]} date={today(habit.timezone).toString()} />
+                      meta={habitMeta[habit.id]} date={today(habit.timezone).toString()} focused={cursor.focusedId === habit.id} />
                   ))}
                 </View>
               ))}
@@ -177,6 +316,11 @@ export default function Habits() {
           ) : null}
         </ScrollView>
       )}
+      <Sheet visible={!!kbdMenuHabit} onClose={() => setKbdMenuHabit(null)} title={kbdMenuHabit?.name}>
+        <Row icon="skip-forward" label="오늘 건너뛰기" detail="달성률에서 제외" onPress={() => markKbdMenuHabit('skipped')} />
+        <Row icon="pause-circle" label="오늘 쉬어가기" detail="연속 기록 유지" onPress={() => markKbdMenuHabit('frozen')} />
+        {kbdMenuTodayLog ? <Row icon="rotate-ccw" label="오늘 기록 지우기" onPress={() => markKbdMenuHabit(null)} /> : null}
+      </Sheet>
     </Screen>
   );
 }

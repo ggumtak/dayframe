@@ -5,6 +5,7 @@ import { Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Card, Header, Icon, type IconName, IconButton, Row, Screen, Segmented, Sheet, Txt } from '@/components/ui';
 import { useNewTaskDate, useProfile, useSession } from '@/data/session';
 import { AI_ROUTES, useAiKeyStatus } from '@/features/ai';
+import { useKeyboard, useScreenContext } from '@/features/keyboard';
 import { RemindersCard } from '@/features/reminders/RemindersCard';
 import { accentPalette, MODE_LABELS } from '@/features/settings/palettes';
 import { hiddenTabs, TAB_ICONS, TAB_LABELS, visibleTabs } from '@/features/settings/tabBar';
@@ -24,7 +25,10 @@ export default function Settings() {
   const tabBar = useTabBarConfig();
   const hidden = hiddenTabs(tabBar);
   const aiKey = useAiKeyStatus();
+  const { openHelp } = useKeyboard();
   const email = account?.email ?? '';
+
+  useScreenContext('settings');
 
   return (
     <Screen>
@@ -55,6 +59,10 @@ export default function Settings() {
               icon="sidebar" label="탭 바" href="/tab-bar"
               detail={hidden.length ? `탭 ${visibleTabs(tabBar).length}개 표시 · ${hidden.length}개 숨김` : `탭 ${visibleTabs(tabBar).length}개 표시`} />
             <LinkRow icon="droplet" label="테마" href="/appearance" detail={`${MODE_LABELS[mode]} · ${accentPalette(accent).label}`} />
+            <Row
+              icon="command" label="키보드 단축키" detail="? 키로 언제든 보기"
+              trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
+              onPress={openHelp} />
           </Card>
         </Group>
 

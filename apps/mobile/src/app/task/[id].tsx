@@ -9,6 +9,7 @@ import {
   attachTagByName, nextDueAfterComplete, nextPosition, useProjects, useSections, useSubtaskProgress, useTags, useTaskIndex, useTaskTags,
 } from '@/data/tasks';
 import { AiBreakdownSheet } from '@/features/ai';
+import { KEY_PRIORITY, matchesCombo, useKeyboard, useKeyHandler, useScreenContext, useScreenFocused } from '@/features/keyboard';
 import { reminderSummary } from '@/features/reminders/lead';
 import { TaskReminderPicker } from '@/features/reminders/ReminderChips';
 import { useReminderOverrides } from '@/features/reminders/overrides';
@@ -64,6 +65,9 @@ function shortStamp(iso: string, zone: string): string {
 
 function TaskEditor({ task }: { task: Task }) {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('task-detail', isFocused);
+  const { blurActiveInput } = useKeyboard();
   const { byId, children } = useTaskIndex();
   const { completedChildren } = useSubtaskProgress();
   const { data: projects } = useProjects();
@@ -83,6 +87,8 @@ function TaskEditor({ task }: { task: Task }) {
   const [sheet, setSheet] = useState<ModalKind>(null);
   const [showCompletedSubs, setShowCompletedSubs] = useState(true);
   const [done, setDone] = useState(false);
+  const titleInput = useRef<TextInputInstance>(null);
+  const notesInput = useRef<TextInputInstance>(null);
   const subtaskInput = useRef<TextInputInstance>(null);
   // Prevents unmount auto-save from firing a stale PATCH after the user explicitly deleted or completed a one-off task.
   const skipSave = useRef(false);
@@ -241,6 +247,178 @@ function TaskEditor({ task }: { task: Task }) {
       .catch(() => {});
   };
 
+  const openFocus = () => router.navigate({
+    pathname: '/focus',
+    params: {
+      taskId: task.id, at: String(Date.now()),
+      ...(task.duration_minutes ? { duration: String(task.duration_minutes) } : {}),
+    },
+  });
+
+  const duplicateTask = () => {
+    setSheet(null);
+    flow.duplicate(task, { openSubtasks: subtasks, completedSubtasks, tagNames: attachedTags.map((t) => t.name) });
+  };
+
+  const deleteTask = () => {
+    skipSave.current = true;
+    setSheet(null);
+    flow.remove(task);
+    router.back();
+  };
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'mod+enter')) {
+        if (event.editing) {
+          saveTitle();
+          saveNotes();
+          blurActiveInput();
+        } else if (!event.repeat) {
+          complete();
+        }
+        return true;
+      }
+      if (matchesCombo(event, 'escape')) {
+        if (event.repeat) return true;
+        if (event.editing) {
+          saveTitle();
+          saveNotes();
+          blurActiveInput();
+        } else {
+          router.back();
+        }
+        return true;
+      }
+      if (event.editing) return false;
+
+      if (matchesCombo(event, 'e')) {
+        titleInput.current?.focus();
+        return true;
+      }
+      if (matchesCombo(event, 'shift+e')) {
+        notesInput.current?.focus();
+        return true;
+      }
+      if (matchesCombo(event, 'a')) {
+        subtaskInput.current?.focus();
+        return true;
+      }
+      if (matchesCombo(event, 'x') || matchesCombo(event, 'space')) {
+        if (!event.repeat) complete();
+        return true;
+      }
+      if (matchesCombo(event, 's') || matchesCombo(event, 'd')) {
+        setSheet('schedule');
+        return true;
+      }
+      if (matchesCombo(event, 'p')) {
+        setSheet('priority');
+        return true;
+      }
+      if (event.shift && !event.ctrl && !event.alt && !event.meta && ['1', '2', '3', '4'].includes(event.key)) {
+        haptic.tap();
+        flow.update(task.id, { priority: Number(event.key) as Priority });
+        return true;
+      }
+      if (matchesCombo(event, 'l')) {
+        if (!parent) {
+          setSheet('project');
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 't')) {
+        setSheet('tags');
+        return true;
+      }
+      if (matchesCombo(event, 'r')) {
+        if (repeat || due) {
+          setSheet('repeat');
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'u')) {
+        setSheet('duration');
+        return true;
+      }
+      if (matchesCombo(event, 'f')) {
+        if (!event.repeat) openFocus();
+        return true;
+      }
+      if (matchesCombo(event, 'm')) {
+        setSheet('more');
+        return true;
+      }
+      if (matchesCombo(event, 'delete')) {
+        if (!event.repeat) {
+          skipSave.current = true;
+          flow.remove(task);
+          router.back();
+        }
+        return true;
+      }
+      if (matchesCombo(event, 'backspace')) {
+        if (!event.repeat) router.back();
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused && sheet === null },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (sheet === 'priority') {
+        if (!event.ctrl && !event.alt && !event.meta && !event.shift && ['1', '2', '3', '4'].includes(event.key)) {
+          haptic.tap();
+          flow.update(task.id, { priority: Number(event.key) as Priority });
+          setSheet(null);
+          return true;
+        }
+        return false;
+      }
+      if (sheet === 'duration') {
+        if (matchesCombo(event, '-')) {
+          applyDuration(task.duration_minutes === null ? 15 : Math.max(5, task.duration_minutes - 5));
+          return true;
+        }
+        if (matchesCombo(event, '+') || matchesCombo(event, '=')) {
+          applyDuration(task.duration_minutes === null ? 15 : Math.min(1440, task.duration_minutes + 5));
+          return true;
+        }
+        if (matchesCombo(event, '0')) {
+          applyDuration(null);
+          return true;
+        }
+        if (matchesCombo(event, 'enter')) {
+          if (!event.repeat) setSheet(null);
+          return true;
+        }
+        return false;
+      }
+      if (sheet === 'more') {
+        if (matchesCombo(event, 'c')) {
+          if (!event.repeat) copyMarkdown();
+          return true;
+        }
+        if (matchesCombo(event, 'd')) {
+          if (!event.repeat) duplicateTask();
+          return true;
+        }
+        if (matchesCombo(event, 'delete')) {
+          if (!event.repeat) deleteTask();
+          return true;
+        }
+        return false;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && (sheet === 'priority' || sheet === 'duration' || sheet === 'more') },
+  );
+
   return (
     <Screen>
       <View style={styles.bar}>
@@ -279,13 +457,7 @@ function TaskEditor({ task }: { task: Task }) {
         </Pressable>
         <IconButton
           name="clock" label="이 할 일로 집중 시작" color={colors.textMuted}
-          onPress={() => router.navigate({
-            pathname: '/focus',
-            params: {
-              taskId: task.id, at: String(Date.now()),
-              ...(task.duration_minutes ? { duration: String(task.duration_minutes) } : {}),
-            },
-          })} />
+          onPress={openFocus} />
         <IconButton name="more-horizontal" label="더 보기" color={colors.textMuted} onPress={() => setSheet('more')} />
       </View>
 
@@ -297,11 +469,13 @@ function TaskEditor({ task }: { task: Task }) {
                 <Checkbox checked={done} size={24} onPress={complete} label="완료" />
               </View>
               <TextInput
+                ref={titleInput}
                 value={title} onChangeText={setTitle} onBlur={saveTitle} multiline submitBehavior="blurAndSubmit" maxLength={500}
                 accessibilityLabel="제목" placeholder="제목" placeholderTextColor={colors.textFaint}
                 style={[type.heading, { flex: 1, color: colors.text, padding: 0, textAlignVertical: 'top' }]} />
             </View>
             <TextInput
+              ref={notesInput}
               value={notes} onChangeText={setNotes} onBlur={saveNotes} multiline maxLength={10000}
               placeholder="메모 추가" placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
               style={[type.body, styles.notes, { color: colors.textMuted }]} />
@@ -574,10 +748,7 @@ function TaskEditor({ task }: { task: Task }) {
       <Sheet visible={sheet === 'more'} onClose={() => setSheet(null)} title="더 보기">
         <Row
           icon="copy" label="할 일 복제" detail={totalSubtasks > 0 ? `하위 작업 ${totalSubtasks}개 포함` : undefined}
-          onPress={() => {
-            setSheet(null);
-            flow.duplicate(task, { openSubtasks: subtasks, completedSubtasks, tagNames: attachedTags.map((t) => t.name) });
-          }} />
+          onPress={duplicateTask} />
         {task.parent_task_id ? null : (
           // Swapping `sheet` closes 더 보기 as AI로 쪼개기 opens, so the two never stack.
           <Row icon="layers" label="AI로 쪼개기" onPress={() => setSheet('breakdown')} />
@@ -596,12 +767,7 @@ function TaskEditor({ task }: { task: Task }) {
         ) : null}
         <Row
           icon="trash-2" label="할 일 삭제" tone="danger"
-          onPress={() => {
-            skipSave.current = true;
-            setSheet(null);
-            flow.remove(task);
-            router.back();
-          }} />
+          onPress={deleteTask} />
       </Sheet>
       {sheet === 'breakdown' ? <AiBreakdownSheet task={task} visible onClose={() => setSheet(null)} /> : null}
     </Screen>

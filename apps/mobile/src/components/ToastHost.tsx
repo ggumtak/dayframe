@@ -1,10 +1,10 @@
 import Feather from '@expo/vector-icons/Feather';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { subscribeToasts, type Toast } from '@/lib/toast';
+import { setActiveToastTrigger, subscribeToasts, type Toast } from '@/lib/toast';
 import { elevation, radius, space, type, useTheme } from '@/theme';
 
 const DURATION = 4200;
@@ -17,15 +17,34 @@ export function ToastHost({ bottomOffset = 0, rightInset = 0, leftInset = 0 }: {
   const current = useRef<Toast | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const triggerActiveAction = useCallback((): boolean => {
+    const active = current.current;
+    if (!active || !active.actionLabel || !active.onAction) return false;
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    current.current = null;
+    setActiveToastTrigger(null);
+    setToast(null);
+    active.onAction();
+    return true;
+  }, []);
+
   useEffect(() => {
     const close = (dismissed: boolean) => {
-      if (timer.current) clearTimeout(timer.current);
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
       if (dismissed) current.current?.onDismiss?.();
       current.current = null;
+      setActiveToastTrigger(null);
     };
     const unsubscribe = subscribeToasts((next) => {
       close(true);
       current.current = next;
+      setActiveToastTrigger(next.actionLabel && next.onAction ? triggerActiveAction : null);
       setToast(next);
       timer.current = setTimeout(() => {
         close(true);
@@ -36,7 +55,7 @@ export function ToastHost({ bottomOffset = 0, rightInset = 0, leftInset = 0 }: {
       unsubscribe();
       close(true);
     };
-  }, []);
+  }, [triggerActiveAction]);
 
   if (!toast) return null;
   const isError = toast.tone === 'error';
@@ -55,10 +74,16 @@ export function ToastHost({ bottomOffset = 0, rightInset = 0, leftInset = 0 }: {
           <Pressable
             accessibilityRole="button" accessibilityLabel={toast.actionLabel} hitSlop={10}
             onPress={() => {
-              if (timer.current) clearTimeout(timer.current);
-              current.current = null;
-              toast.onAction?.();
-              setToast(null);
+              if (!triggerActiveAction()) {
+                if (timer.current) {
+                  clearTimeout(timer.current);
+                  timer.current = null;
+                }
+                current.current = null;
+                setActiveToastTrigger(null);
+                setToast(null);
+                toast.onAction?.();
+              }
             }}>
             <Text style={[type.smallStrong as TextStyle, { color: isDark ? colors.accentText : colors.background, textDecorationLine: isDark ? 'none' : 'underline' }]}>
               {toast.actionLabel}

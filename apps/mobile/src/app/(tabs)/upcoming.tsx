@@ -8,8 +8,13 @@ import { MonthCalendar } from '@/components/MonthCalendar';
 import { YearCalendar } from '@/components/YearCalendar';
 import { FoldHeader, Header, Icon, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
 import { bySchedule, useTaskIndex } from '@/data/tasks';
+import {
+  type HardwareKeyEvent, KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor, useScreenContext, useScreenFocused, useTaskShortcuts,
+} from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
+import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
+import { TaskMenu } from '@/features/tasks/TaskMenu';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { useMinute } from '@/lib/clock';
@@ -26,10 +31,14 @@ import { yearCounts } from '@/lib/yearView';
 import { radius, space, useTheme } from '@/theme';
 
 type UpcomingView = 'week' | 'month' | 'year';
+const VIEW_ORDER: readonly UpcomingView[] = ['week', 'month', 'year'];
 const isUpcomingView = (value: string): value is UpcomingView => value === 'week' || value === 'month' || value === 'year';
+const taskIdOf = (task: Task) => task.id;
 
 export default function Upcoming() {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('upcoming', isFocused);
   const { tasks, isLoading, refetch } = useTaskIndex();
   const [refreshing, setRefreshing] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
@@ -41,6 +50,8 @@ export default function Upcoming() {
   // follows the selected day, or this month.
   const [calendarMonth, setCalendarMonth] = useState<string | null>(null);
   const [yearShown, setYearShown] = useState<number | null>(null);
+  const [kbdSchedule, setKbdSchedule] = useState<Task | null>(null);
+  const [kbdMenu, setKbdMenu] = useState<Task | null>(null);
   const quickAdd = useQuickAdd();
   const flow = useTaskFlow();
   const listScroll = useRef<ScrollViewInstance>(null);
@@ -66,7 +77,8 @@ export default function Upcoming() {
     }
   }
   const minute = useMinute();
-  const now = today(deviceTimeZone());
+  const todayKey = today(deviceTimeZone()).toString();
+  const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
   const shownMonth = calendarMonth ?? (monthDay ? monthDay.slice(0, 7) : now.toPlainYearMonth().toString());
   const showMonth = useCallback((next: Temporal.PlainYearMonth) => {
     setCalendarMonth(next.toString());
@@ -85,8 +97,11 @@ export default function Upcoming() {
   );
 
   // Week strip starts from today + weekOffset * 7 days, navigable forward & backward like Todoist/Fantastical.
-  const weekStartDay = now.add({ days: weekOffset * 7 });
-  const week = Array.from({ length: 7 }, (_, offset) => weekStartDay.add({ days: offset }));
+  const week = useMemo(() => {
+    const start = Temporal.PlainDate.from(todayKey).add({ days: weekOffset * 7 });
+    return Array.from({ length: 7 }, (_, offset) => start.add({ days: offset }));
+  }, [todayKey, weekOffset]);
+  const weekStartDay = week[0];
   const weekLastDay = week[6];
 
   // Expand both real tasks AND future repeat previews across the visible week window.
@@ -134,16 +149,35 @@ export default function Upcoming() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const upcomingCount = useMemo(() => tasks.filter((item) => dueBucket(item) === 'upcoming').length, [tasks, minute]);
 
-  const plannerDays = selected
-    ? [{ key: selected, ...(weekMap.get(selected) ?? { real: [], previews: [] }) }]
-    : [
-      ...week.map((date) => {
-        const key = date.toString();
-        const entry = weekMap.get(key) ?? { real: [], previews: [] };
-        return { key, ...entry };
-      }),
-      ...beyondWeek,
+  const plannerDays = useMemo(() => (
+    selected
+      ? [{ key: selected, ...(weekMap.get(selected) ?? { real: [], previews: [] }) }]
+      : [
+        ...week.map((date) => {
+          const key = date.toString();
+          const entry = weekMap.get(key) ?? { real: [], previews: [] };
+          return { key, ...entry };
+        }),
+        ...beyondWeek,
+      ]
+  ), [selected, weekMap, week, beyondWeek]);
+
+  const weekVisibleTasks = useMemo(() => {
+    const raw = [
+      ...(weekOffset === 0 && !selected && overdueOpen ? overdue : []),
+      ...plannerDays.flatMap((d) => d.real),
     ];
+    const seen = new Set<string>();
+    const unique: Task[] = [];
+    for (const task of raw) {
+      if (seen.has(task.id)) continue;
+      seen.add(task.id);
+      unique.push(task);
+    }
+    return unique;
+  }, [weekOffset, selected, overdueOpen, overdue, plannerDays]);
+
+  const anySheetOpen = !!kbdSchedule || !!kbdMenu;
 
   const swipeWeek = Gesture.Pan()
     .activeOffsetX([-24, 24])
@@ -161,11 +195,147 @@ export default function Upcoming() {
       }
     });
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
-  };
+  }, [refetch]);
+
+  const addSubtask = useCallback((task: Task) => {
+    quickAdd.open({ parentTaskId: task.id });
+  }, [quickAdd]);
+
+  const stepWeekDay = useCallback((delta: -1 | 1) => {
+    const idx = selected ? week.findIndex((d) => d.toString() === selected) : -1;
+    if (idx < 0) {
+      setPicked(week[0].toString());
+      haptic.tap();
+      return;
+    }
+    const next = idx + delta;
+    if (next >= 0 && next < week.length) {
+      setPicked(week[next].toString());
+      haptic.tap();
+      return;
+    }
+    if (next < 0 && weekOffset > 0) {
+      setWeekOffset((w) => Math.max(0, w - 1));
+      setPicked(week[0].subtract({ days: 1 }).toString());
+      haptic.tap();
+      return;
+    }
+    if (next >= week.length) {
+      setWeekOffset((w) => w + 1);
+      setPicked(week[week.length - 1].add({ days: 1 }).toString());
+      haptic.tap();
+    }
+  }, [selected, week, weekOffset]);
+
+  const weekCursor = useListCursor(weekVisibleTasks, taskIdOf, {
+    enabled: isFocused && view === 'week' && !anySheetOpen,
+    scrollRef: listScroll,
+    estimatedRowHeight: 64,
+    headerOffset: 100,
+  });
+
+  const onBeforeWeekKey = useCallback((event: HardwareKeyEvent, focused: Task | null) => {
+    if (event.editing) return false;
+    if (matchesCombo(event, 'arrowleft') || matchesCombo(event, 'h')) {
+      stepWeekDay(-1);
+      return true;
+    }
+    if (matchesCombo(event, 'arrowright') || matchesCombo(event, 'l')) {
+      stepWeekDay(1);
+      return true;
+    }
+    if (matchesCombo(event, '[')) {
+      if (weekOffset > 0) {
+        haptic.tap();
+        setPicked(null);
+        setWeekOffset((w) => Math.max(0, w - 1));
+      }
+      return true;
+    }
+    if (matchesCombo(event, ']')) {
+      haptic.tap();
+      setPicked(null);
+      setWeekOffset((w) => w + 1);
+      return true;
+    }
+    if (matchesCombo(event, 't') && !focused) {
+      haptic.tap();
+      setPicked(null);
+      setWeekOffset(0);
+      return true;
+    }
+    if (matchesCombo(event, 'o') && !focused && weekOffset === 0 && !selected && overdue.length > 0) {
+      haptic.tap();
+      setOverdueOpen((open) => !open);
+      return true;
+    }
+    return false;
+  }, [overdue.length, selected, stepWeekDay, weekOffset]);
+
+  const onAfterWeekKey = useCallback((event: HardwareKeyEvent, focused: Task | null) => {
+    if (event.editing) return false;
+    if (!focused && selected && matchesCombo(event, 'escape')) {
+      haptic.tap();
+      setPicked(null);
+      return true;
+    }
+    return false;
+  }, [selected]);
+
+  useTaskShortcuts(weekCursor, {
+    enabled: isFocused && view === 'week' && !anySheetOpen,
+    onSchedule: setKbdSchedule,
+    onOpenMenu: setKbdMenu,
+    onAddSubtask: addSubtask,
+    onBefore: onBeforeWeekKey,
+    onAfter: onAfterWeekKey,
+  });
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (matchesCombo(event, 'tab') || matchesCombo(event, 'shift+tab')) {
+        if (!event.repeat) {
+          const dir = matchesCombo(event, 'shift+tab') ? -1 : 1;
+          const idx = VIEW_ORDER.indexOf(view);
+          const next = VIEW_ORDER[(idx + dir + VIEW_ORDER.length) % VIEW_ORDER.length];
+          haptic.tap();
+          setView(next);
+        }
+        return true;
+      }
+      if (matchesCombo(event, 'r')) {
+        if (!event.repeat) {
+          void refresh();
+          showToast('새로고침했습니다.');
+        }
+        return true;
+      }
+      if (view === 'year') {
+        if (matchesCombo(event, '[') || matchesCombo(event, 'arrowleft') || matchesCombo(event, 'h')) {
+          haptic.tap();
+          setYearShown((y) => (y ?? now.year) - 1);
+          return true;
+        }
+        if (matchesCombo(event, ']') || matchesCombo(event, 'arrowright') || matchesCombo(event, 'l')) {
+          haptic.tap();
+          setYearShown((y) => (y ?? now.year) + 1);
+          return true;
+        }
+        if (matchesCombo(event, 't')) {
+          haptic.tap();
+          setYearShown(now.year);
+          return true;
+        }
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused && !anySheetOpen },
+  );
 
   return (
     <Screen>
@@ -194,7 +364,9 @@ export default function Upcoming() {
       ) : view === 'month' ? (
         <MonthView
           key={appliedLink} scrollRef={monthScroll} tasks={tasks} month={shownMonth} onMonthChange={showMonth} selected={monthDay}
-          onSelect={setMonthDay} onAdd={addOn} refreshing={refreshing} onRefresh={refresh} />
+          onSelect={setMonthDay} onAdd={addOn} refreshing={refreshing} onRefresh={refresh}
+          keyboardActive={isFocused && view === 'month' && !anySheetOpen}
+          onSchedule={setKbdSchedule} onOpenMenu={setKbdMenu} onAddSubtask={addSubtask} />
       ) : (
         <>
           <View style={styles.weekNav}>
@@ -297,7 +469,7 @@ export default function Upcoming() {
                       <Txt variant="smallStrong" tone="muted">오늘로 이동</Txt>
                     </Pressable>
                   </View>
-                  {overdueOpen ? <TaskList tasks={overdue} /> : null}
+                  {overdueOpen ? <TaskList tasks={overdue} focusedTaskId={weekCursor.focusedId} /> : null}
                 </View>
               ) : null}
 
@@ -318,7 +490,7 @@ export default function Upcoming() {
                     <SectionTitle
                       title={title} count={total}
                       action={<AddButton label={title} onPress={() => addOn(date)} />} />
-                    {day.real.length ? <TaskList tasks={day.real} hideDate /> : null}
+                    {day.real.length ? <TaskList tasks={day.real} hideDate focusedTaskId={weekCursor.focusedId} /> : null}
                     {day.previews.map((task) => <Preview key={task.id + '-' + day.key} task={task} date={date} />)}
                   </View>
                 );
@@ -327,6 +499,9 @@ export default function Upcoming() {
           )}
         </>
       )}
+
+      <ScheduleSheet task={kbdSchedule} onClose={() => setKbdSchedule(null)} onPick={flow.reschedule} />
+      <TaskMenu task={kbdMenu} onClose={() => setKbdMenu(null)} onSchedule={setKbdSchedule} />
     </Screen>
   );
 }
@@ -398,17 +573,25 @@ function Preview({ task, date }: { task: Task; date: Temporal.PlainDate }) {
 /**
  * A month at a glance. Density dots mark workload per day (repeats included); swipe left/right to change months.
  */
-function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected, onSelect, onAdd, refreshing, onRefresh }: {
+function MonthView({
+  scrollRef, tasks, month: monthKey, onMonthChange, selected, onSelect, onAdd, refreshing, onRefresh,
+  keyboardActive, onSchedule, onOpenMenu, onAddSubtask,
+}: {
   scrollRef: RefObject<ScrollViewInstance | null>;
   tasks: Task[];
   /** The shown month, "YYYY-MM"; held by the screen so the year view can open a month here. */
   month: string; onMonthChange: (month: Temporal.PlainYearMonth) => void;
   selected: string | null; onSelect: (day: string | null) => void; onAdd: (date: Temporal.PlainDate) => void;
   refreshing: boolean; onRefresh: () => void;
+  keyboardActive: boolean;
+  onSchedule: (task: Task) => void;
+  onOpenMenu: (task: Task) => void;
+  onAddSubtask: (task: Task) => void;
 }) {
   const { colors } = useTheme();
-  const now = today(deviceTimeZone());
-  const picked = selected ? Temporal.PlainDate.from(selected) : null;
+  const todayKey = today(deviceTimeZone()).toString();
+  const now = useMemo(() => Temporal.PlainDate.from(todayKey), [todayKey]);
+  const picked = useMemo(() => (selected ? Temporal.PlainDate.from(selected) : null), [selected]);
   const month = useMemo(() => Temporal.PlainYearMonth.from(monthKey), [monthKey]);
   const days = useMemo(() => {
     const shown = Temporal.PlainYearMonth.from(monthKey);
@@ -439,8 +622,91 @@ function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected,
     return [counts, sum] as const;
   }, [days]);
 
-  const listed = [...days.keys()].filter((key) => !selected || key === selected).sort();
-  if (selected && !days.has(selected)) listed.push(selected);
+  const listed = useMemo(() => {
+    const keys = [...days.keys()].filter((key) => !selected || key === selected).sort();
+    if (selected && !days.has(selected)) keys.push(selected);
+    return keys;
+  }, [days, selected]);
+
+  const monthVisibleTasks = useMemo(() => {
+    const seen = new Set<string>();
+    const unique: Task[] = [];
+    for (const key of listed) {
+      for (const task of days.get(key)?.real ?? []) {
+        if (seen.has(task.id)) continue;
+        seen.add(task.id);
+        unique.push(task);
+      }
+    }
+    return unique;
+  }, [listed, days]);
+
+  const stepMonthDay = useCallback((delta: -1 | 1) => {
+    const base = picked ?? now;
+    const next = base.add({ days: delta });
+    const nextMonth = next.toPlainYearMonth();
+    if (nextMonth.toString() !== monthKey) {
+      onMonthChange(nextMonth);
+    }
+    onSelect(next.toString());
+    haptic.tap();
+  }, [monthKey, now, onMonthChange, onSelect, picked]);
+
+  const cursor = useListCursor(monthVisibleTasks, taskIdOf, {
+    enabled: keyboardActive,
+    scrollRef,
+    estimatedRowHeight: 64,
+    headerOffset: 340,
+  });
+
+  const onBeforeMonthKey = useCallback((event: HardwareKeyEvent, focused: Task | null) => {
+    if (event.editing) return false;
+    if (matchesCombo(event, '[')) {
+      haptic.tap();
+      onMonthChange(month.subtract({ months: 1 }));
+      return true;
+    }
+    if (matchesCombo(event, ']')) {
+      haptic.tap();
+      onMonthChange(month.add({ months: 1 }));
+      return true;
+    }
+    if (matchesCombo(event, 'arrowleft') || matchesCombo(event, 'h')) {
+      stepMonthDay(-1);
+      return true;
+    }
+    if (matchesCombo(event, 'arrowright') || matchesCombo(event, 'l')) {
+      stepMonthDay(1);
+      return true;
+    }
+    if (matchesCombo(event, 't') && !focused) {
+      haptic.tap();
+      onMonthChange(now.toPlainYearMonth());
+      onSelect(now.toString());
+      return true;
+    }
+    return false;
+  }, [month, now, onMonthChange, onSelect, stepMonthDay]);
+
+  const onAfterMonthKey = useCallback((event: HardwareKeyEvent, focused: Task | null) => {
+    if (event.editing) return false;
+    if (!focused && selected && matchesCombo(event, 'escape')) {
+      haptic.tap();
+      onSelect(null);
+      return true;
+    }
+    return false;
+  }, [onSelect, selected]);
+
+  useTaskShortcuts(cursor, {
+    enabled: keyboardActive,
+    onSchedule,
+    onOpenMenu,
+    onAddSubtask,
+    onBefore: onBeforeMonthKey,
+    onAfter: onAfterMonthKey,
+  });
+
   const title = (date: Temporal.PlainDate) => dayTitle(date, now);
 
   return (
@@ -477,7 +743,7 @@ function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected,
             <SectionTitle
               title={title(date)} count={entry.real.length + entry.previews.length} tone={Temporal.PlainDate.compare(date, now) < 0 ? 'danger' : undefined}
               action={<AddButton label={title(date)} onPress={() => onAdd(date)} />} />
-            {entry.real.length ? <TaskList tasks={entry.real} hideDate /> : null}
+            {entry.real.length ? <TaskList tasks={entry.real} hideDate focusedTaskId={cursor.focusedId} /> : null}
             {entry.previews.map((task) => <Preview key={task.id} task={task} date={date} />)}
             {entry.real.length + entry.previews.length === 0 ? (
               <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.sm }}>이 날은 예정된 할 일이 없습니다.</Txt>

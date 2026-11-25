@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Chip, Icon, type IconName, Row, Sheet, Txt } from '@/components/ui';
 import { useProjects, useSections, useSubtaskProgress, useTagNames, useTaskActions, useTaskIndex } from '@/data/tasks';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler } from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { describeRecurrence, formatDue, formatDurationMinutes, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -79,6 +80,84 @@ function TaskMenuContent({
     onClose();
     action();
   };
+
+  const openFocus = () => run(() => router.navigate({
+    pathname: '/focus',
+    params: {
+      taskId: task.id, at: String(Date.now()),
+      ...(task.duration_minutes ? { duration: String(task.duration_minutes) } : {}),
+    },
+  }));
+
+  const copyTask = () => run(() => {
+    const payload = openSubs.length + doneSubs.length > 0
+      ? toMarkdownChecklist(task, openSubs, doneSubs)
+      : task.title;
+    void Clipboard.setStringAsync(payload)
+      .then(() => showToast(openSubs.length + doneSubs.length > 0 ? '체크리스트를 복사했습니다.' : '제목을 복사했습니다.'))
+      .catch(() => {});
+  });
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'escape')) {
+        onClose();
+        return true;
+      }
+
+      if (event.editing) return false;
+
+      if (matchesCombo(event, 'x') || matchesCombo(event, 'space')) {
+        run(() => flow.complete(task));
+        return true;
+      }
+      if (matchesCombo(event, 't')) {
+        run(() => flow.reschedule(task, now));
+        return true;
+      }
+      if (matchesCombo(event, 'w')) {
+        run(() => flow.reschedule(task, now.add({ days: 1 })));
+        return true;
+      }
+      if (matchesCombo(event, 's') || matchesCombo(event, 'd')) {
+        run(() => onSchedule(task));
+        return true;
+      }
+      if (
+        matchesCombo(event, '1')
+        || matchesCombo(event, '2')
+        || matchesCombo(event, '3')
+        || matchesCombo(event, '4')
+      ) {
+        haptic.tap();
+        run(() => actions.update(task.id, { priority: Number(event.key) as Priority }));
+        return true;
+      }
+      if (matchesCombo(event, 'u') && !task.parent_task_id) {
+        run(() => quickAdd.open({ parentTaskId: task.id }));
+        return true;
+      }
+      if (matchesCombo(event, 'f')) {
+        openFocus();
+        return true;
+      }
+      if (matchesCombo(event, 'c')) {
+        copyTask();
+        return true;
+      }
+      if (matchesCombo(event, 'enter') || matchesCombo(event, 'o')) {
+        run(() => router.push({ pathname: '/task/[id]', params: { id: task.id } }));
+        return true;
+      }
+      if (matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
+        run(() => flow.remove(task));
+        return true;
+      }
+
+      return true;
+    },
+    { priority: KEY_PRIORITY.sheet },
+  );
 
   return (
     <Sheet visible onClose={onClose}>
@@ -200,25 +279,8 @@ function TaskMenuContent({
         <Row
           icon="copy" label="할 일 복제" detail={openSubs.length + doneSubs.length > 0 ? `하위 ${openSubs.length + doneSubs.length}개 포함` : undefined}
           onPress={() => run(() => flow.duplicate(task, { openSubtasks: openSubs, completedSubtasks: doneSubs, tagNames: tagNames.get(task.id) }))} />
-        <Row
-          icon="clock" label="이 할 일로 집중 시작" detail={durationLabel ?? undefined}
-          onPress={() => run(() => router.navigate({
-            pathname: '/focus',
-            params: {
-              taskId: task.id, at: String(Date.now()),
-              ...(task.duration_minutes ? { duration: String(task.duration_minutes) } : {}),
-            },
-          }))} />
-        <Row
-          icon="clipboard" label={openSubs.length + doneSubs.length > 0 ? '체크리스트 복사' : '제목 복사'}
-          onPress={() => run(() => {
-            const payload = openSubs.length + doneSubs.length > 0
-              ? toMarkdownChecklist(task, openSubs, doneSubs)
-              : task.title;
-            void Clipboard.setStringAsync(payload)
-              .then(() => showToast(openSubs.length + doneSubs.length > 0 ? '체크리스트를 복사했습니다.' : '제목을 복사했습니다.'))
-              .catch(() => {});
-          })} />
+        <Row icon="clock" label="이 할 일로 집중 시작" detail={durationLabel ?? undefined} onPress={openFocus} />
+        <Row icon="clipboard" label={openSubs.length + doneSubs.length > 0 ? '체크리스트 복사' : '제목 복사'} onPress={copyTask} />
         <Row icon="maximize-2" label="자세히 보기" onPress={() => run(() => router.push({ pathname: '/task/[id]', params: { id: task.id } }))} />
         <Row icon="trash-2" label="삭제" tone="danger" onPress={() => run(() => flow.remove(task))} />
       </ScrollView>
