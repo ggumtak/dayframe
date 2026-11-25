@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Platform, Pressable, RefreshControl, ScrollView, type ScrollViewInstance, StyleSheet, TextInput, type TextInputInstance, View } from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
 import { EmptyDone, EmptySearch, OfflineArt } from '@/components/art';
@@ -9,6 +9,7 @@ import { Button, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Scree
 import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
 import { useProjects, useTagNames, useTaskActions, useTaskIndex } from '@/data/tasks';
+import { KEY_PRIORITY, matchesCombo, useKeyboard, useKeyHandler, useListCursor, useScreenContext, useScreenFocused } from '@/features/keyboard';
 import { api } from '@/lib/api';
 import { deviceTimeZone, formatDate, formatTime, Temporal, today } from '@/lib/dates';
 import { josa } from '@/lib/josa';
@@ -18,10 +19,14 @@ import { showToast } from '@/lib/toast';
 import { fontFamily, radius, space, useTheme } from '@/theme';
 
 const PAGE = 60;
+const taskId = (task: Task) => task.id;
 
 /** Finished tasks, newest first, searchable with Korean chosung and #project/@tag/p1 filters. */
 export default function Completed() {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('completed', isFocused);
+  const { blurActiveInput } = useKeyboard();
   const zone = deviceTimeZone();
   const query = useQuery({ queryKey: keys.completedTasks, queryFn: api.completedTasks, meta: { persist: false } });
   const { data: projects } = useProjects();
@@ -31,6 +36,8 @@ export default function Completed() {
   const [search, setSearch] = useState('');
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<Task | null>(null);
+  const searchInput = useRef<TextInputInstance>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const names = useMemo(() => new Map((projects ?? []).map((project) => [project.id, project.name])), [projects]);
   // A finished subtask names its parent, which is already loaded: an open task, or one in this completed list.
@@ -63,6 +70,14 @@ export default function Completed() {
     return [...groups];
   }, [filtered, shown, zone]);
 
+  const shownTasks = useMemo(() => days.flatMap(([, tasks]) => tasks), [days]);
+
+  const cursor = useListCursor(shownTasks, taskId, {
+    enabled: isFocused && !deleting,
+    scrollRef,
+    estimatedRowHeight: 62,
+  });
+
   const total = filtered.length;
   const now = today(zone);
 
@@ -82,6 +97,68 @@ export default function Completed() {
     showToast('완료 기록을 삭제했습니다.');
   };
 
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'escape')) {
+        if (event.repeat) return true;
+        if (event.editing) {
+          blurActiveInput();
+        } else if (search) {
+          setSearch('');
+        } else {
+          router.back();
+        }
+        return true;
+      }
+      if (event.editing) return false;
+
+      if (matchesCombo(event, '/')) {
+        searchInput.current?.focus();
+        return true;
+      }
+      if (matchesCombo(event, 'j') || matchesCombo(event, 'arrowdown')) {
+        cursor.move(1);
+        return true;
+      }
+      if (matchesCombo(event, 'k') || matchesCombo(event, 'arrowup')) {
+        cursor.move(-1);
+        return true;
+      }
+      if (matchesCombo(event, 'space') || matchesCombo(event, 'x') || matchesCombo(event, 'enter')) {
+        if (cursor.focusedItem) {
+          if (!event.repeat) reopen(cursor.focusedItem);
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'delete')) {
+        if (cursor.focusedItem) {
+          if (!event.repeat) setDeleting(cursor.focusedItem);
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'backspace')) {
+        if (!event.repeat) router.back();
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused && !deleting },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (matchesCombo(event, 'enter')) {
+        if (!event.repeat) confirmDelete();
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && !!deleting },
+  );
+
   return (
     <Screen>
       <Header title="완료한 일" subtitle={total > 0 ? `${total}개` : undefined} left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
@@ -96,6 +173,7 @@ export default function Completed() {
               <View style={[styles.searchField, { backgroundColor: colors.surfaceMuted }]}>
                 <Icon name="search" size={16} color={colors.textMuted} />
                 <TextInput
+                  ref={searchInput}
                   value={search} onChangeText={setSearch} placeholder="완료한 일 검색" placeholderTextColor={colors.textFaint}
                   autoCorrect={false} returnKeyType="search" accessibilityLabel="완료한 일 검색"
                   style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 15, paddingVertical: 8 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
@@ -104,6 +182,7 @@ export default function Completed() {
             </View>
           ) : null}
           <ScrollView
+            ref={scrollRef}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: space.xxl * 2, flexGrow: 1 }}
             refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} tintColor={colors.accent} colors={[colors.accent]} />}>
@@ -120,8 +199,9 @@ export default function Completed() {
                   const at = Temporal.Instant.from(task.completed_at!).toZonedDateTimeISO(zone);
                   const project = task.project_id ? names.get(task.project_id) : undefined;
                   const parentTitle = parentTitles.get(task.id);
+                  const focused = cursor.isFocused(task.id);
                   return (
-                    <View key={task.id} style={styles.row}>
+                    <View key={task.id} style={[styles.row, focused && { backgroundColor: colors.accentSoft }]}>
                       <Checkbox checked done onPress={() => reopen(task)} label={task.title + ' 완료 취소'} />
                       <View style={[styles.body, { borderBottomColor: colors.border }]}>
                         <View style={{ flex: 1, gap: 2 }}>

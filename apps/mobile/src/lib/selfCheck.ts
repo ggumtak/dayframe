@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 
 import ApkInstaller from '../../modules/apk-installer';
+import HardwareKeys from '../../modules/hardware-keys';
 import { defaultReminderSettings, planReminders, reminderId } from '../features/reminders/plan';
 import { widgetRows } from '../features/widget/items';
 import { deviceTimeZone, formatDue, Temporal } from './dates';
@@ -37,6 +38,7 @@ export function runSelfCheck(): void {
     // The updater's native module must survive code shrinking and answer across the bridge.
     apkInstaller: () => Platform.OS !== 'android' || (!!ApkInstaller
       && typeof ApkInstaller.canInstallPackages() === 'boolean' && ApkInstaller.inspect('file:///missing.apk') === null),
+    hardwareKeys: () => Platform.OS !== 'android' || (!!HardwareKeys && HardwareKeys.isAvailable() === true),
   };
   const failed: string[] = [];
   for (const [name, check] of Object.entries(checks)) {

@@ -6,6 +6,7 @@ import Svg, { Circle } from 'react-native-svg';
 
 import { Card, Icon, Row, Sheet, Txt } from '@/components/ui';
 import { useHabitActions } from '@/data/habits';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler } from '@/features/keyboard';
 import { Temporal, weekdayName, weekStart } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { Habit, HabitLog, HabitStats } from '@/lib/shared';
@@ -62,8 +63,8 @@ function CheckIn({ progress, target, done, onPress, onLongPress, label }: {
  * `date` (today in the habit's time zone, passed by the screen) rolls over, so a check-in always lands on
  * the current day.
  */
-export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, date }: {
-  habit: Habit; logs: HabitLog[]; stats?: HabitStats; meta?: HabitMeta; date: string;
+export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, date, focused }: {
+  habit: Habit; logs: HabitLog[]; stats?: HabitStats; meta?: HabitMeta; date: string; focused?: boolean;
 }) {
   const { colors } = useTheme();
   const actions = useHabitActions();
@@ -93,12 +94,45 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
     actions.setLog({ habitId: habit.id, date, status, count: 0 });
   };
 
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (matchesCombo(event, 'escape')) {
+        if (!event.repeat) setMenu(false);
+        return true;
+      }
+      if (matchesCombo(event, '1') || matchesCombo(event, 's')) {
+        if (!event.repeat) {
+          haptic.tap();
+          mark('skipped');
+        }
+        return true;
+      }
+      if (matchesCombo(event, '2') || matchesCombo(event, 'f')) {
+        if (!event.repeat) {
+          haptic.tap();
+          mark('frozen');
+        }
+        return true;
+      }
+      if (matchesCombo(event, '0') || matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
+        if (todayLog && !event.repeat) {
+          haptic.light();
+          mark(null);
+        }
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: menu },
+  );
+
   return (
     <>
       <Pressable
         accessibilityRole="button" accessibilityLabel={habit.name + ' 자세히 보기'}
         onPress={() => router.push({ pathname: '/habit/[id]', params: { id: habit.id } })}>
-        <Card style={styles.card}>
+        <Card style={[styles.card, focused && { borderColor: colors.accent, backgroundColor: colors.accentSoft }]}>
           <View style={{ flex: 1, gap: space.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
               <HabitAvatar name={habit.name} emoji={look.emoji} size={24} />

@@ -143,11 +143,13 @@ export interface TaskRowsProps {
   onToggleSelect?: (task: Task) => void;
   /** Rows sit on a card (`colors.surface`) rather than on the page background. */
   onSurface?: boolean;
+  /** Task currently highlighted by keyboard navigation. */
+  focusedTaskId?: string | null;
 }
 
 /** The rows of a task list without its sheets; see `useTaskListModel`. */
 export const TaskRows = memo(function TaskRows({
-  model, tasks, hideDate, hideProject, sortable, selectedIds, onToggleSelect, onSurface,
+  model, tasks, hideDate, hideProject, sortable, selectedIds, onToggleSelect, onSurface, focusedTaskId,
 }: TaskRowsProps) {
   const { colors } = useTheme();
   const {
@@ -181,7 +183,7 @@ export const TaskRows = memo(function TaskRows({
           onToggleSelect={onToggleSelect}
           onPress={open} onComplete={complete} onSchedule={setScheduling} onDelete={remove}
           onLongPress={allowSort && !nested ? undefined : setMenu} holdHandled={allowSort && !nested}
-          swipeEnabled={!selecting} onSurface={onSurface} />
+          swipeEnabled={!selecting} onSurface={onSurface} focused={focusedTaskId === task.id} />
         {isExpanded ? (
           <View style={{ marginLeft: 28, borderLeftWidth: 1.5, borderLeftColor: colors.border }}>
             {openSubtasks.map((child) => (
@@ -241,7 +243,7 @@ export const TaskRows = memo(function TaskRows({
 
 /** Task rows with their gestures wired up: tap to open, swipe to complete, reschedule or delete, plus multi-select. */
 export const TaskList = memo(function TaskList({
-  tasks, hideDate, hideProject, sortable, selectedIds, onToggleSelect, onStartSelect,
+  tasks, hideDate, hideProject, sortable, selectedIds, onToggleSelect, onStartSelect, focusedTaskId,
 }: {
   tasks: Task[];
   hideDate?: boolean;
@@ -250,13 +252,14 @@ export const TaskList = memo(function TaskList({
   selectedIds?: Set<string> | null;
   onToggleSelect?: (task: Task) => void;
   onStartSelect?: (task: Task) => void;
+  focusedTaskId?: string | null;
 }) {
   const { model, sheets } = useTaskListModel();
   return (
     <View>
       <TaskRows
         model={model} tasks={tasks} hideDate={hideDate} hideProject={hideProject} sortable={sortable}
-        selectedIds={selectedIds} onToggleSelect={onToggleSelect} />
+        selectedIds={selectedIds} onToggleSelect={onToggleSelect} focusedTaskId={focusedTaskId} />
       <TaskListSheets sheets={sheets} onStartSelect={onStartSelect} />
     </View>
   );

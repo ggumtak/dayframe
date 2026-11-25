@@ -1,16 +1,24 @@
 import { router } from 'expo-router';
-import { memo, useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Chip, Header, Icon, IconButton, Screen, Txt } from '@/components/ui';
 import { useHabits } from '@/data/habits';
 import { HabitAvatar } from '@/features/habits/HabitAvatar';
 import { galleryCategories, type Routine, routineKey, routineLabel } from '@/features/habits/routines';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor, useScreenContext, useScreenFocused } from '@/features/keyboard';
+import { haptic } from '@/lib/haptics';
 import { showToast } from '@/lib/toast';
 import { radius, space, useTheme } from '@/theme';
 
-const PresetCard = memo(function PresetCard({ routine, added, onOpen }: { routine: Routine; added: boolean; onOpen: (routine: Routine) => void }) {
+const routineName = (routine: Routine) => routine.name;
+
+const PresetCard = memo(function PresetCard({
+  routine, added, focused, onOpen,
+}: {
+  routine: Routine; added: boolean; focused: boolean; onOpen: (routine: Routine) => void;
+}) {
   const { colors } = useTheme();
   return (
     <Pressable
@@ -18,7 +26,9 @@ const PresetCard = memo(function PresetCard({ routine, added, onOpen }: { routin
       accessibilityLabel={`${routine.name}, ${routineLabel(routine)}, ${routine.quote}${added ? ', 이미 추가한 습관' : ', 눌러서 추가하기'}`}
       onPress={() => onOpen(routine)}
       style={({ pressed }) => [styles.card, {
-        backgroundColor: colors.surface, borderColor: added ? colors.accentSoft : colors.border, opacity: pressed ? 0.7 : 1,
+        backgroundColor: focused ? colors.accentSoft : colors.surface,
+        borderColor: focused ? colors.accent : added ? colors.accentSoft : colors.border,
+        opacity: pressed ? 0.7 : 1,
       }]}>
       <HabitAvatar name={routine.name} emoji={routine.emoji} size={44} />
       <View style={{ flex: 1, gap: 2 }}>
@@ -42,8 +52,11 @@ const PresetCard = memo(function PresetCard({ routine, added, onOpen }: { routin
 export default function Routines() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const isFocused = useScreenFocused();
+  useScreenContext('routines', isFocused);
   const { data: habits } = useHabits();
   const [category, setCategory] = useState(galleryCategories[0].title);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const owned = useMemo(
     () => new Set((habits ?? []).filter((habit) => !habit.archived_at).map((habit) => routineKey(habit.name))),
     [habits],
@@ -64,6 +77,61 @@ export default function Routines() {
     });
   }, [owned]);
 
+  const cursor = useListCursor(shown.items, routineName, {
+    enabled: isFocused,
+    scrollRef,
+    estimatedRowHeight: 74,
+  });
+
+  const switchCategory = (delta: -1 | 1) => {
+    const idx = galleryCategories.findIndex((item) => item.title === category);
+    const current = idx >= 0 ? idx : 0;
+    const next = (current + delta + galleryCategories.length) % galleryCategories.length;
+    haptic.tap();
+    setCategory(galleryCategories[next].title);
+    cursor.clear();
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  };
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (matchesCombo(event, '[') || matchesCombo(event, 'arrowleft')) {
+        switchCategory(-1);
+        return true;
+      }
+      if (matchesCombo(event, ']') || matchesCombo(event, 'arrowright')) {
+        switchCategory(1);
+        return true;
+      }
+      if (matchesCombo(event, 'j') || matchesCombo(event, 'arrowdown')) {
+        cursor.move(1);
+        return true;
+      }
+      if (matchesCombo(event, 'k') || matchesCombo(event, 'arrowup')) {
+        cursor.move(-1);
+        return true;
+      }
+      if (matchesCombo(event, 'enter') || matchesCombo(event, 'space')) {
+        if (cursor.focusedItem) {
+          if (!event.repeat) open(cursor.focusedItem);
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'n')) {
+        if (!event.repeat) router.push('/habit/new');
+        return true;
+      }
+      if (matchesCombo(event, 'escape') || matchesCombo(event, 'backspace')) {
+        if (!event.repeat) router.back();
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused },
+  );
+
   return (
     <Screen>
       <Header
@@ -74,9 +142,11 @@ export default function Routines() {
           <Chip key={item.title} icon={item.icon} label={item.title} selected={category === item.title} onPress={() => setCategory(item.title)} />
         ))}
       </ScrollView>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: space.lg, paddingTop: space.sm, paddingBottom: space.xl, gap: space.sm }}>
+      <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: space.lg, paddingTop: space.sm, paddingBottom: space.xl, gap: space.sm }}>
         {shown.items.map((routine) => (
-          <PresetCard key={routine.name} routine={routine} added={owned.has(routineKey(routine.name))} onOpen={open} />
+          <PresetCard
+            key={routine.name} routine={routine} added={owned.has(routineKey(routine.name))}
+            focused={cursor.focusedId === routine.name} onOpen={open} />
         ))}
         <Txt variant="small" tone="faint" style={{ textAlign: 'center', marginTop: space.sm }}>
           추가한 뒤에도 습관 상세 화면에서 아이콘과 응원 문구, 알림 시간을 바꿀 수 있습니다.

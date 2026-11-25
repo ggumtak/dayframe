@@ -8,6 +8,7 @@ import { HabitAvatar } from '@/features/habits/HabitAvatar';
 import { type HabitLook, HabitLookPicker, QuoteField } from '@/features/habits/HabitLookPicker';
 import { HABIT_TIME_GROUPS, type HabitTimeOfDay, setHabitMeta } from '@/features/habits/habitMeta';
 import { isHabitColor } from '@/features/habits/palette';
+import { KEY_PRIORITY, matchesCombo, useKeyboard, useKeyHandler, useScreenContext, useScreenFocused } from '@/features/keyboard';
 import { deviceTimeZone } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { HabitCadence } from '@/lib/shared';
@@ -22,6 +23,9 @@ const one = (value: string | string[] | undefined) => (Array.isArray(value) ? va
 
 export default function NewHabit() {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('habit-new', isFocused);
+  const { blurActiveInput } = useKeyboard();
   const actions = useHabitActions();
   const params = useLocalSearchParams<Prefill>();
   const initialCadence: HabitCadence = one(params.cadence) === 'weekly' ? 'weekly' : 'daily';
@@ -50,6 +54,51 @@ export default function NewHabit() {
     haptic.success();
     router.back();
   };
+
+  useKeyHandler(
+    (event) => {
+      if (event.modal) return false;
+      if (matchesCombo(event, 'mod+enter')) {
+        if (ready && !event.repeat) save();
+        return true;
+      }
+      if (matchesCombo(event, 'escape')) {
+        if (!event.repeat) {
+          if (event.editing) blurActiveInput();
+          else router.back();
+        }
+        return true;
+      }
+      if (event.editing) return false;
+      if (matchesCombo(event, '+') || matchesCombo(event, '=') || matchesCombo(event, 'arrowright')) {
+        const next = Math.min(max, target + 1);
+        if (next !== target) {
+          haptic.tap();
+          setTarget(next);
+        }
+        return true;
+      }
+      if (matchesCombo(event, '-') || matchesCombo(event, 'arrowleft')) {
+        const next = Math.max(1, target - 1);
+        if (next !== target) {
+          haptic.tap();
+          setTarget(next);
+        }
+        return true;
+      }
+      if (matchesCombo(event, 'tab') || matchesCombo(event, 'shift+tab')) {
+        if (!event.repeat) {
+          const nextCadence: HabitCadence = cadence === 'daily' ? 'weekly' : 'daily';
+          haptic.tap();
+          setCadence(nextCadence);
+          setTarget((current) => Math.min(current, nextCadence === 'weekly' ? 7 : 20));
+        }
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused && !picking },
+  );
 
   return (
     <Screen>

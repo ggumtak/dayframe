@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 
 import { Button, Chip, Icon, Segmented, Sheet, Txt } from '@/components/ui';
 import { AI_ROUTES } from '@/features/ai/routes';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor } from '@/features/keyboard';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, formatDate, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -16,6 +17,8 @@ import { radius, space, useTheme } from '@/theme';
 import { priorityMark } from './priority';
 
 import { useTaskFlow } from './useTaskFlow';
+
+const itemTaskId = (item: { task: Task }) => item.task.id;
 
 /**
  * Daily planning ritual combining Todoist Smart Schedule (load-balanced overdue redistribution),
@@ -33,6 +36,7 @@ export function PlanDaySheet({
 }) {
   const { colors } = useTheme();
   const flow = useTaskFlow();
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const nowMs = useMinute() * 60_000;
   const zone = deviceTimeZone();
   const now = today(zone);
@@ -66,8 +70,85 @@ export function PlanDaySheet({
     onClose();
   };
 
+  const addSuggestionToToday = (task: Task) => {
+    haptic.success();
+    flow.reschedule(task, now);
+    showToast(`‘${task.title}’${josa(task.title, '을/를')} 오늘로 옮겼습니다.`);
+  };
+
   const nextMonday = now.add({ days: 8 - now.dayOfWeek });
   const activeTab = overdue.length === 0 ? 'suggest' : tab;
+  const activeItems: readonly { task: Task }[] = activeTab === 'overdue' ? proposals : suggestions;
+  const cursor = useListCursor(activeItems, itemTaskId, {
+    enabled: visible,
+    scrollRef,
+    estimatedRowHeight: activeTab === 'overdue' ? 116 : 64,
+  });
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'escape')) {
+        onClose();
+        return true;
+      }
+
+      if (event.editing) return false;
+
+      if (matchesCombo(event, 'tab')) {
+        if (overdue.length > 0) {
+          setTab((cur) => (cur === 'overdue' ? 'suggest' : 'overdue'));
+        }
+        return true;
+      }
+
+      if (matchesCombo(event, 'j') || matchesCombo(event, 'arrowdown')) {
+        cursor.move(1);
+        return true;
+      }
+      if (matchesCombo(event, 'k') || matchesCombo(event, 'arrowup')) {
+        cursor.move(-1);
+        return true;
+      }
+
+      if (activeTab === 'overdue') {
+        if (matchesCombo(event, 'mod+enter') || matchesCombo(event, 'a')) {
+          applyBalanced();
+          return true;
+        }
+        if (matchesCombo(event, 'shift+t')) {
+          applyAllToday();
+          return true;
+        }
+        const item = cursor.focusedItem;
+        if (item) {
+          if (matchesCombo(event, 't')) {
+            haptic.tap();
+            flow.reschedule(item.task, now);
+            return true;
+          }
+          if (matchesCombo(event, 'w')) {
+            haptic.tap();
+            flow.reschedule(item.task, now.add({ days: 1 }));
+            return true;
+          }
+          if (matchesCombo(event, 'x') || matchesCombo(event, 'space')) {
+            haptic.success();
+            flow.complete(item.task);
+            return true;
+          }
+        }
+      } else {
+        const item = cursor.focusedItem;
+        if (item && (matchesCombo(event, 'enter') || matchesCombo(event, 'space'))) {
+          addSuggestionToToday(item.task);
+          return true;
+        }
+      }
+
+      return true;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: visible },
+  );
 
   return (
     <Sheet visible={visible} onClose={onClose} title="하루 계획 · 일정 정리">
@@ -82,7 +163,7 @@ export function PlanDaySheet({
         </View>
       ) : null}
 
-      <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ gap: space.md, paddingBottom: space.sm }}>
+      <ScrollView ref={scrollRef} style={{ maxHeight: 460 }} contentContainerStyle={{ gap: space.md, paddingBottom: space.sm }}>
         {activeTab === 'overdue' ? (
           <>
             <View style={[styles.banner, { backgroundColor: colors.surfaceMuted }]}>
@@ -100,7 +181,13 @@ export function PlanDaySheet({
             </View>
 
             {proposals.map(({ task, targetDate, reason }) => (
-              <View key={task.id} style={[styles.item, { borderBottomColor: colors.border }]}>
+              <View
+                key={task.id}
+                style={[
+                  styles.item,
+                  { borderBottomColor: colors.border },
+                  cursor.focusedId === task.id && { backgroundColor: colors.accentSoft, borderRadius: radius.sm },
+                ]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
                   <Txt variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>
                     {task.priority < 4 ? priorityMark(task.priority) + ' ' : ''}{task.title}
@@ -145,18 +232,20 @@ export function PlanDaySheet({
               진행 중인 체크리스트와 우선순위가 높은 일, 오래 미뤄 둔 할 일 중에서 오늘 챙기기 좋은 항목을 골랐습니다.
             </Txt>
             {suggestions.map(({ task, reason }) => (
-              <View key={task.id} style={[styles.suggestRow, { borderColor: colors.border }]}>
+              <View
+                key={task.id}
+                style={[
+                  styles.suggestRow,
+                  { borderColor: colors.border },
+                  cursor.focusedId === task.id && { backgroundColor: colors.accentSoft, borderRadius: radius.sm },
+                ]}>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Txt variant="bodyStrong" numberOfLines={1}>{task.title}</Txt>
                   <Txt variant="caption" tone="muted">{reason}</Txt>
                 </View>
                 <Pressable
                   accessibilityRole="button" accessibilityLabel={task.title + ' 오늘로 옮기기'}
-                  onPress={() => {
-                    haptic.success();
-                    flow.reschedule(task, now);
-                    showToast(`‘${task.title}’${josa(task.title, '을/를')} 오늘로 옮겼습니다.`);
-                  }}
+                  onPress={() => addSuggestionToToday(task)}
                   style={({ pressed }) => [styles.addPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 }]}>
                   <Icon name="plus" size={14} color={colors.textMuted} />
                   <Txt variant="smallStrong">오늘</Txt>
@@ -184,9 +273,9 @@ export function PlanDaySheet({
 
 const styles = StyleSheet.create({
   banner: { borderRadius: radius.md, padding: space.md, gap: 6 },
-  item: { borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: space.md, gap: 4 },
+  item: { borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: space.xs, paddingTop: space.xs, paddingBottom: space.md, gap: 4 },
   suggestRow: {
-    flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.xs, paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   addPill: {

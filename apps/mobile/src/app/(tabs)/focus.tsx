@@ -13,6 +13,7 @@ import {
   clampInt, EMPTY_SESSION_MOD, FOCUS_LIMITS, focusDoneTitle, type FocusMode, type FocusPrefs, nextBreak, setFocusPrefs, setFocusSessionMod,
   STOPWATCH_MAX_SECONDS, useFocusPrefs, useFocusSessionMod, weeklyFocusStats,
 } from '@/features/focus/prefs';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor, useScreenContext, useScreenFocused } from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { cancelAlert, prepareAlerts, scheduleAlert } from '@/lib/alerts';
@@ -20,13 +21,20 @@ import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, formatDuration, formatMinutes, formatTime, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { useLayout } from '@/lib/layoutContext';
-import type { FocusSession } from '@/lib/shared';
+import type { FocusSession, Habit, Task } from '@/lib/shared';
 import { useTabScrollTop } from '@/lib/tabScroll';
 import { showToast } from '@/lib/toast';
 import { radius, space, type, useTheme } from '@/theme';
 
 const SIZE = 248;
 const STROKE = 10;
+const FOCUS_MODES: readonly FocusMode[] = ['pomodoro', 'timer', 'stopwatch'];
+
+type PickerItem =
+  | { key: string; kind: 'task'; task: Task }
+  | { key: string; kind: 'habit'; habit: Habit };
+
+const pickerItemKey = (item: PickerItem) => item.key;
 
 const pomoPresets = [
   { label: '15 / 3분', focus: 15, rest: 3, longRest: 10 },
@@ -109,6 +117,8 @@ function MinuteControl({
 
 export default function Focus() {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('focus', isFocused);
   const params = useLocalSearchParams<{ taskId?: string; habitId?: string; duration?: string; at?: string }>();
   const { data: sessions } = useFocusSessions();
   const { data: habits } = useHabits();
@@ -131,6 +141,7 @@ export default function Focus() {
   const finished = useRef(new Set<string>());
   const runningPrefs = useRef<FocusPrefs>(prefs);
   const scrollRef = useRef<ScrollViewInstance>(null);
+  const pickerScrollRef = useRef<ScrollViewInstance>(null);
   useTabScrollTop('focus', scrollRef);
   const timeZone = deviceTimeZone();
   useMinute();
@@ -338,7 +349,42 @@ export default function Focus() {
     const shown = new Set(candidates.map((task) => task.id));
     return tasks.filter((task) => !shown.has(task.id) && !task.parent_task_id).sort(bySchedule).slice(0, 12);
   }, [tasks, candidates]);
-  const activeHabits = (habits ?? []).filter((habit) => !habit.archived_at);
+  const activeHabits = useMemo(() => (habits ?? []).filter((habit) => !habit.archived_at), [habits]);
+  const pickerItems = useMemo<PickerItem[]>(() => [
+    ...candidates.map((task): PickerItem => ({ key: 'task:' + task.id, kind: 'task', task })),
+    ...otherTasks.map((task): PickerItem => ({ key: 'task:' + task.id, kind: 'task', task })),
+    ...activeHabits.map((habit): PickerItem => ({ key: 'habit:' + habit.id, kind: 'habit', habit })),
+  ], [candidates, otherTasks, activeHabits]);
+  const pickerCursor = useListCursor(pickerItems, pickerItemKey, {
+    enabled: isFocused && picking,
+    scrollRef: pickerScrollRef,
+    estimatedRowHeight: 52,
+    headerOffset: 24,
+  });
+
+  const closePicking = () => {
+    pickerCursor.clear();
+    setPicking(false);
+  };
+
+  const selectPickerItem = (item: PickerItem) => {
+    if (item.kind === 'task') {
+      setTarget({ kind: 'task', id: item.task.id });
+      if (item.task.duration_minutes && item.task.duration_minutes <= FOCUS_LIMITS.focus.max) {
+        setFocusPrefs({ timerMinutes: item.task.duration_minutes, focusMinutes: item.task.duration_minutes });
+      }
+    } else {
+      setTarget({ kind: 'habit', id: item.habit.id });
+    }
+    closePicking();
+  };
+
+  const deletePickedRecord = () => {
+    if (!pickedRecord) return;
+    deleteFocus.mutate(pickedRecord.id);
+    setPickedRecord(null);
+    showToast('집중 기록을 삭제했습니다.');
+  };
 
   const linkedTaskId = running ? running.task_id : (target?.kind === 'task' ? target.id : null);
   const linkedTask = linkedTaskId ? byId.get(linkedTaskId) : undefined;
@@ -364,6 +410,172 @@ export default function Focus() {
   const ringColor = isPaused ? colors.accentRamp[1] : colors.accent;
   const recent = (sessions ?? []).filter((session) => session.status !== 'running' && !isFalseStart(session)).slice(0, 5);
   const canConfigure = !running && !onBreak && prefs.mode !== 'stopwatch';
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing || event.modal) return false;
+      if (matchesCombo(event, 'space') || matchesCombo(event, 'enter')) {
+        if (!event.repeat) {
+          if (running) togglePause();
+          else start();
+        }
+        return true;
+      }
+      if (!running && (matchesCombo(event, 'tab') || matchesCombo(event, 'shift+tab') || matchesCombo(event, ']') || matchesCombo(event, '['))) {
+        if (!event.repeat) {
+          const step = matchesCombo(event, 'shift+tab') || matchesCombo(event, '[') ? -1 : 1;
+          const nextMode = FOCUS_MODES[(FOCUS_MODES.indexOf(prefs.mode) + step + FOCUS_MODES.length) % FOCUS_MODES.length];
+          if (nextMode !== 'pomodoro' && onBreak) endRest();
+          setFocusPrefs({ mode: nextMode });
+          haptic.tap();
+        }
+        return true;
+      }
+      if (matchesCombo(event, '+') || matchesCombo(event, '=') || matchesCombo(event, 'arrowup')) {
+        if (running && !isRunningStopwatch) {
+          if (!event.repeat) extendFiveMin();
+          return true;
+        }
+        if (!running && prefs.mode !== 'stopwatch') {
+          if (prefs.mode === 'pomodoro') {
+            setFocusPrefs({
+              focusMinutes: clampInt(prefs.focusMinutes + 5, FOCUS_LIMITS.focus.min, FOCUS_LIMITS.focus.max, prefs.focusMinutes),
+            });
+          } else {
+            setFocusPrefs({
+              timerMinutes: clampInt(prefs.timerMinutes + 5, FOCUS_LIMITS.focus.min, FOCUS_LIMITS.focus.max, prefs.timerMinutes),
+            });
+          }
+          haptic.tap();
+          return true;
+        }
+      }
+      if (matchesCombo(event, '-') || matchesCombo(event, 'arrowdown')) {
+        if (!running && prefs.mode !== 'stopwatch') {
+          if (prefs.mode === 'pomodoro') {
+            setFocusPrefs({
+              focusMinutes: clampInt(prefs.focusMinutes - 5, FOCUS_LIMITS.focus.min, FOCUS_LIMITS.focus.max, prefs.focusMinutes),
+            });
+          } else {
+            setFocusPrefs({
+              timerMinutes: clampInt(prefs.timerMinutes - 5, FOCUS_LIMITS.focus.min, FOCUS_LIMITS.focus.max, prefs.timerMinutes),
+            });
+          }
+          haptic.tap();
+          return true;
+        }
+      }
+      if (matchesCombo(event, 'x') || matchesCombo(event, 'c')) {
+        if (running) {
+          if (!event.repeat) stop('completed');
+          return true;
+        }
+      }
+      if (matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
+        if (running) {
+          if (!event.repeat) stop('cancelled');
+          return true;
+        }
+      }
+      if (matchesCombo(event, 'p') || matchesCombo(event, 'l')) {
+        if (!running) {
+          if (!event.repeat) {
+            haptic.tap();
+            setPicking(true);
+          }
+          return true;
+        }
+      }
+      if (matchesCombo(event, 't') || matchesCombo(event, 'o')) {
+        if (canConfigure) {
+          if (!event.repeat) {
+            haptic.tap();
+            setConfiguring(true);
+          }
+          return true;
+        }
+      }
+      if (matchesCombo(event, 'escape')) {
+        if (onBreak) {
+          if (!event.repeat) {
+            haptic.tap();
+            endRest();
+          }
+          return true;
+        }
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen, enabled: isFocused && !configuring && !picking && !pickedRecord },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (matchesCombo(event, 'escape')) {
+        if (!event.repeat) closePicking();
+        return true;
+      }
+      if (matchesCombo(event, 'j') || matchesCombo(event, 'arrowdown')) {
+        pickerCursor.move(1);
+        return true;
+      }
+      if (matchesCombo(event, 'k') || matchesCombo(event, 'arrowup')) {
+        pickerCursor.move(-1);
+        return true;
+      }
+      if (matchesCombo(event, 'home')) {
+        pickerCursor.moveFirst();
+        return true;
+      }
+      if (matchesCombo(event, 'shift+g') || matchesCombo(event, 'end')) {
+        pickerCursor.moveLast();
+        return true;
+      }
+      if (matchesCombo(event, 'enter') || matchesCombo(event, 'space')) {
+        if (!event.repeat && pickerCursor.focusedItem) {
+          haptic.tap();
+          selectPickerItem(pickerCursor.focusedItem);
+        }
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && picking },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'mod+enter') || (!event.editing && matchesCombo(event, 'enter'))) {
+        if (!event.repeat) {
+          haptic.tap();
+          setConfiguring(false);
+        }
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && configuring },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (event.editing) return false;
+      if (matchesCombo(event, 'escape')) {
+        if (!event.repeat) setPickedRecord(null);
+        return true;
+      }
+      if (matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
+        if (!event.repeat) {
+          haptic.warning();
+          deletePickedRecord();
+        }
+        return true;
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: isFocused && !!pickedRecord },
+  );
   // A short window (a landscape tablet) puts the dial and its controls side by side so both stay above the fold.
   const { short: sideBySide } = useLayout();
   const modePicker = !running ? (
@@ -673,42 +885,45 @@ export default function Focus() {
         </View>
       </Sheet>
 
-      <Sheet visible={picking} onClose={() => setPicking(false)} title="무엇에 집중할까요?">
-        <ScrollView style={{ maxHeight: 420 }}>
+      <Sheet visible={picking} onClose={closePicking} title="무엇에 집중할까요?">
+        <ScrollView ref={pickerScrollRef} style={{ maxHeight: 420 }}>
           {candidates.length ? <Txt variant="section" tone="muted">오늘 할 일</Txt> : null}
           {candidates.map((task) => (
-            <Row
-              key={task.id} icon="check-square" label={task.title}
-              detail={task.duration_minutes ? `${task.duration_minutes}분` : undefined}
-              onPress={() => {
-                setTarget({ kind: 'task', id: task.id });
-                if (task.duration_minutes && task.duration_minutes <= FOCUS_LIMITS.focus.max) {
-                  setFocusPrefs({ timerMinutes: task.duration_minutes, focusMinutes: task.duration_minutes });
-                }
-                setPicking(false);
-              }} />
+            <View
+              key={task.id}
+              style={pickerCursor.isFocused('task:' + task.id)
+                ? [styles.pickerHighlight, { backgroundColor: colors.accentSoft }]
+                : undefined}>
+              <Row
+                icon="check-square" label={task.title}
+                detail={task.duration_minutes ? `${task.duration_minutes}분` : undefined}
+                onPress={() => selectPickerItem({ key: 'task:' + task.id, kind: 'task', task })} />
+            </View>
           ))}
           {otherTasks.length ? <Txt variant="section" tone="muted" style={{ marginTop: space.md }}>다른 할 일</Txt> : null}
           {otherTasks.map((task) => (
-            <Row
-              key={task.id} icon="check-square" label={task.title}
-              detail={task.duration_minutes ? `${task.duration_minutes}분` : undefined}
-              onPress={() => {
-                setTarget({ kind: 'task', id: task.id });
-                if (task.duration_minutes && task.duration_minutes <= FOCUS_LIMITS.focus.max) {
-                  setFocusPrefs({ timerMinutes: task.duration_minutes, focusMinutes: task.duration_minutes });
-                }
-                setPicking(false);
-              }} />
+            <View
+              key={task.id}
+              style={pickerCursor.isFocused('task:' + task.id)
+                ? [styles.pickerHighlight, { backgroundColor: colors.accentSoft }]
+                : undefined}>
+              <Row
+                icon="check-square" label={task.title}
+                detail={task.duration_minutes ? `${task.duration_minutes}분` : undefined}
+                onPress={() => selectPickerItem({ key: 'task:' + task.id, kind: 'task', task })} />
+            </View>
           ))}
           {activeHabits.length ? <Txt variant="section" tone="muted" style={{ marginTop: space.md }}>습관</Txt> : null}
           {activeHabits.map((habit) => (
-            <Row
-              key={habit.id} icon="repeat" label={habit.name}
-              onPress={() => {
-                setTarget({ kind: 'habit', id: habit.id });
-                setPicking(false);
-              }} />
+            <View
+              key={habit.id}
+              style={pickerCursor.isFocused('habit:' + habit.id)
+                ? [styles.pickerHighlight, { backgroundColor: colors.accentSoft }]
+                : undefined}>
+              <Row
+                icon="repeat" label={habit.name}
+                onPress={() => selectPickerItem({ key: 'habit:' + habit.id, kind: 'habit', habit })} />
+            </View>
           ))}
           {!candidates.length && !otherTasks.length && !activeHabits.length ? (
             <Txt tone="muted" style={{ paddingVertical: space.lg }}>등록된 할 일이나 습관이 있으면 이곳에서 연결할 수 있습니다.</Txt>
@@ -729,11 +944,7 @@ export default function Focus() {
               </Txt>
               <Button
                 label="이 기록 삭제" kind="danger" icon="trash-2"
-                onPress={() => {
-                  deleteFocus.mutate(pickedRecord.id);
-                  setPickedRecord(null);
-                  showToast('집중 기록을 삭제했습니다.');
-                }} />
+                onPress={deletePickedRecord} />
               <Button label="닫기" kind="secondary" onPress={() => setPickedRecord(null)} />
             </View>
           );
@@ -761,4 +972,5 @@ const styles = StyleSheet.create({
   barCol: { flex: 1, alignItems: 'center', gap: 4 },
   barTrack: { height: 64, justifyContent: 'flex-end', width: '100%', alignItems: 'center' },
   barFill: { width: 22, borderRadius: 6 },
+  pickerHighlight: { borderRadius: radius.md, marginHorizontal: -space.sm, paddingHorizontal: space.sm },
 });

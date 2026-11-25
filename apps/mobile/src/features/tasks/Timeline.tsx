@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, type ScrollViewInstance, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -7,6 +7,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { Checkbox } from '@/components/Checkbox';
 import { Button, Icon, IconButton, Sheet, Txt } from '@/components/ui';
 import { useDeleteFocus } from '@/data/focus';
+import { type HardwareKeyEvent, KEY_PRIORITY, matchesCombo, useKeyboard, useKeyHandler } from '@/features/keyboard';
 import { dueMinutes, formatDurationMinutes, formatTime, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import type { FocusSession, Task } from '@/lib/shared';
@@ -20,6 +21,10 @@ const GUTTER = 62;
 const DEFAULT_BLOCK_MINUTES = 30;
 const MIN_VISUAL_MINUTES = 24;
 const SNAP_MINUTES = 15;
+const MAX_SLOT_MINUTES = 23 * 60 + 30;
+
+const clampSlot = (minutes: number) => Math.max(0, Math.min(MAX_SLOT_MINUTES, minutes));
+const nearestHalfHour = (minutes: number) => clampSlot(Math.round(minutes / 30) * 30);
 
 const hourLabel = (hour: number) => (hour < 12 ? '오전 ' : '오후 ') + (hour % 12 === 0 ? 12 : hour % 12) + '시';
 
@@ -192,7 +197,7 @@ function DraggableBlock({
 
 /** A day laid out by the clock: draggable duration-scaled blocks, 30-min tap slots, collapsible all-day tray, and focus sessions. */
 export function Timeline({
-  tasks, sessions, timeZone, overdueCount = 0, onComplete, onAddAt, onRescheduleTime, onPlanOverdue,
+  tasks, sessions, timeZone, overdueCount = 0, onComplete, onAddAt, onRescheduleTime, onPlanOverdue, keyboardActive = false,
 }: {
   tasks: Task[];
   sessions: FocusSession[];
@@ -202,8 +207,10 @@ export function Timeline({
   onAddAt: (minutes: number) => void;
   onRescheduleTime?: (task: Task, minutes: number) => void;
   onPlanOverdue?: () => void;
+  keyboardActive?: boolean;
 }) {
   const { colors } = useTheme();
+  const { keyboardMode } = useKeyboard();
   const scroll = useRef<ScrollViewInstance>(null);
   const scrolled = useRef(false);
   const [now, setNow] = useState(() => Temporal.Now.zonedDateTimeISO(timeZone));
@@ -214,7 +221,72 @@ export function Timeline({
   const shownAllDay = allDayExpanded ? allDay : allDay.slice(0, 2);
   const hiddenAllDay = allDay.length - shownAllDay.length;
   const [picked, setPicked] = useState<{ id: string; start: number; end: number; spent: number } | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const selectedSlotRef = useRef<number | null>(null);
   const deleteFocus = useDeleteFocus();
+
+  const updateSlot = useCallback((next: number | null) => {
+    selectedSlotRef.current = next;
+    setSelectedSlot(next);
+  }, []);
+
+  const scrollToMinutes = useCallback((minutes: number) => {
+    scroll.current?.scrollTo({ y: Math.max(0, (minutes / 60 - 1.5) * HOUR), animated: true });
+  }, []);
+
+  const handleKey = useCallback((event: HardwareKeyEvent): boolean => {
+    if (event.editing || event.modal) return false;
+
+    if (matchesCombo(event, 'j') || matchesCombo(event, 'arrowdown')) {
+      const current = selectedSlotRef.current;
+      const next = current === null ? nearestHalfHour(nowMinutes) : clampSlot(current + 30);
+      updateSlot(next);
+      scrollToMinutes(next);
+      return true;
+    }
+    if (matchesCombo(event, 'k') || matchesCombo(event, 'arrowup')) {
+      const current = selectedSlotRef.current;
+      const next = current === null ? nearestHalfHour(nowMinutes) : clampSlot(current - 30);
+      updateSlot(next);
+      scrollToMinutes(next);
+      return true;
+    }
+    if (matchesCombo(event, 'enter')) {
+      const current = selectedSlotRef.current;
+      if (current !== null) {
+        if (!event.repeat) {
+          haptic.tap();
+          onAddAt(current);
+        }
+        return true;
+      }
+      return false;
+    }
+    if (matchesCombo(event, 't')) {
+      if (!event.repeat) {
+        haptic.tap();
+        const target = nearestHalfHour(nowMinutes);
+        updateSlot(target);
+        scrollToMinutes(nowMinutes);
+      }
+      return true;
+    }
+    if (matchesCombo(event, 'escape')) {
+      if (selectedSlotRef.current !== null) {
+        if (!event.repeat) updateSlot(null);
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }, [nowMinutes, onAddAt, scrollToMinutes, updateSlot]);
+
+  useKeyHandler(handleKey, {
+    enabled: keyboardActive && !picked,
+    priority: KEY_PRIORITY.screen,
+  });
+
+  const activeSlot = keyboardActive && keyboardMode ? selectedSlot : null;
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Temporal.Now.zonedDateTimeISO(timeZone)), 60_000);
@@ -332,11 +404,25 @@ export function Timeline({
               <Pressable
                 accessibilityRole="button" accessibilityLabel={formatTime(hour * 60) + '에 할 일 추가'}
                 onPress={() => onAddAt(hour * 60)}
-                style={styles.halfHour} />
+                style={[
+                  styles.halfHour,
+                  activeSlot === hour * 60 && [
+                    styles.halfHourSelected,
+                    { backgroundColor: colors.accentSoft, borderLeftColor: colors.accent },
+                  ],
+                ]} />
               <Pressable
                 accessibilityRole="button" accessibilityLabel={formatTime(hour * 60 + 30) + '에 할 일 추가'}
                 onPress={() => onAddAt(hour * 60 + 30)}
-                style={[styles.halfHour, styles.halfHourBottom, { borderTopColor: colors.border }]} />
+                style={[
+                  styles.halfHour,
+                  styles.halfHourBottom,
+                  { borderTopColor: colors.border },
+                  activeSlot === hour * 60 + 30 && [
+                    styles.halfHourSelected,
+                    { backgroundColor: colors.accentSoft, borderLeftColor: colors.accent },
+                  ],
+                ]} />
             </View>
           ))}
 
@@ -399,6 +485,7 @@ const styles = StyleSheet.create({
   hour: { position: 'absolute', left: GUTTER, right: space.lg, height: HOUR, borderTopWidth: StyleSheet.hairlineWidth },
   halfHour: { flex: 1 },
   halfHourBottom: { borderTopWidth: StyleSheet.hairlineWidth, opacity: 0.45 },
+  halfHourSelected: { borderLeftWidth: 3, opacity: 1 },
   hourLabel: { position: 'absolute', left: -GUTTER + space.sm, top: -7, width: GUTTER - space.md },
   lane: { position: 'absolute', top: 0, bottom: 0, left: GUTTER + 4, right: space.lg },
   block: { position: 'absolute', paddingRight: 4 },

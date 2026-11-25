@@ -1,7 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, TextInput, type TextInputInstance, type TextStyle,
+  View,
+} from 'react-native';
 
 import { Checkbox } from '@/components/Checkbox';
 import { EmptySearch } from '@/components/art';
@@ -9,13 +12,17 @@ import { Button, Chip, EMPTY_ART, EmptyState, Icon, IconButton, Row, Screen, Sec
 import {
   bySchedule, useCompletedTasks, useProjects, useSubtaskProgress, useTagActions, useTagNames, useTags, useTaskActions, useTaskIndex,
 } from '@/data/tasks';
+import { KEY_PRIORITY, matchesCombo, useInputCapture, useListCursor, useScreenContext, useScreenFocused, useTaskShortcuts } from '@/features/keyboard';
+import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
+import { TaskMenu } from '@/features/tasks/TaskMenu';
+import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, dueDate, formatDate, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { searchTasks } from '@/lib/search';
-import type { Tag } from '@/lib/shared';
+import type { Tag, Task } from '@/lib/shared';
 import { isStaleTask } from '@/lib/smart';
 import { showToast } from '@/lib/toast';
 import { fontFamily, radius, space, type, useTheme } from '@/theme';
@@ -23,6 +30,7 @@ import { fontFamily, radius, space, type, useTheme } from '@/theme';
 type QuickFilter = null | 'overdue' | 'today' | 'week' | 'p1' | 'repeating' | 'checklist' | 'stale' | 'unscheduled';
 
 const RECENT_KEY = 'dayframe-recent-searches-v1';
+const taskId = (task: Task) => task.id;
 
 const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
   overdue: '기한 지난 할 일',
@@ -41,6 +49,8 @@ const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
  */
 export default function Search() {
   const { colors } = useTheme();
+  const isFocused = useScreenFocused();
+  useScreenContext('search', isFocused);
   const { tasks } = useTaskIndex();
   const { progress: subtaskProgress } = useSubtaskProgress();
   const { data: completedAll } = useCompletedTasks();
@@ -48,6 +58,7 @@ export default function Search() {
   const { data: tags } = useTags();
   const tagActions = useTagActions();
   const taskActions = useTaskActions();
+  const flow = useTaskFlow();
   const tagNames = useTagNames();
 
   const [query, setQuery] = useState('');
@@ -57,6 +68,10 @@ export default function Search() {
   const [managingTag, setManagingTag] = useState<Tag | null>(null);
   const [renamingTag, setRenamingTag] = useState<Tag | null>(null);
   const [tagInput, setTagInput] = useState('');
+  const [kbdSchedule, setKbdSchedule] = useState<Task | null>(null);
+  const [kbdMenu, setKbdMenu] = useState<Task | null>(null);
+  const searchInput = useRef<TextInputInstance>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(RECENT_KEY)
@@ -164,6 +179,86 @@ export default function Search() {
     setRenamingTag(null);
   };
 
+  const shortcutsEnabled = isFocused && !managingTag && !renamingTag && !kbdSchedule && !kbdMenu;
+  useInputCapture({ arrows: true, enabled: shortcutsEnabled && results.length > 0 });
+  const cursor = useListCursor(results, taskId, {
+    enabled: shortcutsEnabled,
+    scrollRef,
+    estimatedRowHeight: 64,
+  });
+
+  useTaskShortcuts(cursor, {
+    enabled: shortcutsEnabled,
+    priority: KEY_PRIORITY.screen,
+    onSchedule: setKbdSchedule,
+    onOpenMenu: setKbdMenu,
+    onBefore: (event) => {
+      if (matchesCombo(event, 'arrowdown') || matchesCombo(event, 'ctrl+j')) {
+        if (results.length > 0) {
+          cursor.move(1);
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'arrowup')) {
+        if (results.length > 0) {
+          if (cursor.focusedIndex <= 0) {
+            cursor.clear();
+            searchInput.current?.focus();
+          } else {
+            cursor.move(-1);
+          }
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'enter') || matchesCombo(event, 'mod+enter')) {
+        if (cursor.focusedItem) {
+          if (!event.repeat) {
+            recordRecent(query);
+            router.push({ pathname: '/task/[id]', params: { id: cursor.focusedItem.id } });
+          }
+          return true;
+        }
+        if (!event.editing && results.length > 0) {
+          if (!event.repeat) {
+            recordRecent(query);
+            router.push({ pathname: '/task/[id]', params: { id: results[0].id } });
+          }
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'alt+c')) {
+        if (query.trim()) {
+          if (!event.repeat) setIncludeCompleted((prev) => !prev);
+          return true;
+        }
+        return false;
+      }
+      if (matchesCombo(event, 'escape')) {
+        if (event.repeat) return true;
+        if (cursor.focusedId) {
+          cursor.clear();
+          searchInput.current?.focus();
+          return true;
+        }
+        if (query || quickFilter) {
+          setQuery('');
+          setQuickFilter(null);
+          return true;
+        }
+        router.back();
+        return true;
+      }
+      if (!event.editing && matchesCombo(event, '/')) {
+        searchInput.current?.focus();
+        return true;
+      }
+      return false;
+    },
+  });
+
   return (
     <Screen>
       <View style={styles.bar}>
@@ -171,9 +266,15 @@ export default function Search() {
         <View style={[styles.field, { backgroundColor: colors.surfaceMuted }]}>
           <Icon name="search" size={18} color={colors.textMuted} />
           <TextInput
+            ref={searchInput}
             value={query}
             onChangeText={setQuery}
-            onSubmitEditing={() => recordRecent(query)}
+            onSubmitEditing={() => {
+              recordRecent(query);
+              if (cursor.focusedItem) {
+                router.push({ pathname: '/task/[id]', params: { id: cursor.focusedItem.id } });
+              }
+            }}
             autoFocus placeholder={quickFilter ? `${filterLabels[quickFilter]}에서 검색` : '제목, 초성(ㅈㅂㄱ), #목록, @태그, p1'}
             accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
@@ -208,7 +309,7 @@ export default function Search() {
       ) : null}
 
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: space.xxl * 2, flexGrow: 1 }}>
+        <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: space.xxl * 2, flexGrow: 1 }}>
           {!active ? (
             <View style={{ padding: space.lg, gap: space.lg }}>
               {recent.length > 0 ? (
@@ -318,7 +419,7 @@ export default function Search() {
                 <>
                   <SectionTitle
                     title={quickFilter ? filterLabels[quickFilter] : '할 일'} count={results.length} />
-                  <TaskList tasks={results} />
+                  <TaskList tasks={results} focusedTaskId={cursor.focusedId} />
                 </>
               ) : null}
               {completedResults.length > 0 ? (
@@ -398,6 +499,9 @@ export default function Search() {
           </View>
         </View>
       </Sheet>
+
+      <ScheduleSheet task={kbdSchedule} onClose={() => setKbdSchedule(null)} onPick={flow.reschedule} />
+      <TaskMenu task={kbdMenu} onClose={() => setKbdMenu(null)} onSchedule={setKbdSchedule} />
     </Screen>
   );
 }

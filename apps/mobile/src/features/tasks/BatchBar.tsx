@@ -6,6 +6,7 @@ import { Button, Chip, Icon, type IconName, Row, Sheet, Txt } from '@/components
 import { queryClient } from '@/data/client';
 import { keys } from '@/data/keys';
 import { useProjects, useSections, useTaskActions } from '@/data/tasks';
+import { KEY_PRIORITY, matchesCombo, useKeyHandler } from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { deviceTimeZone, type PlainDate, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -118,6 +119,95 @@ export function BatchBar({
     showToast(`할 일 ${count}개를 삭제했습니다.`);
     onCancel();
   };
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'escape')) {
+        onCancel();
+        return true;
+      }
+      if (event.editing) return false;
+      if (matchesCombo(event, 'mod+a')) {
+        onSelectAll();
+        return true;
+      }
+      if (count > 0) {
+        if (matchesCombo(event, 'x')) {
+          batchComplete();
+          return true;
+        }
+        if (matchesCombo(event, 's')) {
+          setSheet('schedule');
+          return true;
+        }
+        if (matchesCombo(event, 'p')) {
+          setSheet('priority');
+          return true;
+        }
+        if (matchesCombo(event, 'm')) {
+          setSheet('move');
+          return true;
+        }
+        if (matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
+          setSheet('delete');
+          return true;
+        }
+      }
+      return false;
+    },
+    { priority: KEY_PRIORITY.screen + 10, enabled: sheet === null },
+  );
+
+  useKeyHandler(
+    (event) => {
+      if (matchesCombo(event, 'escape')) {
+        setSheet(null);
+        return true;
+      }
+      if (event.editing) return false;
+
+      if (sheet === 'priority') {
+        if (
+          matchesCombo(event, '1')
+          || matchesCombo(event, '2')
+          || matchesCombo(event, '3')
+          || matchesCombo(event, '4')
+        ) {
+          batchPriority(Number(event.key) as Priority);
+          return true;
+        }
+      } else if (sheet === 'schedule') {
+        if (matchesCombo(event, '1') || matchesCombo(event, 't')) {
+          batchReschedule(now);
+          return true;
+        }
+        if (matchesCombo(event, '2') || matchesCombo(event, 'w')) {
+          batchReschedule(now.add({ days: 1 }));
+          return true;
+        }
+        if (matchesCombo(event, '3')) {
+          batchReschedule(saturday);
+          return true;
+        }
+        if (matchesCombo(event, '4')) {
+          batchReschedule(monday);
+          return true;
+        }
+        if (matchesCombo(event, '0') || matchesCombo(event, 'delete') || matchesCombo(event, 'backspace')) {
+          batchReschedule(null);
+          return true;
+        }
+      } else if (sheet === 'delete') {
+        if (matchesCombo(event, 'enter')) {
+          batchDelete();
+          return true;
+        }
+      }
+
+      return true;
+    },
+    { priority: KEY_PRIORITY.sheet, enabled: sheet !== null },
+  );
 
   return (
     <>

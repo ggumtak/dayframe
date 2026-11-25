@@ -1,10 +1,14 @@
-import { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Pressable, RefreshControl, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { Icon, type IconName, Segmented, Txt } from '@/components/ui';
+import { type HardwareKeyEvent, matchesCombo, useListCursor, useTaskShortcuts } from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
+import { ScheduleSheet } from '@/features/tasks/ScheduleSheet';
 import { TaskList } from '@/features/tasks/TaskList';
+import { TaskMenu } from '@/features/tasks/TaskMenu';
+import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, dueDate, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -15,6 +19,7 @@ import { space, useTheme } from '@/theme';
 
 type MatrixScope = 'near' | 'all';
 const isMatrixScope = (value: string): value is MatrixScope => value === 'near' || value === 'all';
+const taskId = (task: Task) => task.id;
 
 interface QuadrantMeta {
   key: EisenhowerQuadrant;
@@ -34,18 +39,23 @@ const QUADRANTS: QuadrantMeta[] = [
 
 /** TickTick-style Eisenhower Matrix grouping every open root task into 4 actionable quadrants. */
 export function EisenhowerView({
-  roots, subtaskProgress, refreshing, onRefresh,
+  roots, subtaskProgress, refreshing, onRefresh, keyboardActive = false,
 }: {
   roots: Task[];
   subtaskProgress: Map<string, SubtaskProgress>;
   refreshing: boolean;
   onRefresh: () => void;
+  keyboardActive?: boolean;
 }) {
   const { colors } = useTheme();
   const quickAdd = useQuickAdd();
+  const flow = useTaskFlow();
   const nowMs = useMinute() * 60_000;
   const [scope, setScope] = usePersistentState<MatrixScope>('dayframe-matrix-scope', 'near', isMatrixScope);
   const [collapsed, setCollapsed] = useState<Set<EisenhowerQuadrant>>(() => new Set(['q4']));
+  const [kbdSchedule, setKbdSchedule] = useState<Task | null>(null);
+  const [kbdMenu, setKbdMenu] = useState<Task | null>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const scopedRoots = useMemo(() => {
     if (scope === 'all') return roots;
@@ -73,6 +83,41 @@ export function EisenhowerView({
     return map;
   }, [scopedRoots, subtaskProgress, nowMs]);
 
+  const flatTasks = useMemo(
+    () => QUADRANTS.flatMap((q) => (collapsed.has(q.key) ? [] : grouped[q.key])),
+    [collapsed, grouped],
+  );
+
+  const cursor = useListCursor(flatTasks, taskId, {
+    enabled: keyboardActive,
+    scrollRef,
+    estimatedRowHeight: 64,
+  });
+
+  const handleAddSubtask = useCallback((task: Task) => {
+    quickAdd.open({ parentTaskId: task.id });
+  }, [quickAdd]);
+
+  const handleBeforeKey = useCallback((event: HardwareKeyEvent): boolean => {
+    if (event.editing || event.modal) return false;
+    if (matchesCombo(event, 'shift+a')) {
+      if (!event.repeat) {
+        haptic.tap();
+        setScope(scope === 'near' ? 'all' : 'near');
+      }
+      return true;
+    }
+    return false;
+  }, [scope, setScope]);
+
+  useTaskShortcuts(cursor, {
+    enabled: keyboardActive && !kbdSchedule && !kbdMenu,
+    onSchedule: setKbdSchedule,
+    onOpenMenu: setKbdMenu,
+    onAddSubtask: handleAddSubtask,
+    onBefore: handleBeforeKey,
+  });
+
   const toggle = (key: EisenhowerQuadrant) => {
     haptic.tap();
     setCollapsed((prev) => {
@@ -84,61 +129,66 @@ export function EisenhowerView({
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={{ paddingTop: space.lg, paddingBottom: 140, gap: space.md }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
-      <View style={{ paddingHorizontal: space.lg, gap: space.md }}>
-      <Segmented<MatrixScope>
-        value={scope} onChange={setScope}
-        options={[
-          { value: 'near', label: '오늘 · 이번 주', icon: 'sun' },
-          { value: 'all', label: `전체 (${roots.length})`, icon: 'layers' },
-        ]} />
-      <Txt variant="small" tone="muted">
-        우선순위(높음 이상)와 일정(오늘·기한 지남) 기준으로 자동 분류합니다. 할 일을 길게 눌러 바꾸면 바로 이동합니다.
-      </Txt>
-      </View>
-      {QUADRANTS.map((meta) => {
-        const items = grouped[meta.key];
-        const isCollapsed = collapsed.has(meta.key);
-        return (
-          // The quadrant's place in the order is its meaning, so every quadrant looks the same: a heading, then rows.
-          <View key={meta.key}>
-            <View style={[styles.head, { borderBottomColor: colors.border }]}>
-              <Pressable
-                accessibilityRole="button" accessibilityLabel={`${meta.title} ${items.length}개 ${isCollapsed ? '펼치기' : '접기'}`}
-                onPress={() => toggle(meta.key)}
-                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                <Icon name={meta.icon} size={16} color={colors.textFaint} />
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Txt variant="bodyStrong" style={{ fontWeight: '700' }}>{meta.title}</Txt>
-                    <Txt variant="small" tone="faint">{items.length}</Txt>
+    <>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={{ paddingTop: space.lg, paddingBottom: 140, gap: space.md }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
+        <View style={{ paddingHorizontal: space.lg, gap: space.md }}>
+        <Segmented<MatrixScope>
+          value={scope} onChange={setScope}
+          options={[
+            { value: 'near', label: '오늘 · 이번 주', icon: 'sun' },
+            { value: 'all', label: `전체 (${roots.length})`, icon: 'layers' },
+          ]} />
+        <Txt variant="small" tone="muted">
+          우선순위(높음 이상)와 일정(오늘·기한 지남) 기준으로 자동 분류합니다. 할 일을 길게 눌러 바꾸면 바로 이동합니다.
+        </Txt>
+        </View>
+        {QUADRANTS.map((meta) => {
+          const items = grouped[meta.key];
+          const isCollapsed = collapsed.has(meta.key);
+          return (
+            // The quadrant's place in the order is its meaning, so every quadrant looks the same: a heading, then rows.
+            <View key={meta.key}>
+              <View style={[styles.head, { borderBottomColor: colors.border }]}>
+                <Pressable
+                  accessibilityRole="button" accessibilityLabel={`${meta.title} ${items.length}개 ${isCollapsed ? '펼치기' : '접기'}`}
+                  onPress={() => toggle(meta.key)}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                  <Icon name={meta.icon} size={16} color={colors.textFaint} />
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Txt variant="bodyStrong" style={{ fontWeight: '700' }}>{meta.title}</Txt>
+                      <Txt variant="small" tone="faint">{items.length}</Txt>
+                    </View>
+                    <Txt variant="caption" tone="muted">{meta.subtitle}</Txt>
                   </View>
-                  <Txt variant="caption" tone="muted">{meta.subtitle}</Txt>
-                </View>
-                <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
-              </Pressable>
-              <Pressable
-                accessibilityRole="button" accessibilityLabel={meta.title + '에 할 일 추가'} hitSlop={8}
-                onPress={() => quickAdd.open({ initialText: meta.quickAddText, dueToday: meta.dueToday })}
-                style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.6 : 1 }]}>
-                <Icon name="plus" size={17} color={colors.textMuted} />
-              </Pressable>
+                  <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button" accessibilityLabel={meta.title + '에 할 일 추가'} hitSlop={8}
+                  onPress={() => quickAdd.open({ initialText: meta.quickAddText, dueToday: meta.dueToday })}
+                  style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.6 : 1 }]}>
+                  <Icon name="plus" size={17} color={colors.textMuted} />
+                </Pressable>
+              </View>
+              {!isCollapsed ? (
+                items.length > 0 ? (
+                  <TaskList tasks={items} focusedTaskId={cursor.focusedId} />
+                ) : (
+                  <Txt variant="small" tone="faint" style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>
+                    해당하는 할 일이 없습니다.
+                  </Txt>
+                )
+              ) : null}
             </View>
-            {!isCollapsed ? (
-              items.length > 0 ? (
-                <TaskList tasks={items} />
-              ) : (
-                <Txt variant="small" tone="faint" style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>
-                  해당하는 할 일이 없습니다.
-                </Txt>
-              )
-            ) : null}
-          </View>
-        );
-      })}
-    </ScrollView>
+          );
+        })}
+      </ScrollView>
+      <ScheduleSheet task={kbdSchedule} onClose={() => setKbdSchedule(null)} onPick={flow.reschedule} />
+      <TaskMenu task={kbdMenu} onClose={() => setKbdMenu(null)} onSchedule={setKbdSchedule} />
+    </>
   );
 }
 

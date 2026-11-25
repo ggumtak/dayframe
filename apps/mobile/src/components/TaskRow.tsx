@@ -43,6 +43,8 @@ export interface TaskRowProps {
   swipeEnabled?: boolean;
   /** The row sits on a card, so its resting background is `colors.surface` instead of the page's. */
   onSurface?: boolean;
+  /** Highlighted by keyboard list navigation. */
+  focused?: boolean;
 }
 
 function SwipeAction({ icon, label, color, foreground, onPress }: {
@@ -77,7 +79,7 @@ function firstNoteLine(notes: string | null): string | undefined {
 export const TaskRow = memo(function TaskRow({
   task, projectName, projectIcon, tagNames, reminderBadge, subtaskProgress, subtasksExpanded, onToggleSubtasks, hideDate,
   selectable, selected, onToggleSelect,
-  onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true, onSurface,
+  onPress, onComplete, onSchedule, onDelete, onLongPress, holdHandled, swipeEnabled = true, onSurface, focused,
 }: TaskRowProps) {
   const { colors } = useTheme();
   const swipe = useRef<SwipeableMethods>(null);
@@ -156,8 +158,9 @@ export const TaskRow = memo(function TaskRow({
       delayLongPress={350}
       style={({ pressed }) => [
         styles.row,
-        { backgroundColor: selected ? colors.accentSoft : pressed ? colors.surfaceMuted : onSurface ? colors.surface : colors.background },
+        { backgroundColor: selected ? colors.accentSoft : pressed ? colors.surfaceMuted : focused ? colors.accentSoft : onSurface ? colors.surface : colors.background },
       ]}>
+      {focused ? <View pointerEvents="none" style={[styles.focusBar, { backgroundColor: colors.accent }]} /> : null}
       <View style={styles.check}>
         {selectable ? (
           <View
@@ -276,6 +279,7 @@ export const TaskRow = memo(function TaskRow({
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: space.lg },
+  focusBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   check: { paddingTop: 12, paddingRight: space.md },
   selectBox: {
     width: 22, height: 22, borderRadius: 6, borderWidth: 1.8, alignItems: 'center', justifyContent: 'center',
