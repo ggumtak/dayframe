@@ -28,12 +28,12 @@ export const HABIT_EMOJIS = [
 
 /** Lines to cheer oneself on, offered in turn by the refresh button on the new-habit form. */
 export const HABIT_QUOTES = [
-  '작은 하루가 쌓여 내가 된다',
-  '오늘의 한 번이면 충분해요',
+  '작은 하루가 쌓여 만드는 변화',
+  '오늘의 한 번이면 충분합니다',
   '완벽보다 꾸준함',
   '어제보다 조금 더 나은 나',
   '천천히, 그래도 멈추지 않기',
-  '하다 보면 습관이 된다',
+  '꾸준함이 만드는 나만의 습관',
   '오늘도 나와의 약속',
   '빠진 날이 있어도 다시 시작',
   '작게 시작해서 길게 가기',

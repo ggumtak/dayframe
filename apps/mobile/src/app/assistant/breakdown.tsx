@@ -18,7 +18,7 @@ function Picker({ tasks, subtasks }: { tasks: Task[]; subtasks: Map<string, Task
   if (!sorted.length) return <EmptyState icon="inbox" title="쪼갤 할 일이 없습니다" message="할 일을 먼저 추가해 주세요." />;
   return (
     <>
-      <Txt variant="small" tone="muted">어떤 할 일을 나눌까요? 막막하거나 오래 미뤄 둔 일을 골라 보세요.</Txt>
+      <Txt variant="small" tone="muted">어떤 할 일을 나눌까요? 막막하거나 오래 미뤄 둔 일을 선택해 보세요.</Txt>
       {sorted.map((task) => {
         const due = formatDue(task);
         const subs = subtasks.get(task.id)?.length ?? 0;
@@ -52,7 +52,7 @@ export default function Breakdown() {
 
   let body;
   if (isLoading) body = <Loading />;
-  else if (taskId && !task) body = <EmptyState icon="search" title="할 일을 찾지 못했습니다" message="완료했거나 삭제한 할 일일 수 있습니다." />;
+  else if (taskId && !task) body = <EmptyState icon="search" title="할 일을 찾지 못했습니다" message="완료되었거나 삭제된 할 일일 수 있습니다." />;
   else if (task) body = <BreakdownPanel key={task.id} task={task} onDone={() => router.back()} />;
   else body = <Picker tasks={roots} subtasks={children} />;
 

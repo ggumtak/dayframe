@@ -1,5 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import type { Task } from '../../lib/shared.ts';
+
 import type { ReminderSettings } from './plan.ts';
 
 /** Minutes before a task's time, or off. Absent means the default from settings. Any whole number of minutes is allowed. */
@@ -10,9 +12,9 @@ export const DAY_MINUTES = 1440;
 export const MAX_LEAD_MINUTES = 30 * DAY_MINUTES;
 
 /** One-tap choices for a timed task. */
-export const timedLeads: readonly number[] = [0, 5, 15, 30, 60, DAY_MINUTES];
-/** One-tap choices for an all-day task: on its day, or the day before, at the settings hour. */
-export const allDayLeads: readonly number[] = [0, DAY_MINUTES];
+export const timedLeads: readonly number[] = [0, 5, 10, 15, 30, 60, DAY_MINUTES];
+/** One-tap choices for an all-day task: on its day, the day before, or two days before, at the settings hour. */
+export const allDayLeads: readonly number[] = [0, DAY_MINUTES, 2 * DAY_MINUTES];
 
 /** Reads a stored value back. Older versions stored 0, 5, 10, 30 or 60; anything unreadable counts as "not set". */
 export function cleanReminder(value: unknown): TaskReminder | undefined {
@@ -71,6 +73,45 @@ export function reminderSummary(own: TaskReminder | undefined, settings: Reminde
   return { label: lead === 0 ? '정시 알림' : leadLabel(lead), off: false };
 }
 
+/**
+ * When an occurrence's alert fires. A timed task rings `own` minutes early (or by the settings default); an all-day task
+ * rings at the settings hour on its day, or whole days earlier when its own lead asks for that. Null means no alert.
+ */
+export function alertTime(
+  task: Pick<Task, 'all_day' | 'timezone'>, occurrence: string, settings: Pick<ReminderSettings, 'leadMinutes' | 'allDayHour'>,
+  own?: number,
+): number | null {
+  if (!task.all_day) return Date.parse(occurrence) - clampLead(own ?? settings.leadMinutes) * 60_000;
+  if (settings.allDayHour === null) return null;
+  const day = Temporal.Instant.from(occurrence).toZonedDateTimeISO(task.timezone).toPlainDate().subtract({ days: own === undefined ? 0 : allDayLeadDays(own) });
+  return day.toZonedDateTime({ timeZone: task.timezone, plainTime: { hour: settings.allDayHour } }).epochMilliseconds;
+}
+
+/**
+ * Compact badge info for list rows (`TaskRow`), following DESIGN.md Rule 7 (no badges that do not change a decision):
+ * hides already-past/overdue alerts and keeps default all-day rows quiet unless a custom per-task lead is set.
+ */
+export function taskReminderBadge(
+  task: Pick<Task, 'id' | 'due_at' | 'all_day' | 'timezone' | 'completed_at'>,
+  settings: ReminderSettings,
+  own: TaskReminder | undefined,
+  now: number = Date.now(),
+): { active: boolean; label?: string } {
+  if (!task.due_at || task.completed_at || !settings.enabled || own === 'off') return { active: false };
+  let at: number | null;
+  try {
+    at = alertTime(task, task.due_at, settings, own);
+  } catch {
+    return { active: false };
+  }
+  if (at === null || !(at > now)) return { active: false };
+  if (task.all_day) {
+    const days = typeof own === 'number' ? allDayLeadDays(own) : 0;
+    return days > 0 ? { active: true, label: days === 1 ? '하루 전' : `${days}일 전` } : { active: false };
+  }
+  return { active: true, ...(typeof own === 'number' && own !== settings.leadMinutes ? { label: leadLabel(own) } : {}) };
+}
+
 /** "11월 24일 오후 5:45에 알림" for an alert at `at`, noting when that moment has already gone (alerts never fire late). */
 export function alertPreview(at: number | null, timeZone: string, now: number, repeats = false): string | null {
   if (at === null) return null;
@@ -79,5 +120,5 @@ export function alertPreview(at: number | null, timeZone: string, now: number, r
   const day = (local.year === thisYear ? '' : local.year + '년 ') + local.month + '월 ' + local.day + '일';
   const text = day + ' ' + clockLabel(local.hour * 60 + local.minute) + '에 알림';
   if (at > now) return text;
-  return text + (repeats ? ' · 이번에는 지나서 다음 반복부터 울립니다' : ' · 이미 지난 시각이라 울리지 않습니다');
+  return text + (repeats ? ' · 이미 지난 시각이어서 다음 반복부터 울립니다' : ' · 이미 지난 시각이어서 울리지 않습니다');
 }

@@ -1,21 +1,27 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { Task } from '@/lib/shared';
+import type { Task } from '../../lib/shared.ts';
 
-import { allDayLeadDays, clampLead } from './lead.ts';
+import { alertTime } from './lead.ts';
+
+export { alertTime };
 
 export interface ReminderSettings {
   enabled: boolean;
   /** Minutes before a timed task's due time. */
-  leadMinutes: 0 | 5 | 10 | 30 | 60;
+  leadMinutes: 0 | 5 | 10 | 15 | 30 | 60;
   /** Local hour that an all-day task is announced on its day, or null for no alert. */
   allDayHour: number | null;
+  /** Local hour for the daily Today digest summary, or null when off. */
+  briefingHour?: number | null;
 }
 
-export const defaultReminderSettings: ReminderSettings = { enabled: true, leadMinutes: 0, allDayHour: 9 };
+export const defaultReminderSettings: ReminderSettings = {
+  enabled: true, leadMinutes: 0, allDayHour: 9, briefingHour: 8,
+};
 
 export type ReminderTask = Pick<Task, 'id' | 'title' | 'due_at' | 'all_day' | 'timezone' | 'completed_at' | 'recurrence_rule'>
-  & Partial<Pick<Task, 'recurrence_mode'>>;
+  & Partial<Pick<Task, 'recurrence_mode' | 'priority'>>;
 
 export interface PlannedReminder {
   /** Also the notification's identifier, so the same occurrence is never scheduled twice. */
@@ -29,6 +35,8 @@ export interface PlannedReminder {
 
 export const REMINDER_PREFIX = 'task-';
 export const SNOOZE_PREFIX = 'snooze-';
+export const HABIT_SNOOZE_PREFIX = 'habit-snooze-';
+export const BRIEFING_PREFIX = 'briefing-';
 
 export const reminderId = (taskId: string, occurrence: string) => REMINDER_PREFIX + taskId + '-' + Date.parse(occurrence);
 
@@ -66,20 +74,6 @@ export function planReminders(
     }
   }
   return planned.sort((a, b) => a.at - b.at).slice(0, options.limit ?? 60);
-}
-
-/**
- * When an occurrence's alert fires. A timed task rings `own` minutes early (or by the settings default); an all-day task
- * rings at the settings hour on its day, or whole days earlier when its own lead asks for that. Null means no alert.
- */
-export function alertTime(
-  task: Pick<ReminderTask, 'all_day' | 'timezone'>, occurrence: string, settings: Pick<ReminderSettings, 'leadMinutes' | 'allDayHour'>,
-  own?: number,
-): number | null {
-  if (!task.all_day) return Date.parse(occurrence) - clampLead(own ?? settings.leadMinutes) * 60_000;
-  if (settings.allDayHour === null) return null;
-  const day = Temporal.Instant.from(occurrence).toZonedDateTimeISO(task.timezone).toPlainDate().subtract({ days: own === undefined ? 0 : allDayLeadDays(own) });
-  return day.toZonedDateTime({ timeZone: task.timezone, plainTime: { hour: settings.allDayHour } }).epochMilliseconds;
 }
 
 function safely<T>(run: () => T): T | null {
@@ -128,6 +122,85 @@ export function planHabitReminders(habits: HabitReminderInput[], now: number, da
 }
 
 export function parseHabitReminderId(id: string): { habitId: string; date: string } | null {
-  const match = /^habit-([0-9a-f-]{36})-(\d{4}-\d{2}-\d{2})$/.exec(id);
+  const match = /^(?:habit|habit-snooze)-([0-9a-f-]{36})-(\d{4}-\d{2}-\d{2})$/.exec(id);
   return match ? { habitId: match[1], date: match[2] } : null;
+}
+
+export interface PlannedBriefing {
+  id: string;
+  date: string;
+  at: number;
+  todayCount: number;
+  overdueCount: number;
+  topTitles: string[];
+}
+
+/**
+ * Daily summary briefing at `settings.briefingHour` (e.g. 08:00), scheduled only for days inside the horizon
+ * that actually have open tasks due or overdue — never spamming on clear days.
+ */
+export function planBriefingReminders(
+  tasks: ReminderTask[], settings: ReminderSettings, now: number, timeZone: string,
+  upcoming: (task: ReminderTask, after: string) => string | null, days = 7,
+): PlannedBriefing[] {
+  const hour = settings.briefingHour === undefined ? defaultReminderSettings.briefingHour : settings.briefingHour;
+  if (!settings.enabled || hour === null || hour === undefined) return [];
+  const baseDate = Temporal.Instant.fromEpochMilliseconds(now).toZonedDateTimeISO(timeZone).toPlainDate();
+  const planned: PlannedBriefing[] = [];
+  let includedOverdue = false;
+
+  for (let offset = 0; offset < days; offset++) {
+    const target = baseDate.add({ days: offset });
+    const at = target.toZonedDateTime({ timeZone, plainTime: { hour, minute: 0 } }).epochMilliseconds;
+    if (at <= now) continue;
+
+    const includeOverdue = !includedOverdue;
+    includedOverdue = true;
+    let overdueCount = 0;
+    const dueCandidates: { title: string; priority: number; sortMs: number }[] = [];
+
+    for (const task of tasks) {
+      if (task.completed_at || !task.due_at) continue;
+      const firstDate = safely(() => Temporal.Instant.from(task.due_at!).toZonedDateTimeISO(task.timezone).toPlainDate());
+      if (!firstDate) continue;
+      const cmp = Temporal.PlainDate.compare(firstDate, target);
+      if (includeOverdue && Temporal.PlainDate.compare(firstDate, baseDate) < 0) {
+        overdueCount += 1;
+        dueCandidates.push({ title: task.title, priority: task.priority ?? 4, sortMs: Date.parse(task.due_at) });
+      } else if (cmp === 0) {
+        dueCandidates.push({ title: task.title, priority: task.priority ?? 4, sortMs: Date.parse(task.due_at) });
+      } else if (cmp < 0 && task.recurrence_rule && task.recurrence_mode !== 'completion') {
+        let occ: string | null = task.due_at;
+        for (let step = 0; occ && step < 64; step++) {
+          const d = safely(() => Temporal.Instant.from(occ!).toZonedDateTimeISO(task.timezone).toPlainDate());
+          if (!d || Temporal.PlainDate.compare(d, target) > 0) break;
+          if (d.equals(target)) {
+            dueCandidates.push({ title: task.title, priority: task.priority ?? 4, sortMs: Date.parse(occ) });
+            break;
+          }
+          occ = safely(() => upcoming(task, occ!));
+        }
+      }
+    }
+
+    const todayCount = dueCandidates.length - overdueCount;
+    if (todayCount + overdueCount === 0) continue;
+
+    dueCandidates.sort((a, b) => a.priority - b.priority || a.sortMs - b.sortMs);
+    planned.push({
+      id: BRIEFING_PREFIX + target.toString(),
+      date: target.toString(),
+      at,
+      todayCount,
+      overdueCount,
+      topTitles: dueCandidates.slice(0, 3).map((item) => item.title),
+    });
+  }
+
+  return planned;
+}
+
+export function parseBriefingReminderId(id: string): { date: string } | null {
+  const match = /^briefing-(\d{4}-\d{2}-\d{2})$/.exec(id);
+  return match ? { date: match[1] } : null;
 }

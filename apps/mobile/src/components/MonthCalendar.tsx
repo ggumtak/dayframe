@@ -72,7 +72,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
       <View style={styles.nav}>
         <IconButton name="chevron-left" label="이전 달" onPress={() => setMonth(month.subtract({ months: 1 }))} />
         <Pressable
-          accessibilityRole="button" accessibilityLabel={`${month.year}년 ${month.month}월, 눌러서 다른 달 고르기`} hitSlop={8}
+          accessibilityRole="button" accessibilityLabel={`${month.year}년 ${month.month}월, 눌러서 월 선택`} hitSlop={8}
           onPress={() => {
             setPickYear(month.year);
             setPicking(!picking);
@@ -83,7 +83,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {month.equals(today.toPlainYearMonth()) ? null : (
-            <Pressable accessibilityRole="button" accessibilityLabel="이번 달로" hitSlop={8} onPress={() => setMonth(today.toPlainYearMonth())}>
+            <Pressable accessibilityRole="button" accessibilityLabel="이번 달로 이동" hitSlop={8} onPress={() => setMonth(today.toPlainYearMonth())}>
               <Txt variant="smallStrong" tone="accent">오늘</Txt>
             </Pressable>
           )}
@@ -149,7 +149,7 @@ export function MonthCalendar({ initial, month: shownMonth, selected, today, mar
                 return (
                   <Pressable
                     key={column} disabled={disabled} accessibilityRole="button"
-                    accessibilityLabel={`${date.month}월 ${date.day}일${count ? ', ' + count + '개' : ''}`}
+                    accessibilityLabel={`${date.month}월 ${date.day}일${count ? ', 일정 ' + count + '개' : ''}`}
                     accessibilityState={{ selected: isSelected, disabled }}
                     onPress={() => {
                       haptic.tap();

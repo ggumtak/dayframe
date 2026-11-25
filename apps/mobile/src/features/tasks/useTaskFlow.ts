@@ -65,7 +65,7 @@ export function useTaskFlow() {
     const message = !task.recurrence_rule
       ? '완료했습니다.'
       : completedChildren.length > 0
-        ? (when ? `다음 일정: ${when} (하위 작업 ${completedChildren.length}개 다시 열림)` : `완료했습니다. 하위 작업 ${completedChildren.length}개를 다시 열었습니다.`)
+        ? (when ? `다음 일정: ${when} · 하위 작업 ${completedChildren.length}개 초기화` : `완료했습니다. 하위 작업 ${completedChildren.length}개를 초기화했습니다.`)
         : (when ? `다음 일정: ${when}` : '완료했습니다. 다음 일정으로 넘어갑니다.');
     showToast(message, {
       actionLabel: '실행 취소', onAction: () => uncomplete(task, task.due_at),
@@ -169,7 +169,7 @@ export function useTaskFlow() {
   const resetChecklist = useCallback((completedSubtasks: Task[]) => {
     if (!completedSubtasks.length) return;
     for (const sub of completedSubtasks) actions.reopen(sub);
-    showToast(`완료한 하위 작업 ${completedSubtasks.length}개를 다시 열었습니다.`);
+    showToast(`완료한 하위 작업 ${completedSubtasks.length}개의 체크를 해제했습니다.`);
   }, [actions]);
 
   return { ...actions, complete, uncomplete, remove, reschedule, postpone, duplicate, resetChecklist };

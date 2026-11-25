@@ -73,10 +73,12 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
         } else if (!tags.some((tag) => tag.toLowerCase() === name.toLowerCase())) tags.push(name);
       }, true);
   }
-  consume(/(^|\s)p([1-4])(?=\s|$)/gi, "priority", (value) => {
+  consume(/(^|\s)(?:p([1-4])|!([1-4])|(!{1,3}))(?=\s|$)/gi, "priority", (pVal, bangNum, bangs) => {
     if (taggedPriority) throw new InvalidSchedule("Use one priority per task");
     taggedPriority = true;
-    priority = Number(value) as Priority;
+    priority = bangs
+      ? (bangs.length === 3 ? 1 : bangs.length === 2 ? 2 : 3)
+      : (Number(pVal ?? bangNum) as Priority);
   }, true);
 
   let rule: string | null = null;
@@ -116,11 +118,11 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
     (bang, unit) => setRecurrence(frequencies[unit!.toLowerCase()[0]], 2, [], compMode(undefined, bang)));
   consume(new RegExp(left + enComp + "\\s+(" + enList + ")" + right, "giu"), "recurrence",
     (bang, list) => setRecurrence("WEEKLY", 1, (list!.match(new RegExp(enDay, "gi")) ?? []).map(weekday), compMode(undefined, bang)));
-  consume(new RegExp(left + koComp + "(?:매주\\s*(평일|주말)(?:\\s*마다)?|(평일|주말)\\s*마다)(!)?" + koRight, "gu"), "recurrence",
+  consume(new RegExp(left + koComp + "(?:매주\\s*(평일|주말)(?:\\s*마다|에)?|(평일|주말)\\s*마다)(!)?" + koRight, "gu"), "recurrence",
     (comp, weekly, each, bang) => setRecurrence("WEEKLY", 1, (weekly ?? each) === "평일" ? workdays : weekend, compMode(comp, bang)));
-  consume(new RegExp(left + koComp + "격주(?:\\s*(" + koList + "))?(?:\\s*마다)?(!)?" + koRight, "gu"), "recurrence",
+  consume(new RegExp(left + koComp + "격주(?:\\s*(" + koList + "))?(?:\\s*마다|에)?(!)?" + koRight, "gu"), "recurrence",
     (comp, list, bang) => setRecurrence("WEEKLY", 2, list ? koDays(list) : [], compMode(comp, bang)));
-  consume(new RegExp(left + koComp + "매주\\s*(" + koList + ")(?:\\s*마다)?(!)?" + koRight, "gu"), "recurrence",
+  consume(new RegExp(left + koComp + "매주\\s*(" + koList + ")(?:\\s*마다|에)?(!)?" + koRight, "gu"), "recurrence",
     (comp, list, bang) => setRecurrence("WEEKLY", 1, koDays(list!), compMode(comp, bang)));
   consume(new RegExp(left + koComp + "(" + koList + ")\\s*마다(!)?" + koRight, "gu"), "recurrence",
     (comp, list, bang) => setRecurrence("WEEKLY", 1, koDays(list!), compMode(comp, bang)));
@@ -152,23 +154,29 @@ export function analyzeTask(input: ParseTaskInput, options: { draft?: boolean } 
     explicitDate = date;
   }
   const baseMonday = today.subtract({ days: today.dayOfWeek - 1 });
-  consume(new RegExp(left + "(?:이번\\s*주말(?:까지)?" + koRight + "|this\\s+weekend" + right + ")", "giu"), "date",
+  consume(new RegExp(left + "(?:이번\\s*주말(?:에|까지)?" + koRight + "|this\\s+weekend" + right + ")", "giu"), "date",
     () => {
       // Saturday of the current week, or today if already Sunday? Use upcoming Saturday (or today if Sat/Sun).
       const daysToSat = today.dayOfWeek <= 6 ? 6 - today.dayOfWeek : 0;
       setDate(today.add({ days: daysToSat }));
     });
-  consume(new RegExp(left + "(?:다음\\s*주말(?:까지)?" + koRight + "|next\\s+weekend" + right + ")", "giu"), "date",
+  consume(new RegExp(left + "(?:다음\\s*주말(?:에|까지)?" + koRight + "|next\\s+weekend" + right + ")", "giu"), "date",
     () => setDate(baseMonday.add({ days: 12 })));
-  consume(new RegExp(left + "(?:이번\\s*달\\s*말일?|월말)(?:까지)?" + koRight + "|"
+  consume(new RegExp(left + "(?:이번\\s*달\\s*말일?|월말)(?:에|까지)?" + koRight + "|"
     + left + "end\\s+of\\s+(?:this\\s+)?month" + right, "giu"), "date",
     () => setDate(today.with({ day: today.daysInMonth })));
-  consume(new RegExp(left + "(?:다음\\s*주\\s*(" + koDay + ")(?:까지)?" + koRight
+  consume(new RegExp(left + "(?:다음\\s*주\\s*(" + koDay + ")(?:에|까지)?" + koRight
     + "|next\\s+week\\s+(" + enDay + ")" + right + "|next\\s+(" + enDay + ")" + right + ")", "giu"), "date",
     (kr, enWeek, en) => setDate(baseMonday.add({ days: 7 + week.indexOf(weekday(kr ?? enWeek ?? en!)) })));
-  consume(new RegExp(left + "(?:이번\\s*주\\s*(" + koDay + ")(?:까지)?" + koRight
+  consume(new RegExp(left + "(?:이번\\s*주\\s*(" + koDay + ")(?:에|까지)?" + koRight
     + "|this\\s+(?:week\\s+)?(" + enDay + ")" + right + ")", "giu"), "date",
     (kr, en) => setDate(baseMonday.add({ days: week.indexOf(weekday(kr ?? en!)) })));
+  consume(new RegExp(left + "([월화수목금토일]요일)(?:에|까지)?" + koRight, "gu"), "date",
+    (kr) => {
+      const targetDow = week.indexOf(weekday(kr!)) + 1;
+      const delta = (targetDow - today.dayOfWeek + 7) % 7;
+      setDate(today.add({ days: delta }));
+    });
   consume(new RegExp(left + "(오늘|내일|모레|글피)(?:까지)?" + koRight + "|"
     + left + "(day\\s+after\\s+tomorrow|tomorrow|today)" + right, "giu"), "date",
     (kr, en) => {

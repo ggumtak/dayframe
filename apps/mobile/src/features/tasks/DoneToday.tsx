@@ -28,7 +28,7 @@ export function DoneToday({ items }: { items: Done[] }) {
 
   return (
     <View>
-      <FoldHeader title="완료됨" count={items.length} open={open} onToggle={() => setFold(open ? 'closed' : 'open')} label="오늘 완료한 일" />
+      <FoldHeader title="완료한 일" count={items.length} open={open} onToggle={() => setFold(open ? 'closed' : 'open')} label="오늘 완료한 일" />
       {/* Fades in when unfolded, not when the screen mounts already unfolded. */}
       <LayoutAnimationConfig skipEntering>
         {open ? (

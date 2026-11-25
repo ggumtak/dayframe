@@ -55,7 +55,7 @@ function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProp
       {online ? null : (
         <View style={[styles.offline, { backgroundColor: colors.surfaceMuted }]} accessibilityLiveRegion="polite">
           <Icon name="wifi-off" size={13} color={colors.textFaint} />
-          <Txt variant="caption" tone="muted">오프라인 · 변경한 내용은 연결되면 저장됩니다</Txt>
+          <Txt variant="caption" tone="muted">오프라인 · 다시 연결되면 자동으로 저장됩니다</Txt>
         </View>
       )}
       <View style={[styles.bar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]} accessibilityRole="tablist">

@@ -85,8 +85,8 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
     try {
       const { task: parsed, tokens } = analyzeTask({ text: when + ' ' + PLACEHOLDER, timezone: task.timezone });
       const leftover = parsed.title.replace(PLACEHOLDER, '').trim();
-      if (leftover) return { error: `‘${leftover}’ 부분을 이해하지 못했습니다.` };
-      if (!parsed.due_at && !parsed.duration_minutes) return { error: '날짜나 시간, 소요 시간을 찾지 못했습니다.' };
+      if (leftover) return { error: `‘${leftover}’ 부분은 인식하지 못했습니다.` };
+      if (!parsed.due_at && !parsed.duration_minutes) return { error: '날짜나 시간, 소요 시간을 함께 입력해 주세요.' };
 
       const hasDateToken = tokens.some((token) => token.kind === 'date');
       const hasTimeToken = tokens.some((token) => token.kind === 'time');
@@ -214,7 +214,7 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
               <TextInput
                 value={when} onChangeText={setWhen} autoFocus placeholder="예: 오후 4시, 30분 후, 매주 월수금"
                 placeholderTextColor={colors.textFaint} autoCapitalize="none" autoCorrect={false}
-                returnKeyType="done" onSubmitEditing={applyTyped} accessibilityLabel="일정을 글로 입력"
+                returnKeyType="done" onSubmitEditing={applyTyped} accessibilityLabel="일정 직접 입력"
                 style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, flex: 1 }]} />
               <Button label="적용" onPress={applyTyped} disabled={!parsedText?.patch} style={{ minHeight: 46 }} />
             </View>
@@ -233,7 +233,7 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
                       onPress={() => nudgeMinutes(-15)}
                       style={{ backgroundColor: colors.surfaceMuted, width: 26, height: 26 }} />
                     <Pressable
-                      accessibilityRole="button" accessibilityLabel={formatTime(minutes) + ', 눌러서 시각 직접 입력'} hitSlop={6}
+                      accessibilityRole="button" accessibilityLabel={formatTime(minutes) + ', 눌러서 시간 직접 입력'} hitSlop={6}
                       onPress={() => setTimeText((open) => (open === null ? timeInputText(minutes) : null))}
                       style={({ pressed }) => [
                         styles.timeValue, { borderColor: timeText !== null ? colors.accent : colors.border }, pressed && { opacity: 0.6 },
@@ -252,12 +252,12 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
                   <TextInput
                     value={timeText} onChangeText={setTimeText} autoFocus selectTextOnFocus keyboardType="number-pad" maxLength={5}
                     placeholder="1730" placeholderTextColor={colors.textFaint} returnKeyType="done" onSubmitEditing={applyTypedTime}
-                    accessibilityLabel="시각 입력, 24시간 기준 숫자 4자리"
+                    accessibilityLabel="시간 입력, 24시간 기준 숫자 4자리"
                     style={[type.bodyStrong, styles.input, styles.timeInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
                   <Txt
                     variant="small" tone={typedMinutes !== null ? 'accent' : timeText.trim() ? 'danger' : 'muted'}
                     style={{ flex: 1 }} accessibilityLiveRegion="polite">
-                    {typedMinutes !== null ? formatTime(typedMinutes) : timeText.trim() ? '00:00~23:59 사이로 입력해 주세요' : '24시간 기준, 예: 1730'}
+                    {typedMinutes !== null ? formatTime(typedMinutes) : timeText.trim() ? '00:00~23:59 사이로 입력해 주세요.' : '24시간 기준 (예: 1730)'}
                   </Txt>
                   <Button label="확인" onPress={applyTypedTime} disabled={typedMinutes === null} style={{ minHeight: 42 }} />
                 </View>
@@ -271,7 +271,7 @@ function ScheduleContent({ task: opened, onClose, onPick }: {
                       key={item.label} icon={item.minutes === null ? undefined : 'clock'} label={item.label}
                       selected={minutes === item.minutes} onPress={() => setMinutes(item.minutes)} />
                   ))}
-                  <Chip icon="edit-2" label="시각 입력" onPress={() => setTimeText(timeInputText(minutes ?? 9 * 60))} />
+                  <Chip icon="edit-2" label="시간 입력" onPress={() => setTimeText(timeInputText(minutes ?? 9 * 60))} />
                 </ScrollView>
               )}
               {timeChanged ? (

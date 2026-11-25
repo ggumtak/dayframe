@@ -93,7 +93,7 @@ export default function Plan() {
         undo.push(() => flow.update(task.id, back));
       }
     }
-    showToast(`할 일 ${changing.length}개의 시간을 정했습니다.`, {
+    showToast(`할 일 ${changing.length}개의 일정을 반영했습니다.`, {
       actionLabel: '실행 취소', onAction: () => undo.forEach((step) => step()),
     });
     router.back();
@@ -105,7 +105,7 @@ export default function Plan() {
   const footer = state.status === 'loading' || state.status === 'error' || !candidates.length || !span ? undefined : preview ? (
     <View style={{ flexDirection: 'row', gap: space.sm }}>
       <Button label="다시 만들기" kind="secondary" icon="refresh-cw" onPress={() => void propose()} style={{ flex: 1 }} />
-      <Button label={changing.length ? `적용 (${changing.length})` : '바뀌는 일 없음'} icon="check" disabled={!changing.length} onPress={apply} style={{ flex: 1.4 }} />
+      <Button label={changing.length ? `적용 (${changing.length})` : '변경할 항목 없음'} icon="check" disabled={!changing.length} onPress={apply} style={{ flex: 1.4 }} />
     </View>
   ) : (
     <Button label="계획 세우기" icon="zap" onPress={() => void propose()} />
@@ -119,7 +119,7 @@ export default function Plan() {
     body = (
       <>
         {plan.note ? <NoteCard icon="sun">{plan.note}</NoteCard> : null}
-        {plan.blocks.length ? <Txt variant="section" style={{ marginTop: space.sm }}>제안한 순서</Txt> : null}
+        {plan.blocks.length ? <Txt variant="section" style={{ marginTop: space.sm }}>추천 일정</Txt> : null}
         {plan.blocks.map((block) => {
           const on = !skipped.has(block.candidate.id);
           return (
@@ -141,7 +141,7 @@ export default function Plan() {
                   {block.candidate.priority < 4 ? <Txt style={styles.mark}>{priorityMark(block.candidate.priority) + ' '}</Txt> : null}
                   {block.candidate.title}
                 </Txt>
-                {block.fixed ? <Txt variant="caption" tone="muted">이미 정한 시간</Txt>
+                {block.fixed ? <Txt variant="caption" tone="muted">기존 시간 유지</Txt>
                   : block.candidate.overdue ? <Txt variant="caption" tone="danger">지연</Txt> : null}
               </View>
             </View>
@@ -149,7 +149,7 @@ export default function Plan() {
         })}
         {plan.leftOut.length ? (
           <>
-            <Txt variant="section" style={{ marginTop: space.md }}>이번 계획에서 뺀 일</Txt>
+            <Txt variant="section" style={{ marginTop: space.md }}>계획에서 제외한 할 일</Txt>
             {plan.leftOut.map(({ candidate, reason }) => (
               <View key={candidate.id} style={[styles.left, { backgroundColor: colors.surfaceMuted }]}>
                 <Icon name="corner-down-right" size={14} color={colors.textFaint} />
@@ -165,19 +165,19 @@ export default function Plan() {
       </>
     );
   } else if (!candidates.length) {
-    body = <EmptyState icon="check-circle" title="오늘 할 일이 없습니다" message="오늘이나 지난 날짜로 잡힌 할 일이 생기면 계획을 세울 수 있습니다." />;
+    body = <EmptyState icon="check-circle" title="오늘 할 일이 없습니다" message="오늘 예정이거나 지연된 할 일이 있으면 하루 계획을 세울 수 있습니다." />;
   } else {
     body = (
       <>
         <Txt variant="small" tone="muted">
-          오늘 할 일과 지연된 할 일 {candidates.length}개를 우선순위와 걸리는 시간에 맞춰 지금부터 하루 끝까지 배치합니다. 이미 시간을 정한 일은 그대로 둡니다.
+          오늘·지연된 할 일 {candidates.length}개를 우선순위와 소요 시간에 맞춰 남은 시간에 배치합니다. 이미 시간이 정해진 일정은 그대로 유지합니다.
         </Txt>
-        <Stepper label="하루 시작" value={prefs.dayStart} min={0} max={prefs.dayEnd - 60} onChange={(dayStart) => setAiPrefs({ dayStart })} />
-        <Stepper label="하루 끝" value={prefs.dayEnd} min={prefs.dayStart + 60} max={24 * 60} onChange={(dayEnd) => setAiPrefs({ dayEnd })} />
+        <Stepper label="시작 시간" value={prefs.dayStart} min={0} max={prefs.dayEnd - 60} onChange={(dayStart) => setAiPrefs({ dayStart })} />
+        <Stepper label="종료 시간" value={prefs.dayEnd} min={prefs.dayStart + 60} max={24 * 60} onChange={(dayEnd) => setAiPrefs({ dayEnd })} />
         {!span ? (
-          <NoteCard icon="moon">오늘 남은 시간이 거의 없습니다. 하루 끝을 늦추거나 내일 다시 계획해 보세요.</NoteCard>
+          <NoteCard icon="moon">오늘 남은 시간이 부족합니다. 종료 시간을 늦추거나 내일 다시 계획해 보세요.</NoteCard>
         ) : (
-          <Txt variant="caption" tone="faint">{formatTime(span.start)}부터 {formatTime(span.end)}까지 계획합니다.</Txt>
+          <Txt variant="caption" tone="faint">{formatTime(span.start)}부터 {formatTime(span.end)}까지 일정을 배치합니다.</Txt>
         )}
         <View style={{ gap: 6, marginTop: space.sm }}>
           {candidates.map((candidate) => (

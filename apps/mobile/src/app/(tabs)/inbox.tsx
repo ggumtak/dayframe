@@ -14,11 +14,11 @@ import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { BatchBar } from '@/features/tasks/BatchBar';
 import { LIST_COLORS, listColor, listColorEntry } from '@/features/tasks/listColors';
 import { deleteProjectMeta, PROJECT_COLORS, PROJECT_ICONS, setProjectMeta, useProjectMetaMap } from '@/features/tasks/projectMeta';
-import { TaskList } from '@/features/tasks/TaskList';
+import { TaskListSheets, TaskRows, useTaskListModel } from '@/features/tasks/TaskList';
 import { TemplatesSheet } from '@/features/tasks/TemplatesSheet';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, Temporal, today } from '@/lib/dates';
+import { deviceTimeZone, dueBucket, Temporal, today } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { usePersistentState } from '@/lib/persist';
@@ -30,6 +30,7 @@ import { radius, space, type, useTheme } from '@/theme';
 
 type Scope = 'all' | 'inbox' | string;
 type SortMode = 'manual' | 'smart' | 'schedule' | 'priority' | 'title';
+type ListFilter = 'all' | 'due' | 'undated' | 'priority' | 'checklist';
 
 const sortLabels: Record<SortMode, string> = {
   manual: '내 순서',
@@ -38,14 +39,22 @@ const sortLabels: Record<SortMode, string> = {
   priority: '우선순위순',
   title: '이름순',
 };
-/** How long a finished task stays under its list before it is left to the 완료한 일 screen. Nothing is deleted. */
+
+const filterOptions: { value: ListFilter; label: string; icon?: IconName }[] = [
+  { value: 'all', label: '전체' },
+  { value: 'due', label: '오늘·기한 지남', icon: 'sun' },
+  { value: 'undated', label: '날짜 없음', icon: 'slash' },
+  { value: 'priority', label: '중요', icon: 'flag' },
+  { value: 'checklist', label: '하위 작업', icon: 'check-square' },
+];
+
 type DoneWindow = 'today' | '3' | '7' | '30' | 'all';
 const doneWindows: { value: DoneWindow; label: string; short: string }[] = [
-  { value: 'today', label: '오늘 완료한 것만', short: '오늘' },
+  { value: 'today', label: '오늘만', short: '오늘' },
   { value: '3', label: '최근 3일', short: '최근 3일' },
   { value: '7', label: '최근 7일', short: '최근 7일' },
   { value: '30', label: '최근 30일', short: '최근 30일' },
-  { value: 'all', label: '계속 보이기', short: '전체' },
+  { value: 'all', label: '전체 기간', short: '전체' },
 ];
 const isDoneWindow = (value: string): value is DoneWindow => doneWindows.some((item) => item.value === value);
 const isScope = (value: string): value is Scope => value.length > 0;
@@ -63,9 +72,11 @@ export default function Inbox() {
   const sectionActions = useSectionActions();
   const taskActions = useTaskActions();
   const quickAdd = useQuickAdd();
-  // The last list and sort the person chose come back after a restart.
+  const { model, sheets } = useTaskListModel();
+
   const [scope, setScope] = usePersistentState<Scope>('dayframe-list-scope', 'inbox', isScope);
   const [sort, setSort] = usePersistentState<SortMode>('dayframe-list-sort', 'manual', isSortMode);
+  const [listFilter, setListFilter] = useState<ListFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [pickingSort, setPickingSort] = useState(false);
   const [projectMenu, setProjectMenu] = useState(false);
@@ -73,29 +84,24 @@ export default function Inbox() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [doneWindow, setDoneWindow] = usePersistentState<DoneWindow>('dayframe-list-done-window', '7', isDoneWindow);
   const [pickingDoneWindow, setPickingDoneWindow] = useState(false);
-  // Re-reads the date once a minute, so finished tasks age out at midnight without reopening the app.
   useMinute();
   const todayKey = today(deviceTimeZone()).toString();
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
   const scrollRef = useRef<ScrollViewInstance>(null);
   useTabScrollTop('inbox', scrollRef);
 
-  // Multi-select batch editing state
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
 
-  // Project create/rename/delete modals
   const [editor, setEditor] = useState<{ mode: 'create' } | { mode: 'rename'; id: string } | null>(null);
   const [projectName, setProjectName] = useState('');
   const [projectColor, setProjectColor] = useState<string>(PROJECT_COLORS[0]);
   const [projectIcon, setProjectIcon] = useState<IconName>('hash');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Section create/rename/delete modals
   const [sectionEditor, setSectionEditor] = useState<{ mode: 'create' } | { mode: 'rename'; section: Section } | null>(null);
   const [sectionName, setSectionName] = useState('');
   const [managingSection, setManagingSection] = useState<Section | null>(null);
 
-  // A project deleted on another device falls back to uncategorized.
   const selected = scope !== 'all' && scope !== 'inbox' ? projects?.find((project) => project.id === scope) ?? null : null;
   const effectiveScope: Scope = scope === 'all' ? 'all' : selected ? selected.id : 'inbox';
   useScreenDefaults({ projectId: selected?.id ?? null });
@@ -105,7 +111,7 @@ export default function Inbox() {
     [selected, sections],
   );
   const hasSections = !!selected && projectSections.length > 0;
-  const canSortManually = effectiveScope !== 'all' && sort === 'manual' && !selectedIds;
+  const canSortManually = effectiveScope !== 'all' && sort === 'manual' && listFilter === 'all' && !selectedIds;
 
   const sortTasks = useCallback((list: Task[]) => {
     const copy = [...list];
@@ -116,21 +122,65 @@ export default function Inbox() {
     return copy.sort(byPosition);
   }, [sort, effectiveScope, subtaskProgress]);
 
+  const scopeRoots = useMemo(
+    () => (effectiveScope === 'all' ? roots : roots.filter((task) => task.project_id === (selected?.id ?? null))),
+    [roots, effectiveScope, selected?.id],
+  );
+
   const tasks = useMemo(() => {
-    const filtered = effectiveScope === 'all' ? roots : roots.filter((task) => task.project_id === (selected?.id ?? null));
-    return sortTasks(filtered);
-  }, [roots, effectiveScope, selected?.id, sortTasks]);
+    const narrowed = listFilter === 'all' ? scopeRoots : scopeRoots.filter((task) => {
+      if (listFilter === 'due') {
+        const b = dueBucket(task);
+        return b === 'overdue' || b === 'today';
+      }
+      if (listFilter === 'undated') return !task.due_at;
+      if (listFilter === 'priority') return task.priority < 4;
+      return (subtaskProgress.get(task.id)?.total ?? 0) > 0;
+    });
+    return sortTasks(narrowed);
+  }, [scopeRoots, listFilter, subtaskProgress, sortTasks]);
+
+  // Group All Tasks ('all') by project when sorted manually so every project reads cleanly with its own heading and + button.
+  const allProjectGroups = useMemo(() => {
+    if (effectiveScope !== 'all' || sort !== 'manual') return null;
+    const known = new Set((projects ?? []).map((p) => p.id));
+    const byProj = new Map<string | null, Task[]>();
+    for (const task of tasks) {
+      const key = task.project_id && known.has(task.project_id) ? task.project_id : null;
+      const list = byProj.get(key) ?? [];
+      list.push(task);
+      byProj.set(key, list);
+    }
+    const ordered: { key: string; projectId: string | null; name: string; icon: IconName; tasks: Task[] }[] = [];
+    const inboxTasks = byProj.get(null);
+    if (inboxTasks?.length) {
+      ordered.push({ key: 'proj-inbox', projectId: null, name: '미분류', icon: 'inbox', tasks: inboxTasks.sort(byPosition) });
+    }
+    for (const project of projects ?? []) {
+      const projTasks = byProj.get(project.id);
+      if (projTasks?.length) {
+        ordered.push({
+          key: 'proj-' + project.id,
+          projectId: project.id,
+          name: project.name,
+          icon: projectMeta[project.id]?.icon ?? 'hash',
+          tasks: projTasks.sort(byPosition),
+        });
+      }
+    }
+    return ordered;
+  }, [effectiveScope, sort, tasks, projects, projectMeta]);
 
   const completedInScope = useMemo(() => {
-    if (effectiveScope === 'all') return [];
     const targetProjectId = selected?.id ?? null;
-    // "최근 7일" counts whole days: today and the six before it.
     const zone = deviceTimeZone();
     const days = doneWindow === 'all' ? null : doneWindow === 'today' ? 1 : Number(doneWindow);
     const since = days === null ? 0
       : Temporal.PlainDate.from(todayKey).subtract({ days: days - 1 }).toZonedDateTime(zone).epochMilliseconds;
     return (completedAll ?? [])
-      .filter((task) => !task.parent_task_id && task.project_id === targetProjectId && Date.parse(task.completed_at ?? '') >= since)
+      .filter((task) => !task.parent_task_id
+        && (effectiveScope === 'all' || task.project_id === targetProjectId)
+        && Date.parse(task.completed_at ?? '') >= since)
       .sort((a, b) => Date.parse(b.completed_at ?? '') - Date.parse(a.completed_at ?? ''))
       .slice(0, 50);
   }, [completedAll, effectiveScope, selected, doneWindow, todayKey]);
@@ -159,6 +209,17 @@ export default function Inbox() {
   const startSelect = useCallback((task: Task) => {
     setSelectedIds(new Set([task.id]));
   }, []);
+
+  const selectScope = (next: Scope) => {
+    setSelectedIds(null);
+    setListFilter('all');
+    setScope(next);
+  };
+
+  const selectFilter = (next: ListFilter) => {
+    setSelectedIds(null);
+    setListFilter(next);
+  };
 
   const toggleSectionCollapse = (id: string) => {
     haptic.tap();
@@ -208,13 +269,13 @@ export default function Inbox() {
     if (editor.mode === 'create') {
       projectActions.create(trimmed, (created) => {
         setProjectMeta(created.id, { color: chosenColor, icon: chosenIcon });
-        setScope(created.id);
+        selectScope(created.id);
       });
       showToast(`#${trimmed} 목록을 만들었습니다.`);
     } else {
       projectActions.rename(editor.id, trimmed);
       setProjectMeta(editor.id, { color: chosenColor, icon: chosenIcon });
-      showToast(`#${trimmed} 목록을 저장했습니다.`);
+      showToast(`#${trimmed} 목록을 수정했습니다.`);
     }
     setEditor(null);
   };
@@ -224,7 +285,7 @@ export default function Inbox() {
     const removedName = selected.name;
     const removedId = selected.id;
     setConfirmDelete(false);
-    setScope('inbox');
+    selectScope('inbox');
     projectActions.remove(removedId);
     deleteProjectMeta(removedId);
     showToast(`#${removedName} 목록을 삭제했습니다.`);
@@ -260,7 +321,7 @@ export default function Inbox() {
 
   const title = effectiveScope === 'all' ? '전체 목록' : selected?.name ?? '목록';
   const subtitle = tasks.length
-    ? `${tasks.length}개 · ${canSortManually ? '길게 눌러 순서 변경' : sort === 'manual' ? '일정순' : sortLabels[sort]}`
+    ? `${tasks.length}개 · ${canSortManually ? '길게 눌러 순서 변경' : effectiveScope === 'all' && sort === 'manual' ? '목록별' : sortLabels[sort]}`
     : undefined;
 
   const unsectionedTasks = hasSections ? tasks.filter((t) => !t.section_id || !projectSections.some((s) => s.id === t.section_id)) : tasks;
@@ -294,20 +355,14 @@ export default function Inbox() {
       <View style={styles.chipStripRow}>
         <PlainScroll
           horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingLeft: space.lg, paddingRight: space.sm, gap: space.sm, paddingBottom: space.sm }}
+          contentContainerStyle={{ paddingLeft: space.lg, paddingRight: space.sm, gap: space.sm, paddingBottom: space.xs }}
           style={{ flex: 1 }}>
           <Chip
             icon="layers" label={'전체' + (roots.length ? ' ' + roots.length : '')} selected={effectiveScope === 'all'}
-            onPress={() => {
-              setSelectedIds(null);
-              setScope('all');
-            }} />
+            onPress={() => selectScope('all')} />
           <Chip
             icon="inbox" label={'미분류' + (counts.get(null) ? ' ' + counts.get(null) : '')} selected={effectiveScope === 'inbox'}
-            onPress={() => {
-              setSelectedIds(null);
-              setScope('inbox');
-            }} />
+            onPress={() => selectScope('inbox')} />
           {(projects ?? []).map((project) => {
             const meta = projectMeta[project.id];
             return (
@@ -317,14 +372,11 @@ export default function Inbox() {
                 color={listColor(meta?.color, isDark)}
                 label={project.name + (counts.get(project.id) ? ' ' + counts.get(project.id) : '')}
                 selected={selected?.id === project.id}
-                onPress={() => {
-                  setSelectedIds(null);
-                  setScope(project.id);
-                }} />
+                onPress={() => selectScope(project.id)} />
             );
           })}
         </PlainScroll>
-        <View style={{ paddingRight: space.md, paddingBottom: space.sm }}>
+        <View style={{ paddingRight: space.md, paddingBottom: space.xs }}>
           <IconButton
             name="plus" label="새 목록 만들기" size={18} color={colors.textMuted}
             onPress={openCreate}
@@ -332,21 +384,67 @@ export default function Inbox() {
         </View>
       </View>
 
+      {scopeRoots.length > 0 || listFilter !== 'all' ? (
+        <PlainScroll
+          horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: space.lg, gap: 6, paddingTop: 2, paddingBottom: space.sm }}>
+          {filterOptions.map((option) => (
+            <Chip
+              key={option.value} icon={option.icon} label={option.label}
+              selected={listFilter === option.value}
+              onPress={() => selectFilter(option.value)} />
+          ))}
+        </PlainScroll>
+      ) : null}
+
       {isLoading ? <Loading /> : (
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={{ paddingBottom: selectedIds ? 180 : 140, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
-          {hasSections ? (
+          {tasks.length === 0 && listFilter !== 'all' ? (
+            <EmptyState
+              icon="filter" title="조건에 맞는 할 일이 없습니다"
+              message="다른 필터를 선택하거나 전체 할 일을 확인해 보세요."
+              action={<Button label="필터 해제" kind="secondary" onPress={() => selectFilter('all')} />} />
+          ) : allProjectGroups && allProjectGroups.length > 0 ? (
+            allProjectGroups.map((group) => {
+              const collapsed = !selectedIds && collapsedSections.has(group.key);
+              return (
+                <View key={group.key}>
+                  <View style={[styles.sectionHeader, { borderBottomColor: colors.border }]}>
+                    <Pressable
+                      accessibilityRole="button" accessibilityLabel={`${group.name} ${collapsed ? '펼치기' : '접기'}`}
+                      onPress={() => toggleSectionCollapse(group.key)}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={15} color={colors.textFaint} />
+                      <Icon name={group.icon} size={14} color={colors.textFaint} />
+                      <Txt variant="section">{group.name}</Txt>
+                      <Txt variant="small" tone="faint">{group.tasks.length}</Txt>
+                    </Pressable>
+                    <IconButton
+                      name="plus" label={group.name + '에 할 일 추가'} size={16} color={colors.textMuted}
+                      onPress={() => quickAdd.open({ projectId: group.projectId })}
+                      style={{ width: 32, height: 32 }} />
+                  </View>
+                  {!collapsed ? (
+                    <TaskRows
+                      model={model} tasks={group.tasks} hideProject selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect} />
+                  ) : null}
+                </View>
+              );
+            })
+          ) : hasSections ? (
             <>
               {unsectionedTasks.length > 0 ? (
-                <TaskList
-                  key={effectiveScope} tasks={unsectionedTasks} sortable={canSortManually}
-                  selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                <TaskRows
+                  key={effectiveScope} model={model} tasks={unsectionedTasks} sortable={canSortManually}
+                  selectedIds={selectedIds} onToggleSelect={toggleSelect} />
               ) : null}
               {projectSections.map((section) => {
                 const sectionTasks = tasks.filter((t) => t.section_id === section.id);
-                const collapsed = collapsedSections.has(section.id);
+                const collapsed = !selectedIds && collapsedSections.has(section.id);
                 return (
                   <View key={section.id}>
                     <View style={[styles.sectionHeader, { borderBottomColor: colors.border }]}>
@@ -369,9 +467,9 @@ export default function Inbox() {
                     </View>
                     {!collapsed ? (
                       sectionTasks.length > 0 ? (
-                        <TaskList
-                          tasks={sectionTasks} sortable={canSortManually}
-                          selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+                        <TaskRows
+                          model={model} tasks={sectionTasks} sortable={canSortManually}
+                          selectedIds={selectedIds} onToggleSelect={toggleSelect} />
                       ) : (
                         <Pressable
                           onPress={() => quickAdd.open({ projectId: selected!.id, sectionId: section.id })}
@@ -393,10 +491,9 @@ export default function Inbox() {
             </>
           ) : tasks.length ? (
             <>
-              {/* Keyed by list, so switching lists swaps the rows at once instead of fading one set out over the other. */}
-              <TaskList
-                key={effectiveScope} tasks={tasks} sortable={canSortManually}
-                selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
+              <TaskRows
+                key={effectiveScope + '-' + listFilter} model={model} tasks={tasks} sortable={canSortManually}
+                selectedIds={selectedIds} onToggleSelect={toggleSelect} />
               {selected ? (
                 <Pressable
                   accessibilityRole="button" accessibilityLabel="섹션으로 나누기" onPress={openCreateSection}
@@ -410,12 +507,12 @@ export default function Inbox() {
             <EmptyState
               icon={selected ? (projectMeta[selected.id]?.icon ?? 'hash') : effectiveScope === 'all' ? 'layers' : 'inbox'}
               art={<EmptyList size={EMPTY_ART} />}
-              title={selected ? '이 목록은 비어 있습니다' : effectiveScope === 'all' ? '열려 있는 할 일이 없습니다' : '미분류 할 일이 없습니다'}
+              title={selected ? '아직 등록된 할 일이 없습니다' : effectiveScope === 'all' ? '아직 할 일이 없습니다' : '미분류 할 일이 없습니다'}
               message={selected
-                ? '+ 버튼으로 할 일을 추가하거나 템플릿으로 체크리스트를 시작해 보세요.'
+                ? '아래 + 버튼으로 할 일을 추가하거나 템플릿으로 시작해 보세요.'
                 : effectiveScope === 'all'
                   ? '아래 + 버튼으로 새 할 일을 추가해 보세요.'
-                  : '목록을 정하지 않고 적은 할 일이 여기에 모입니다. 위의 + 버튼으로 새 목록을 만들어 보세요.'}
+                  : '목록을 지정하지 않은 할 일이 이곳에 모입니다. 위 + 버튼으로 새 목록을 만들어 보세요.'}
               action={(
                 <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
                   <Button label="템플릿에서 추가" kind="secondary" icon="bookmark" onPress={() => setShowTemplates(true)} />
@@ -424,7 +521,7 @@ export default function Inbox() {
               )} />
           )}
 
-          {effectiveScope !== 'all' && completedInScope.length > 0 ? (
+          {!selectedIds && completedInScope.length > 0 ? (
             <View style={{ marginTop: space.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Pressable
@@ -434,7 +531,6 @@ export default function Inbox() {
                   <Icon name={showCompleted ? 'chevron-down' : 'chevron-right'} size={15} color={colors.textFaint} />
                   <Txt variant="smallStrong" tone="muted">완료한 할 일 {completedInScope.length}</Txt>
                 </Pressable>
-                {/* Where the list says how long it keeps finished tasks is also where that is changed. */}
                 <Pressable
                   accessibilityRole="button" accessibilityLabel={`완료한 할 일 표시 기간 ${doneWindowLabel}, 눌러서 변경`} hitSlop={10}
                   onPress={() => {
@@ -452,9 +548,9 @@ export default function Inbox() {
                     onPress={() => {
                       haptic.tap();
                       taskActions.reopen(task);
-                      showToast(`‘${task.title}’${josa(task.title, '을/를')} 다시 열었습니다.`);
+                      showToast(`‘${task.title}’의 완료를 취소했습니다.`);
                     }}
-                    label={task.title + ' 다시 열기'} />
+                    label={task.title + ' 완료 취소'} />
                   <View style={[styles.completedBody, { borderBottomColor: colors.border }]}>
                     <Text numberOfLines={1} style={[type.body as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
                       {task.title}
@@ -482,7 +578,7 @@ export default function Inbox() {
         visible={showTemplates} onClose={() => setShowTemplates(false)}
         projectId={selected?.id ?? null} />
 
-      <Sheet visible={pickingDoneWindow} onClose={() => setPickingDoneWindow(false)} title="완료한 할 일을 얼마 동안 보여 줄까요?">
+      <Sheet visible={pickingDoneWindow} onClose={() => setPickingDoneWindow(false)} title="완료한 할 일 표시 기간">
         {doneWindows.map((item) => (
           <Row
             key={item.value} label={item.label}
@@ -494,7 +590,7 @@ export default function Inbox() {
             }} />
         ))}
         <Txt variant="small" tone="muted" style={{ marginTop: space.sm }}>
-          기간이 지나도 삭제되지 않습니다. 완료한 일 화면에서 계속 볼 수 있습니다.
+          기간이 지나도 삭제되지 않으며, 완료한 일 화면에서 언제든 확인할 수 있습니다.
         </Txt>
         <Row
           icon="check-circle" label="완료한 일 전체 보기"
@@ -512,7 +608,7 @@ export default function Inbox() {
             icon={option === 'manual' ? 'menu' : option === 'smart' ? 'zap' : option === 'schedule' ? 'calendar' : option === 'priority' ? 'flag' : 'type'}
             label={sortLabels[option]}
             detail={option === 'manual'
-              ? (effectiveScope === 'all' ? '목록별로만 가능' : '길게 눌러 순서 변경')
+              ? (effectiveScope === 'all' ? '목록별로 묶어 표시' : '길게 눌러 순서 변경')
               : option === 'smart' ? '긴급도 · 우선순위 · 진행률' : undefined}
             trailing={sort === option ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
             onPress={() => {
@@ -524,14 +620,14 @@ export default function Inbox() {
       </Sheet>
 
       <Sheet visible={projectMenu && !!selected} onClose={() => setProjectMenu(false)} title={selected ? '#' + selected.name : ''}>
-        <Row icon="plus" label="새 섹션 추가" detail="목록을 단계·종류별로 나누기" onPress={openCreateSection} />
+        <Row icon="plus" label="새 섹션 추가" detail="단계·주제별로 구분" onPress={openCreateSection} />
         <Row
           icon="bookmark" label="체크리스트 템플릿 추가"
           onPress={() => {
             setProjectMenu(false);
             setShowTemplates(true);
           }} />
-        <Row icon="edit-2" label="목록 이름 · 색 · 아이콘 바꾸기" onPress={openRename} />
+        <Row icon="edit-2" label="목록 편집" detail="이름 · 색상 · 아이콘" onPress={openRename} />
         <Row
           icon="trash-2" label="목록 삭제" tone="danger"
           onPress={() => {
@@ -549,7 +645,7 @@ export default function Inbox() {
             if (target && selected) quickAdd.open({ projectId: selected.id, sectionId: target.id });
           }} />
         <Row
-          icon="edit-2" label="섹션 이름 바꾸기"
+          icon="edit-2" label="섹션 이름 변경"
           onPress={() => {
             if (!managingSection) return;
             setSectionName(managingSection.name);
@@ -557,7 +653,7 @@ export default function Inbox() {
             setManagingSection(null);
           }} />
         <Row
-          icon="trash-2" label="섹션 삭제" detail="할 일은 남습니다" tone="danger"
+          icon="trash-2" label="섹션 삭제" detail="할 일은 유지됩니다" tone="danger"
           onPress={() => {
             if (!managingSection) return;
             const removed = managingSection.name;
@@ -567,7 +663,7 @@ export default function Inbox() {
           }} />
       </Sheet>
 
-      <Sheet visible={!!sectionEditor} onClose={() => setSectionEditor(null)} title={sectionEditor?.mode === 'rename' ? '섹션 이름 바꾸기' : '새 섹션'}>
+      <Sheet visible={!!sectionEditor} onClose={() => setSectionEditor(null)} title={sectionEditor?.mode === 'rename' ? '섹션 이름 변경' : '새 섹션'}>
         <View style={{ gap: space.md }}>
           <TextInput
             value={sectionName} onChangeText={setSectionName} autoFocus maxLength={120}
@@ -583,7 +679,7 @@ export default function Inbox() {
         </View>
       </Sheet>
 
-      <Sheet visible={!!editor} onClose={() => setEditor(null)} title={editor?.mode === 'rename' ? '목록 설정' : '새 목록'}>
+      <Sheet visible={!!editor} onClose={() => setEditor(null)} title={editor?.mode === 'rename' ? '목록 편집' : '새 목록'}>
         <View style={{ gap: space.md }}>
           <TextInput
             value={projectName} onChangeText={setProjectName} autoFocus maxLength={120}
@@ -591,13 +687,13 @@ export default function Inbox() {
             returnKeyType="done" onSubmitEditing={saveProject} accessibilityLabel="목록 이름"
             style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
           <View style={{ gap: 6 }}>
-            <Txt variant="caption" tone="muted">색</Txt>
+            <Txt variant="caption" tone="muted">색상</Txt>
             <View style={styles.swatchRow}>
               {LIST_COLORS.map((swatch) => {
                 const active = listColorEntry(projectColor)?.id === swatch.id;
                 return (
                   <Pressable
-                    key={swatch.id} accessibilityRole="radio" accessibilityLabel={'색 ' + swatch.label} accessibilityState={{ selected: active }}
+                    key={swatch.id} accessibilityRole="radio" accessibilityLabel={'색상 ' + swatch.label} accessibilityState={{ selected: active }}
                     onPress={() => {
                       haptic.tap();
                       setProjectColor(swatch.stored);
@@ -649,14 +745,16 @@ export default function Inbox() {
       <Sheet visible={confirmDelete && !!selected} onClose={() => setConfirmDelete(false)} title={`#${selected?.name ?? ''} 목록을 삭제할까요?`}>
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
           {counts.get(selected?.id ?? null)
-            ? `이 목록의 할 일 ${counts.get(selected?.id ?? null)}개도 함께 삭제됩니다. 되돌릴 수 없습니다.`
-            : '삭제하면 되돌릴 수 없습니다.'}
+            ? `이 목록의 할 일 ${counts.get(selected?.id ?? null)}개도 함께 삭제됩니다. 삭제한 내용은 되돌릴 수 없습니다.`
+            : '삭제한 목록은 되돌릴 수 없습니다.'}
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button label="삭제" kind="danger" onPress={deleteSelected} />
           <Button label="취소" kind="secondary" onPress={() => setConfirmDelete(false)} />
         </View>
       </Sheet>
+
+      <TaskListSheets sheets={sheets} onStartSelect={startSelect} />
     </Screen>
   );
 }

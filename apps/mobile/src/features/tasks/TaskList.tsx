@@ -1,6 +1,7 @@
+import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, type TextStyle, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LayoutAnimationConfig, LinearTransition } from 'react-native-reanimated';
 
 import { Checkbox } from '@/components/Checkbox';
@@ -8,6 +9,11 @@ import { SortableList } from '@/components/SortableList';
 import { TaskRow } from '@/components/TaskRow';
 import { useProjects, useSubtaskProgress, useTagNames, useTaskIndex } from '@/data/tasks';
 import { AiBreakdownSheet } from '@/features/ai';
+import { useQuickAdd } from '@/features/quick-add/QuickAdd';
+import { taskReminderBadge } from '@/features/reminders/lead';
+import { type ReminderOverrides, useReminderOverrides } from '@/features/reminders/overrides';
+import type { ReminderSettings } from '@/features/reminders/plan';
+import { useReminderSettings } from '@/features/reminders/settings';
 import { haptic } from '@/lib/haptics';
 import type { Task } from '@/lib/shared';
 import type { SubtaskProgress } from '@/lib/smart';
@@ -31,7 +37,6 @@ export function positionsFor(ordered: Task[], moved: Task): { id: string; positi
     const middle = Math.floor((low + high) / 2);
     if (middle > low && middle < high) return [{ id: moved.id, position: middle }];
   }
-  // No room between the neighbours (or the list was never ordered): renumber with gaps.
   return ordered
     .map((task, at) => ({ id: task.id, position: (at + 1) * 1024, previous: task.position }))
     .filter((item) => item.position !== item.previous)
@@ -46,9 +51,12 @@ export interface TaskListModel {
   projectNames: Map<string, string>;
   projectMeta: Record<string, ProjectMeta>;
   tagNames: Map<string, string[]>;
+  reminderSettings: ReminderSettings;
+  reminderOverrides: ReminderOverrides;
   expanded: Set<string>;
   open: (task: Task) => void;
   toggleSubtasks: (task: Task) => void;
+  addSubtask: (task: Task) => void;
   complete: (task: Task) => void;
   remove: (task: Task) => void;
   reopen: (task: Task) => void;
@@ -66,18 +74,16 @@ export interface TaskListSheetState {
   reschedule: ReturnType<typeof useTaskFlow>['reschedule'];
 }
 
-/**
- * The data and state behind task rows. A screen that shows several lists (the grouped Today tab) calls
- * this once and hands the model to each `TaskRows`, so the query subscriptions and the two sheets are not
- * repeated per list. The model only changes when its data does, so memoised rows stay put on re-renders.
- */
 export function useTaskListModel(): { model: TaskListModel; sheets: TaskListSheetState } {
   const flow = useTaskFlow();
+  const quickAdd = useQuickAdd();
   const { children } = useTaskIndex();
   const { completedChildren, progress } = useSubtaskProgress();
   const { data: projects } = useProjects();
   const projectMeta = useProjectMetaMap();
   const tagNames = useTagNames();
+  const reminderSettings = useReminderSettings();
+  const reminderOverrides = useReminderOverrides();
   const [scheduling, setScheduling] = useState<Task | null>(null);
   const [menu, setMenu] = useState<Task | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -91,11 +97,19 @@ export function useTaskListModel(): { model: TaskListModel; sheets: TaskListShee
       return next;
     });
   }, []);
+  const addSubtask = useCallback((task: Task) => {
+    quickAdd.open({ parentTaskId: task.id });
+  }, [quickAdd]);
   const { complete, remove, reopen, reorder, reschedule } = flow;
   const model = useMemo<TaskListModel>(() => ({
-    children, completedChildren, progress, projectNames, projectMeta, tagNames, expanded,
-    open, toggleSubtasks, complete, remove, reopen, reorder, setScheduling, setMenu,
-  }), [children, completedChildren, progress, projectNames, projectMeta, tagNames, expanded, open, toggleSubtasks, complete, remove, reopen, reorder]);
+    children, completedChildren, progress, projectNames, projectMeta, tagNames,
+    reminderSettings, reminderOverrides, expanded,
+    open, toggleSubtasks, addSubtask, complete, remove, reopen, reorder, setScheduling, setMenu,
+  }), [
+    children, completedChildren, progress, projectNames, projectMeta, tagNames,
+    reminderSettings, reminderOverrides, expanded,
+    open, toggleSubtasks, addSubtask, complete, remove, reopen, reorder,
+  ]);
   const sheets = useMemo<TaskListSheetState>(
     () => ({ scheduling, menu, setScheduling, setMenu, reschedule }),
     [scheduling, menu, reschedule],
@@ -137,8 +151,9 @@ export const TaskRows = memo(function TaskRows({
 }: TaskRowsProps) {
   const { colors } = useTheme();
   const {
-    children, completedChildren, progress, projectNames, projectMeta, tagNames, expanded,
-    open, toggleSubtasks, complete, remove, reopen, reorder, setScheduling, setMenu,
+    children, completedChildren, progress, projectNames, projectMeta, tagNames,
+    reminderSettings, reminderOverrides, expanded,
+    open, toggleSubtasks, addSubtask, complete, remove, reopen, reorder, setScheduling, setMenu,
   } = model;
   const selecting = selectedIds !== null && selectedIds !== undefined;
   const allowSort = !!sortable && !selecting;
@@ -152,12 +167,15 @@ export const TaskRows = memo(function TaskRows({
     const isExpanded = !nested && !selecting && expanded.has(task.id) && hasAnySubtasks;
     const projectId = hideProject ? null : task.project_id;
     const projMeta = projectId ? projectMeta[projectId] : undefined;
+    const reminder = Platform.OS === 'android'
+      ? taskReminderBadge(task, reminderSettings, reminderOverrides.tasks[task.id])
+      : undefined;
     return (
       <View>
         <TaskRow
           task={task} hideDate={hideDate} projectName={projectId ? projectNames.get(projectId) : undefined}
           projectIcon={projMeta?.icon}
-          tagNames={tagNames.get(task.id)} subtaskProgress={subProgress}
+          tagNames={tagNames.get(task.id)} reminderBadge={reminder} subtaskProgress={subProgress}
           subtasksExpanded={isExpanded} onToggleSubtasks={!nested && !selecting && hasAnySubtasks ? toggleSubtasks : undefined}
           selectable={selecting && !nested} selected={selecting ? selectedIds.has(task.id) : false}
           onToggleSelect={onToggleSelect}
@@ -171,7 +189,7 @@ export const TaskRows = memo(function TaskRows({
             ))}
             {doneSubtasks.map((child) => (
               <Pressable
-                key={child.id} accessibilityRole="button" accessibilityLabel={child.title + ' 다시 열기'}
+                key={child.id} accessibilityRole="button" accessibilityLabel={child.title + ' 완료 해제'}
                 onPress={() => {
                   haptic.tap();
                   reopen(child);
@@ -183,6 +201,16 @@ export const TaskRows = memo(function TaskRows({
                 </Text>
               </Pressable>
             ))}
+            <Pressable
+              accessibilityRole="button" accessibilityLabel={task.title + '에 하위 작업 추가'}
+              onPress={() => {
+                haptic.tap();
+                addSubtask(task);
+              }}
+              style={({ pressed }) => [styles.addSubRow, { borderBottomColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
+              <Feather name="plus" size={14} color={colors.textFaint} />
+              <Text style={[type.small as TextStyle, { color: colors.textMuted }]}>하위 작업 추가</Text>
+            </Pressable>
           </View>
         ) : null}
       </View>
@@ -196,12 +224,7 @@ export const TaskRows = memo(function TaskRows({
         onReorder={(ordered, moved) => reorder(positionsFor(ordered, moved))} onHold={setMenu} />
     );
   }
-  // Rows fade only when one is added or removed while the list is on screen. Not when the list mounts (a tab opened,
-  // a screen pushed, data arriving) or leaves: a whole list fading in or out reads as a flash, and on Android a
-  // translucent row also lets what is behind it show through.
   return (
-    // One child: with several, LayoutAnimationConfig wraps each in its own skipExiting config, which would also skip a
-    // single row's fade-out when it is completed.
     <LayoutAnimationConfig skipEntering skipExiting>
       <View>
         {tasks.map((task) => (
@@ -222,14 +245,10 @@ export const TaskList = memo(function TaskList({
 }: {
   tasks: Task[];
   hideDate?: boolean;
-  /** Leaves the project name off each row, for lists already grouped by project. */
   hideProject?: boolean;
-  /** Long-press rows to drag them into a new order (for lists sorted by position). */
   sortable?: boolean;
-  /** When provided, the list enters multi-select mode for batch editing. */
   selectedIds?: Set<string> | null;
   onToggleSelect?: (task: Task) => void;
-  /** Offered in the long-press menu to enter multi-select starting from that task. */
   onStartSelect?: (task: Task) => void;
 }) {
   const { model, sheets } = useTaskListModel();
@@ -246,6 +265,10 @@ export const TaskList = memo(function TaskList({
 const styles = StyleSheet.create({
   doneSubRow: {
     flexDirection: 'row', alignItems: 'center', gap: space.md, paddingLeft: space.lg, paddingRight: space.lg,
+    paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  addSubRow: {
+    flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingLeft: space.lg, paddingRight: space.lg,
     paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth,
   },
 });

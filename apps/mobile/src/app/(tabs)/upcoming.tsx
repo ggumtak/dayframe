@@ -11,6 +11,7 @@ import { bySchedule, useTaskIndex } from '@/data/tasks';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { TaskList } from '@/features/tasks/TaskList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
+import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { useMinute } from '@/lib/clock';
 import { deviceTimeZone, dueBucket, dueDate, formatDate, Temporal, today, weekdayName } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
@@ -20,6 +21,7 @@ import { datePhrase, occurrenceDates } from '@/lib/occurrences';
 import { usePersistentState } from '@/lib/persist';
 import { nextOccurrence, type Task } from '@/lib/shared';
 import { useTabScrollTop } from '@/lib/tabScroll';
+import { showToast } from '@/lib/toast';
 import { yearCounts } from '@/lib/yearView';
 import { radius, space, useTheme } from '@/theme';
 
@@ -40,6 +42,7 @@ export default function Upcoming() {
   const [calendarMonth, setCalendarMonth] = useState<string | null>(null);
   const [yearShown, setYearShown] = useState<number | null>(null);
   const quickAdd = useQuickAdd();
+  const flow = useTaskFlow();
   const listScroll = useRef<ScrollViewInstance>(null);
   const monthScroll = useRef<ScrollViewInstance>(null);
   const yearScroll = useRef<ScrollViewInstance>(null);
@@ -168,7 +171,7 @@ export default function Upcoming() {
     <Screen>
       <Header
         title="예정"
-        subtitle={upcomingCount ? `앞으로 ${upcomingCount}개` : '날짜별 일정을 계획해 보세요'}
+        subtitle={upcomingCount ? `예정된 할 일 ${upcomingCount}개` : '날짜별 일정을 계획해 보세요'}
         right={(
           <View style={{ flexDirection: 'row' }}>
             <IconButton name="search" label="검색" onPress={() => router.push('/search')} color={colors.textMuted} />
@@ -244,7 +247,7 @@ export default function Upcoming() {
                 return (
                   <Pressable
                     key={key} accessibilityRole="button" accessibilityState={{ selected: active }}
-                    accessibilityLabel={`${date.month}월 ${date.day}일 ${weekdayName(date)}요일, ${count}개`}
+                    accessibilityLabel={`${date.month}월 ${date.day}일 ${weekdayName(date)}요일, 할 일 ${count}개`}
                     onPress={() => {
                       haptic.tap();
                       setPicked(active ? null : key);
@@ -277,9 +280,23 @@ export default function Upcoming() {
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
               {weekOffset === 0 && !selected && overdue.length > 0 ? (
                 <View>
-                  <FoldHeader
-                    title="지연됨" titleTone="danger" count={overdue.length} detail={overdueOpen ? '접기' : '펼치기'}
-                    open={overdueOpen} onToggle={() => setOverdueOpen((open) => !open)} label="지연된 할 일" />
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ flex: 1 }}>
+                      <FoldHeader
+                        title="기한 지남" titleTone="danger" count={overdue.length} detail={overdueOpen ? '접기' : '펼치기'}
+                        open={overdueOpen} onToggle={() => setOverdueOpen((open) => !open)} label="기한 지난 할 일" />
+                    </View>
+                    <Pressable
+                      accessibilityRole="button" accessibilityLabel="기한 지난 할 일 모두 오늘로 옮기기" hitSlop={8}
+                      onPress={() => {
+                        haptic.success();
+                        flow.rescheduleOverdue();
+                        showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
+                      }}
+                      style={({ pressed }) => ({ paddingRight: space.lg, paddingTop: space.md, opacity: pressed ? 0.6 : 1 })}>
+                      <Txt variant="smallStrong" tone="muted">오늘로 이동</Txt>
+                    </Pressable>
+                  </View>
                   {overdueOpen ? <TaskList tasks={overdue} /> : null}
                 </View>
               ) : null}
@@ -326,7 +343,7 @@ function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
   const { colors } = useTheme();
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={label + '에 추가'} hitSlop={10} onPress={onPress}
+      accessibilityRole="button" accessibilityLabel={label + '에 할 일 추가'} hitSlop={10} onPress={onPress}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 2, opacity: pressed ? 0.6 : 1 })}>
       <Icon name="plus" size={16} color={colors.textFaint} />
       <Txt variant="smallStrong" tone="muted">추가</Txt>
@@ -371,7 +388,7 @@ function Preview({ task, date }: { task: Task; date: Temporal.PlainDate }) {
         <Txt tone="muted" numberOfLines={1}>{task.title}</Txt>
         <Txt variant="small" tone="faint">
           {(at ? (at.hour < 12 ? '오전 ' : '오후 ') + (at.hour % 12 || 12) + ':' + String(at.minute).padStart(2, '0') + ' · ' : '')
-            + (task.recurrence_mode === 'completion' ? '완료 후 반복 예상 · ' : '반복 예정 · ') + date.month + '월 ' + date.day + '일'}
+            + (task.recurrence_mode === 'completion' ? '완료 기준 반복 예정 · ' : '반복 예정 · ') + date.month + '월 ' + date.day + '일'}
         </Txt>
       </View>
     </Pressable>
@@ -443,14 +460,14 @@ function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected,
       </View>
       <View style={[styles.monthBar, { borderTopColor: colors.border }]}>
         <Txt variant="small" tone="muted" style={{ flex: 1 }}>
-          {selected ? '날짜를 다시 누르면 이번 달 전체 · +로 이날에 추가' : `${month.month}월 일정 ${total}개 · 옆으로 밀어 달 이동`}
+          {selected ? '선택한 날짜를 다시 누르면 전체 보기' : `${month.month}월 일정 ${total}개 · 좌우로 밀어 월 이동`}
         </Txt>
         {selected ? <AddButton label={title(picked!)} onPress={() => onAdd(picked!)} /> : null}
       </View>
       {listed.length === 0 ? (
         <View style={styles.emptyMonth}>
           <EmptyUpcoming size={MONTH_EMPTY_ART} />
-          <Txt variant="small" tone="muted">이번 달에는 일정이 없습니다.</Txt>
+          <Txt variant="small" tone="muted">이번 달에는 예정된 일정이 없습니다.</Txt>
         </View>
       ) : listed.map((key) => {
         const date = Temporal.PlainDate.from(key);
@@ -463,7 +480,7 @@ function MonthView({ scrollRef, tasks, month: monthKey, onMonthChange, selected,
             {entry.real.length ? <TaskList tasks={entry.real} hideDate /> : null}
             {entry.previews.map((task) => <Preview key={task.id} task={task} date={date} />)}
             {entry.real.length + entry.previews.length === 0 ? (
-              <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.sm }}>이날은 할 일이 없습니다.</Txt>
+              <Txt variant="small" tone="muted" style={{ paddingHorizontal: space.lg, paddingVertical: space.sm }}>이 날은 예정된 할 일이 없습니다.</Txt>
             ) : null}
           </View>
         );

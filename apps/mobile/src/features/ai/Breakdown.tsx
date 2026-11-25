@@ -83,14 +83,14 @@ export function BreakdownPanel({ task, onDone, maxHeight, inSheet }: { task: Tas
       ) : state.status === 'done' && drafts ? (
         <View style={{ gap: space.md }}>
           <ScrollView style={maxHeight ? { maxHeight } : undefined} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: space.sm }}>
-            <Txt variant="small" tone="muted">‘{task.title}’의 하위 작업으로 추가합니다. 이름을 눌러 고칠 수 있습니다.</Txt>
+            <Txt variant="small" tone="muted">‘{task.title}’의 하위 작업으로 추가합니다. 항목을 눌러 바로 수정할 수 있습니다.</Txt>
             {drafts.map((draft) => (
               <View key={draft.key} style={[styles.row, { borderColor: colors.border, opacity: draft.include ? 1 : 0.5 }]}>
                 <Toggle
                   on={draft.include} label={`${draft.title} 포함`}
                   onPress={() => setDrafts((list) => list?.map((item) => (item.key === draft.key ? { ...item, include: !item.include } : item)) ?? null)} />
                 <TextInput
-                  value={draft.title} accessibilityLabel="단계 이름" returnKeyType="done"
+                  value={draft.title} accessibilityLabel="하위 작업 제목" returnKeyType="done"
                   onChangeText={(title) => setDrafts((list) => list?.map((item) => (item.key === draft.key ? { ...item, title } : item)) ?? null)}
                   style={[styles.input, { color: colors.text, fontFamily }]} />
                 {draft.minutes ? <Txt variant="caption" tone="faint">{formatDurationMinutes(draft.minutes)}</Txt> : null}
@@ -101,7 +101,7 @@ export function BreakdownPanel({ task, onDone, maxHeight, inSheet }: { task: Tas
           <View style={{ flexDirection: 'row', gap: space.sm }}>
             <Button label="다시 나누기" kind="secondary" icon="refresh-cw" onPress={() => void ask()} style={{ flex: 1 }} />
             <Button
-              label={chosen.length ? `${chosen.length}개 하위 작업으로 추가` : '고른 단계 없음'} disabled={!chosen.length} onPress={add}
+              label={chosen.length ? `하위 작업 ${chosen.length}개 추가` : '선택한 항목 없음'} disabled={!chosen.length} onPress={add}
               style={{ flex: 1.6 }} />
           </View>
         </View>

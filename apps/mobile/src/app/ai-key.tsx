@@ -36,26 +36,26 @@ function KeyEditor({ onDone, canCancel }: { onDone: () => void; canCancel: boole
       if (value) {
         setText(value);
         setProblem(null);
-      } else showToast('복사한 내용이 없습니다.');
+      } else showToast('복사된 내용이 없습니다.');
     } catch {
-      showToast('붙여넣기를 하지 못했습니다. 입력란을 길게 눌러 붙여 넣어 주세요.', { tone: 'error' });
+      showToast('붙여넣기에 실패했습니다. 입력란을 길게 눌러 직접 붙여 넣어 주세요.', { tone: 'error' });
     }
   };
 
   const save = async () => {
     const key = cleanKey(text);
     if (!looksLikeKey(key)) {
-      setProblem('키가 아닌 것 같습니다. sk-ant-로 시작하는 키를 처음부터 끝까지 붙여 넣어 주세요.');
+      setProblem('올바른 API 키 형식이 아닙니다. sk-ant-로 시작하는 키 전체를 붙여 넣어 주세요.');
       return;
     }
     setSaving(true);
     try {
       await saveKey(key);
       setText('');
-      showToast('키를 저장했습니다. 연결 확인으로 바로 시험해 볼 수 있습니다.');
+      showToast('API 키를 저장했습니다. ‘연결 확인’으로 바로 확인해 보세요.');
       onDone();
     } catch {
-      setProblem('키를 저장하지 못했습니다. 다시 시도해 주세요.');
+      setProblem('API 키를 저장하지 못했습니다. 다시 시도해 주세요.');
     } finally {
       setSaving(false);
     }
@@ -66,7 +66,7 @@ function KeyEditor({ onDone, canCancel }: { onDone: () => void; canCancel: boole
       <View style={[styles.field, { backgroundColor: colors.surfaceMuted, borderColor: problem ? colors.danger : 'transparent' }]}>
         <TextInput
           value={text} onChangeText={(value) => { setText(value); setProblem(null); }}
-          placeholder="sk-ant-로 시작하는 키" placeholderTextColor={colors.textFaint} accessibilityLabel="Anthropic 키"
+          placeholder="sk-ant-로 시작하는 API 키" placeholderTextColor={colors.textFaint} accessibilityLabel="Anthropic 키"
           secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="off" importantForAutofill="no"
           spellCheck={false} textContentType="password" returnKeyType="done" onSubmitEditing={() => void save()}
           style={[styles.input, { color: colors.text, fontFamily }]} />
@@ -91,7 +91,7 @@ function CheckLine({ result }: { result: CheckResult }) {
     return (
       <View style={styles.check}>
         <Icon name="check-circle" size={18} color={colors.textMuted} />
-        <Txt variant="small" style={{ flex: 1 }}>연결되었습니다. {name}{josa(name, '으로/로')} 요청할 수 있습니다.</Txt>
+        <Txt variant="small" style={{ flex: 1 }}>정상적으로 연결되었습니다. 이제 {name}{josa(name, '으로/로')} 이용할 수 있습니다.</Txt>
       </View>
     );
   }
@@ -141,46 +141,46 @@ export default function AiKeySettings() {
     setCheck(null);
     try {
       await deleteKey();
-      showToast('키를 삭제했습니다.');
+      showToast('API 키를 삭제했습니다.');
     } catch {
-      showToast('키를 삭제하지 못했습니다. 다시 시도해 주세요.', { tone: 'error' });
+      showToast('API 키를 삭제하지 못했습니다. 다시 시도해 주세요.', { tone: 'error' });
     }
   };
 
   const copyConsole = async () => {
     try {
       await Clipboard.setStringAsync('https://' + CONSOLE);
-      showToast('주소를 복사했습니다.');
+      showToast('콘솔 주소를 복사했습니다.');
     } catch {
-      showToast('주소를 길게 눌러 직접 복사해 주세요.', { tone: 'error' });
+      showToast('복사에 실패했습니다. 주소를 길게 눌러 직접 복사해 주세요.', { tone: 'error' });
     }
   };
 
   return (
     <AiScreen title="AI 비서 설정">
-      <Section title="Anthropic 키">
+      <Section title="Anthropic API 키">
         {!ready ? null : hasKey && !editing ? (
           <Card style={{ gap: space.md }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
               <View style={[styles.keyIcon, { backgroundColor: colors.surfaceMuted }]}><Icon name="key" size={18} color={colors.textMuted} /></View>
               <View style={{ flex: 1 }}>
-                <Txt variant="bodyStrong" accessibilityLabel="저장한 키">{masked}</Txt>
-                <Txt variant="small" tone="muted">이 휴대폰에만 저장되어 있습니다.</Txt>
+                <Txt variant="bodyStrong" accessibilityLabel="저장된 API 키">{masked}</Txt>
+                <Txt variant="small" tone="muted">이 기기에만 안전하게 저장되어 있습니다.</Txt>
               </View>
             </View>
             {check ? <CheckLine result={check} /> : null}
             <Button
-              label={checking ? '확인하는 중' : '연결 확인'} icon="zap" kind="secondary" loading={checking}
+              label={checking ? '연결 확인 중' : '연결 확인'} icon="zap" kind="secondary" loading={checking}
               onPress={() => void runCheck()} />
             <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Button label="바꾸기" kind="secondary" onPress={() => { setCheck(null); setEditing(true); }} style={{ flex: 1 }} />
+              <Button label="키 변경" kind="secondary" onPress={() => { setCheck(null); setEditing(true); }} style={{ flex: 1 }} />
               <Button label="삭제" kind="danger" onPress={() => setConfirmDelete(true)} style={{ flex: 1 }} />
             </View>
           </Card>
         ) : (
           <Card style={{ gap: space.sm }}>
             <Txt variant="small" tone="muted">
-              {hasKey ? '새 키를 저장하면 지금 키는 지워집니다.' : 'AI 비서는 내 Anthropic 키로 동작합니다. 쓴 만큼만 Anthropic이 요금을 청구합니다.'}
+              {hasKey ? '새 API 키를 저장하면 기존 키는 교체됩니다.' : 'AI 비서는 직접 등록한 Anthropic API 키로 동작하며, 사용한 만큼만 Anthropic에서 요금이 청구됩니다.'}
             </Txt>
             <KeyEditor canCancel={hasKey} onDone={() => setEditing(false)} />
           </Card>
@@ -214,21 +214,21 @@ export default function AiKeySettings() {
         </Card>
       </Section>
 
-      <Section title="알아 두기">
+      <Section title="알아두기">
         <Card style={{ gap: space.md }}>
           <Bullet icon="send">
-            요청할 때 할 일 제목·메모, 습관 이름, 집중 기록 요약이 Anthropic으로 전송됩니다. 다른 곳으로는 보내지 않습니다.
+            AI 기능을 사용할 때 할 일 제목·메모, 습관 이름, 집중 기록 요약이 Anthropic으로 전송되며, 그 외 외부로는 보내지 않습니다.
           </Bullet>
-          <Bullet icon="lock">키는 이 휴대폰에만 암호화해 저장합니다. 서버나 백업에는 올라가지 않습니다.</Bullet>
+          <Bullet icon="lock">API 키는 이 기기에만 암호화해 저장됩니다. 외부 서버나 클라우드 백업에는 저장되지 않습니다.</Bullet>
           <Bullet icon="credit-card">
-            요금은 쓴 만큼 Anthropic이 청구합니다. Anthropic 콘솔에서 월 사용 한도를 정해 두면 예상보다 많이 나갈 일이 없습니다.
+            요금은 사용한 만큼 Anthropic에서 청구됩니다. Anthropic 콘솔에서 월 사용 한도를 설정해 두면 예상 밖의 과금을 막을 수 있습니다.
           </Bullet>
         </Card>
       </Section>
 
-      <Section title="키 받는 곳">
+      <Section title="API 키 발급 방법">
         <Card style={{ gap: space.sm }}>
-          <Txt variant="small" tone="muted">Anthropic 콘솔에 로그인한 뒤 API Keys 메뉴에서 키를 만들고 복사합니다.</Txt>
+          <Txt variant="small" tone="muted">Anthropic 콘솔에 로그인한 뒤 ‘API Keys’ 메뉴에서 새 키를 만들어 복사해 주세요.</Txt>
           <View style={[styles.address, { backgroundColor: colors.surfaceMuted }]}>
             <Txt variant="bodyStrong" selectable style={{ flex: 1 }}>{CONSOLE} → API Keys</Txt>
             <IconButton name="copy" label="콘솔 주소 복사" size={18} color={colors.textMuted} onPress={() => void copyConsole()} />
@@ -236,9 +236,9 @@ export default function AiKeySettings() {
         </Card>
       </Section>
 
-      <Sheet visible={confirmDelete} onClose={() => setConfirmDelete(false)} title="키를 삭제할까요?">
+      <Sheet visible={confirmDelete} onClose={() => setConfirmDelete(false)} title="API 키를 삭제할까요?">
         <Txt variant="small" tone="muted" style={{ marginBottom: space.lg }}>
-          이 휴대폰에서 키를 지웁니다. 키 자체를 없애려면 Anthropic 콘솔에서도 삭제해 주세요.
+          이 기기에 저장된 API 키를 삭제합니다. 키 자체를 완전히 폐기하려면 Anthropic 콘솔에서도 함께 삭제해 주세요.
         </Txt>
         <View style={{ flexDirection: 'row', gap: space.sm }}>
           <Button label="취소" kind="secondary" onPress={() => setConfirmDelete(false)} style={{ flex: 1 }} />

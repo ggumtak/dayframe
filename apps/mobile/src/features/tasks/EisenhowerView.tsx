@@ -26,10 +26,10 @@ interface QuadrantMeta {
 }
 
 const QUADRANTS: QuadrantMeta[] = [
-  { key: 'q1', title: '긴급 · 중요', subtitle: '지금 바로 실행', icon: 'alert-circle', quickAddText: '오늘 p1 ', dueToday: true },
-  { key: 'q2', title: '중요 · 계획', subtitle: '일정 잡아 집중', icon: 'compass', quickAddText: 'p2 ' },
+  { key: 'q1', title: '긴급 · 중요', subtitle: '지금 바로 처리하기', icon: 'alert-circle', quickAddText: '오늘 p1 ', dueToday: true },
+  { key: 'q2', title: '중요 · 계획', subtitle: '일정 잡아 집중하기', icon: 'compass', quickAddText: 'p2 ' },
   { key: 'q3', title: '긴급 · 빠른 처리', subtitle: '짧게 끝내기', icon: 'clock', quickAddText: '오늘 ', dueToday: true },
-  { key: 'q4', title: '나중에 · 보류', subtitle: '정리하거나 미루기', icon: 'inbox', quickAddText: '' },
+  { key: 'q4', title: '나중에 · 보류', subtitle: '여유 있을 때 정리하기', icon: 'inbox', quickAddText: '' },
 ];
 
 /** TickTick-style Eisenhower Matrix grouping every open root task into 4 actionable quadrants. */
@@ -95,7 +95,7 @@ export function EisenhowerView({
           { value: 'all', label: `전체 (${roots.length})`, icon: 'layers' },
         ]} />
       <Txt variant="small" tone="muted">
-        우선순위(가장 높음·높음)와 날짜(오늘·지연)를 보고 자동으로 나눕니다. 할 일을 길게 눌러 우선순위나 날짜를 바꾸면 바로 다른 칸으로 옮겨집니다.
+        우선순위(높음 이상)와 일정(오늘·기한 지남) 기준으로 자동 분류합니다. 할 일을 길게 눌러 바꾸면 바로 이동합니다.
       </Txt>
       </View>
       {QUADRANTS.map((meta) => {

@@ -229,9 +229,9 @@ export default function Focus() {
           const activePrefs = runningPrefs.current;
           showToast(
             activePrefs.mode === 'pomodoro'
-              ? `집중 ${formatMinutes(planned)} 완료!`
-              : `타이머 ${formatMinutes(planned)} 완료!`,
-            task ? { actionLabel: '할 일도 완료', onAction: () => state.flow.complete(task) } : {},
+              ? `${formatMinutes(planned)} 집중을 마쳤습니다.`
+              : `${formatMinutes(planned)} 타이머가 끝났습니다.`,
+            task ? { actionLabel: '할 일 완료', onAction: () => state.flow.complete(task) } : {},
           );
           state.beginRest(activePrefs, state.rounds, time);
         }
@@ -323,12 +323,12 @@ export default function Focus() {
     if (counts) {
       const task = running.task_id ? byId.get(running.task_id) : undefined;
       showToast(
-        `집중 ${formatMinutes(netSeconds)} 기록했습니다.`,
-        task ? { actionLabel: '할 일도 완료', onAction: () => flow.complete(task) } : {},
+        `${formatMinutes(netSeconds)} 집중을 기록했습니다.`,
+        task ? { actionLabel: '할 일 완료', onAction: () => flow.complete(task) } : {},
       );
       if (!isRunningStopwatch) beginRest(runningPrefs.current, todayStats.count, Date.now());
     } else if (status === 'completed') {
-      showToast('1분이 안 된 집중은 기록하지 않습니다.');
+      showToast('1분 미만 집중은 기록되지 않습니다.');
     }
   };
 
@@ -416,10 +416,10 @@ export default function Focus() {
               ) : null}
             </Svg>
             <Txt variant="caption" tone={isPaused || onBreak ? 'default' : 'muted'} style={[{ marginBottom: 4 }, (isPaused || onBreak) && { fontWeight: '600' }]}>
-              {isPaused ? '일시정지됨'
-                : running ? (isRunningStopwatch ? '스톱워치 측정 중' : '집중 중')
+              {isPaused ? '일시정지'
+                : running ? (isRunningStopwatch ? '측정 중' : '집중 중')
                   : onBreak ? (rest!.long ? '긴 휴식 중' : '휴식 중')
-                    : prefs.mode === 'pomodoro' ? '뽀모도로' : prefs.mode === 'timer' ? '일반 타이머' : '스톱워치'}
+                    : prefs.mode === 'pomodoro' ? '뽀모도로' : prefs.mode === 'timer' ? '타이머' : '스톱워치'}
             </Txt>
             <Txt
               numberOfLines={1} adjustsFontSizeToFit
@@ -442,15 +442,15 @@ export default function Focus() {
               <View style={{ alignSelf: 'stretch', gap: space.sm }}>
                 <View style={{ flexDirection: 'row', gap: space.sm }}>
                   <Button
-                    label={isPaused ? '계속' : '일시정지'} kind="secondary" icon={isPaused ? 'play' : 'pause'}
+                    label={isPaused ? '이어하기' : '일시정지'} kind="secondary" icon={isPaused ? 'play' : 'pause'}
                     onPress={togglePause} style={{ flex: 1 }} />
                   {!isRunningStopwatch ? (
-                    <Button label="+5분 연장" kind="secondary" icon="plus" onPress={extendFiveMin} style={{ flex: 1 }} />
+                    <Button label="5분 연장" kind="secondary" icon="plus" onPress={extendFiveMin} style={{ flex: 1 }} />
                   ) : null}
                 </View>
                 <View style={{ flexDirection: 'row', gap: space.sm }}>
-                  <Button label="그만두기" kind="ghost" icon="x" onPress={() => stop('cancelled')} style={{ flex: 1 }} />
-                  <Button label={isRunningStopwatch ? '기록 완료' : '지금 완료'} icon="check" onPress={() => stop('completed')} style={{ flex: 1 }} />
+                  <Button label="취소" kind="ghost" icon="x" onPress={() => stop('cancelled')} style={{ flex: 1 }} />
+                  <Button label={isRunningStopwatch ? '기록 완료' : '바로 완료'} icon="check" onPress={() => stop('completed')} style={{ flex: 1 }} />
                 </View>
               </View>
             ) : (
@@ -487,13 +487,13 @@ export default function Focus() {
                           key={preset} label={`${preset}분`} selected={prefs.timerMinutes === preset}
                           onPress={() => setFocusPrefs({ timerMinutes: preset })} />
                       ))}
-                      <Chip icon="sliders" label="직접 입력" onPress={() => setConfiguring(true)} />
+                      <Chip icon="sliders" label="직접 설정" onPress={() => setConfiguring(true)} />
                     </ScrollView>
-                    <Txt variant="small" tone="muted">정한 시간이 지나면 휴식 없이 끝납니다</Txt>
+                    <Txt variant="small" tone="muted">설정한 시간이 지나면 휴식 없이 종료됩니다.</Txt>
                   </View>
                 ) : (
                   <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>
-                    시간 제한 없이 잽니다. 끝나면 ‘기록 완료’를 누르세요.
+                    시간 제한 없이 측정합니다. 마치면 ‘기록 완료’를 눌러 주세요.
                   </Txt>
                 )}
 
@@ -505,7 +505,7 @@ export default function Focus() {
                   <Button
                     label={onBreak ? '휴식 건너뛰고 집중 시작' : prefs.mode === 'pomodoro' ? '집중 시작' : prefs.mode === 'timer' ? '타이머 시작' : '스톱워치 시작'}
                     icon="play" onPress={start} />
-                  {onBreak ? <Button label="휴식 끝내기" kind="ghost" onPress={endRest} /> : null}
+                  {onBreak ? <Button label="휴식 종료" kind="ghost" onPress={endRest} /> : null}
                 </View>
               </>
             )}
@@ -548,7 +548,7 @@ export default function Focus() {
                     <View key={sub.id} style={styles.focusSubRow}>
                       <Checkbox
                         checked done size={18}
-                        onPress={() => flow.reopen(sub)} label={sub.title + ' 다시 열기'} />
+                        onPress={() => flow.reopen(sub)} label={sub.title + ' 완료 취소'} />
                       <Text numberOfLines={1} style={[type.small as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
                         {sub.title}
                       </Text>
@@ -573,8 +573,8 @@ export default function Focus() {
                 const height = bar.minutes > 0 ? Math.max(8, Math.round((bar.minutes / weekly.maxMinutes) * 64)) : 4;
                 return (
                   <View key={bar.date} style={styles.barCol}>
-                    <Txt variant="caption" tone={bar.isToday ? 'default' : 'faint'} style={{ height: 14 }}>
-                      {bar.minutes > 0 ? `${bar.minutes}m` : ''}
+                    <Txt variant="caption" tone={bar.isToday ? 'default' : 'faint'} numberOfLines={1} style={{ height: 14 }}>
+                      {bar.minutes > 0 ? `${bar.minutes}분` : ''}
                     </Txt>
                     <View style={styles.barTrack}>
                       <View
@@ -595,7 +595,7 @@ export default function Focus() {
                 );
               })}
             </View>
-            <Txt variant="caption" tone="faint">막대 위 숫자는 그날 집중한 시간(분)입니다.</Txt>
+            <Txt variant="caption" tone="faint">최근 7일간 날짜별 집중 시간입니다.</Txt>
           </Card>
         ) : null}
 
@@ -651,7 +651,7 @@ export default function Focus() {
                 </View>
               </View>
               <Txt variant="small" tone="muted">
-                {prefs.roundsBeforeLongBreak}세트를 마치고 긴 휴식이 끝나면 타이머가 멈추고 기다립니다. 다음 집중은 1세트부터 다시 셉니다.
+                {prefs.roundsBeforeLongBreak}세트 후 긴 휴식이 끝나면 타이머가 자동으로 멈추며, 다음 집중은 1세트부터 다시 시작됩니다.
               </Txt>
             </>
           ) : (
@@ -666,7 +666,7 @@ export default function Focus() {
                     selected={prefs.timerMinutes === preset} onPress={() => setFocusPrefs({ timerMinutes: preset })} />
                 ))}
               </View>
-              <Txt variant="small" tone="muted">숫자를 눌러 1분에서 480분(8시간)까지 직접 입력할 수 있습니다.</Txt>
+              <Txt variant="small" tone="muted">숫자를 눌러 1분부터 480분(8시간)까지 직접 입력할 수 있습니다.</Txt>
             </>
           )}
           <Button label="완료" onPress={() => setConfiguring(false)} style={{ marginTop: space.xs }} />
@@ -711,7 +711,7 @@ export default function Focus() {
               }} />
           ))}
           {!candidates.length && !otherTasks.length && !activeHabits.length ? (
-            <Txt tone="muted" style={{ paddingVertical: space.lg }}>할 일이나 습관이 있으면 여기에서 연결할 수 있습니다.</Txt>
+            <Txt tone="muted" style={{ paddingVertical: space.lg }}>등록된 할 일이나 습관이 있으면 이곳에서 연결할 수 있습니다.</Txt>
           ) : null}
         </ScrollView>
       </Sheet>
@@ -732,7 +732,7 @@ export default function Focus() {
                 onPress={() => {
                   deleteFocus.mutate(pickedRecord.id);
                   setPickedRecord(null);
-                  showToast('집중 기록을 지웠습니다.');
+                  showToast('집중 기록을 삭제했습니다.');
                 }} />
               <Button label="닫기" kind="secondary" onPress={() => setPickedRecord(null)} />
             </View>

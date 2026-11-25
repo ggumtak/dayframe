@@ -6,9 +6,9 @@ import { queryClient } from '@/data/client';
 import { useFocusSessions } from '@/data/focus';
 import { keys } from '@/data/keys';
 import { periodProgress, useHabits } from '@/data/habits';
-import { useProjects, useTaskIndex, useTasks } from '@/data/tasks';
+import { useDoneToday, useProjects, useSubtaskProgress, useTaskIndex, useTasks } from '@/data/tasks';
 import { onExternalChange } from '@/features/widget/events';
-import { CALENDAR_RANGE, type WidgetFocus, type WidgetHabit } from '@/features/widget/items';
+import { CALENDAR_RANGE, type WidgetDoneToday, type WidgetFocus, type WidgetHabit } from '@/features/widget/items';
 import { saveWidget } from '@/features/widget/render';
 import { api } from '@/lib/api';
 import { deviceTimeZone, Temporal, today, weekStart } from '@/lib/dates';
@@ -49,6 +49,8 @@ export function BackgroundSync() {
   // Nothing is synced until the task list has really loaded; an empty list would withdraw every alert.
   const loaded = useTasks().data !== undefined;
   const { data: projects } = useProjects();
+  const { progress: subtaskProgress } = useSubtaskProgress();
+  const doneTodayItems = useDoneToday();
   const settings = useReminderSettings();
   const overrides = useReminderOverrides();
   const { data: allHabits } = useHabits();
@@ -58,30 +60,48 @@ export function BackgroundSync() {
   });
   const { data: sessions } = useFocusSessions();
 
-  // Figures for the widgets and habit alerts. Data still loading is left out (undefined), never written as empty.
   const habitsReady = allHabits !== undefined && habitLogs.every((query) => query.data !== undefined);
   const widgetHabits = habitsReady ? habits.map((habit, index) => habitFigures(habit, habitLogs[index].data!)) : undefined;
   const widgetFocus = sessions ? focusFigures(sessions) : undefined;
+  const todayKey = today(deviceTimeZone()).toString();
+  const doneToday: WidgetDoneToday = { date: todayKey, count: doneTodayItems.length };
 
-  // Rendering happens often; the work below runs only when what it writes would actually differ.
-  const signature = JSON.stringify([tasks.map((task) => [task.id, task.updated_at, task.due_at]), [...children].map(([id, list]) => [id, list.length]),
-    projects?.map((project) => [project.id, project.name]), settings, overrides, widgetHabits, widgetFocus, today(deviceTimeZone()).toString()]);
-  const latest = useRef({ tasks, children, projects, settings, overrides, widgetHabits, widgetFocus });
+  const signature = JSON.stringify([
+    tasks.map((task) => [task.id, task.updated_at, task.due_at]),
+    [...subtaskProgress].map(([id, p]) => [id, p.completed, p.total]),
+    projects?.map((project) => [project.id, project.name]),
+    doneToday.count,
+    settings, overrides, widgetHabits, widgetFocus, todayKey,
+  ]);
+  const latest = useRef({ tasks, children, subtaskProgress, projects, doneToday, settings, overrides, widgetHabits, widgetFocus });
   useEffect(() => {
-    latest.current = { tasks, children, projects, settings, overrides, widgetHabits, widgetFocus };
+    latest.current = { tasks, children, subtaskProgress, projects, doneToday, settings, overrides, widgetHabits, widgetFocus };
   });
 
   useEffect(() => {
     if (!loaded) return;
-    // Quick edits arrive in bursts; the system's alarm list is rewritten once they settle.
     const timer = setTimeout(() => {
-      const { tasks: list, children: kids, projects: groups, settings: options, overrides: own, widgetHabits: habitRows, widgetFocus: focus } = latest.current;
+      const {
+        tasks: list, children: kids, subtaskProgress: progressMap, projects: groups, doneToday: doneInfo,
+        settings: options, overrides: own, widgetHabits: habitRows, widgetFocus: focus,
+      } = latest.current;
       const names = new Map((groups ?? []).map((project) => [project.id, project.name]));
       const month = today(deviceTimeZone()).toPlainYearMonth();
       const end = month.add({ months: CALENDAR_RANGE.ahead });
       const calendar = countByDate(list, month.subtract({ months: CALENDAR_RANGE.back }).toPlainDate({ day: 1 }),
         end.toPlainDate({ day: end.daysInMonth }), nextOccurrence);
-      void saveWidget(list, { habits: habitRows, focus, calendar });
+      void saveWidget(list, {
+        habits: habitRows,
+        focus,
+        calendar,
+        doneToday: doneInfo,
+        projectName: (task) => (task.project_id ? names.get(task.project_id) : undefined),
+        subtaskLabel: (taskId) => {
+          const p = progressMap.get(taskId);
+          if (!p || p.total === 0) return undefined;
+          return p.completed > 0 ? `${p.completed}/${p.total}` : `하위 ${p.open}`;
+        },
+      });
 
       const habitAlerts: HabitReminderInfo[] | undefined = habitRows?.flatMap((habit) => {
         const time = own.habits[habit.id];
@@ -107,13 +127,14 @@ export function BackgroundSync() {
     if (settings.enabled) void requestReminderPermission();
   }, [settings.enabled]);
 
-  // A widget tap or a notification button changed data behind the app's back: reload it.
   useEffect(() => onExternalChange(() => void queryClient.invalidateQueries()), []);
 
   useEffect(() => listenForReminders(
-    (target) => ('taskId' in target
-      ? router.push({ pathname: '/task/[id]', params: { id: target.taskId } })
-      : router.push({ pathname: '/habit/[id]', params: { id: target.habitId } })),
+    (target) => {
+      if ('today' in target) router.navigate('/');
+      else if ('taskId' in target) router.push({ pathname: '/task/[id]', params: { id: target.taskId } });
+      else router.push({ pathname: '/habit/[id]', params: { id: target.habitId } });
+    },
     () => void queryClient.invalidateQueries(),
   ), []);
 

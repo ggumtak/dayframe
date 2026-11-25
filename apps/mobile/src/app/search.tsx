@@ -25,13 +25,13 @@ type QuickFilter = null | 'overdue' | 'today' | 'week' | 'p1' | 'repeating' | 'c
 const RECENT_KEY = 'dayframe-recent-searches-v1';
 
 const filterLabels: Record<Exclude<QuickFilter, null>, string> = {
-  overdue: '지연된 할 일',
+  overdue: '기한 지난 할 일',
   today: '오늘 할 일',
-  week: '이번 주 예정',
-  p1: '우선순위가 가장 높은 할 일',
+  week: '이번 주 일정',
+  p1: '가장 중요한 할 일',
   repeating: '반복 할 일',
-  checklist: '하위 작업이 있는 체크리스트',
-  stale: '14일 이상 오래된 할 일',
+  checklist: '체크리스트',
+  stale: '오래 미뤄 둔 할 일',
   unscheduled: '날짜 없는 할 일',
 };
 
@@ -174,7 +174,7 @@ export default function Search() {
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={() => recordRecent(query)}
-            autoFocus placeholder={quickFilter ? `${filterLabels[quickFilter]} 안에서 검색...` : '제목, 초성(ㅈㅂㄱ), #목록, @태그, p1'}
+            autoFocus placeholder={quickFilter ? `${filterLabels[quickFilter]}에서 검색` : '제목, 초성(ㅈㅂㄱ), #목록, @태그, p1'}
             accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
             style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 15, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
@@ -202,7 +202,7 @@ export default function Search() {
               onPress={() => setIncludeCompleted((prev) => !prev)} />
           ) : null}
           {quickFilter && !query.trim() ? (
-            <Txt variant="caption" tone="faint">검색어나 #목록을 더 입력해 좁힐 수 있습니다</Txt>
+            <Txt variant="caption" tone="faint">검색어나 #목록을 입력해 결과를 좁혀 보세요</Txt>
           ) : null}
         </View>
       ) : null}
@@ -216,7 +216,7 @@ export default function Search() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Txt variant="section" tone="muted">최근 검색</Txt>
                     <Pressable hitSlop={8} onPress={clearRecent}>
-                      <Txt variant="caption" tone="faint">지우기</Txt>
+                      <Txt variant="caption" tone="faint">모두 지우기</Txt>
                     </Pressable>
                   </View>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
@@ -231,7 +231,7 @@ export default function Search() {
                 <Txt variant="section" tone="muted">빠른 필터</Txt>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                   <Chip
-                    icon="alert-circle" label={`지연됨${counts.overdue ? ' ' + counts.overdue : ''}`}
+                    icon="alert-circle" label={`기한 지남${counts.overdue ? ' ' + counts.overdue : ''}`}
                     tone={counts.overdue ? 'danger' : undefined} onPress={() => setQuickFilter('overdue')} />
                   <Chip
                     icon="sun" label={`오늘${counts.todayCount ? ' ' + counts.todayCount : ''}`}
@@ -250,7 +250,7 @@ export default function Search() {
                     onPress={() => setQuickFilter('checklist')} />
                   {counts.stale > 0 ? (
                     <Chip
-                      icon="clock" label={`오래됨 ${counts.stale}`}
+                      icon="clock" label={`오래 미룬 일 ${counts.stale}`}
                       onPress={() => setQuickFilter('stale')} />
                   ) : null}
                   <Chip
@@ -280,7 +280,7 @@ export default function Search() {
                 <View style={{ gap: space.sm }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Txt variant="section" tone="muted">태그별 보기</Txt>
-                    <Txt variant="caption" tone="faint">길게 눌러 이름 변경·삭제</Txt>
+                    <Txt variant="caption" tone="faint">길게 눌러 수정·삭제</Txt>
                   </View>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                     {tags.map((tag) => (
@@ -335,9 +335,9 @@ export default function Search() {
                           onPress={() => {
                             haptic.tap();
                             taskActions.reopen(task);
-                            showToast(`‘${task.title}’${josa(task.title, '을/를')} 다시 열었습니다.`);
+                            showToast(`‘${task.title}’${josa(task.title, '을/를')} 할 일로 되돌렸습니다.`);
                           }}
-                          label={task.title + ' 다시 열기'} />
+                          label={task.title + ' 완료 취소'} />
                         <View style={[styles.completedBody, { borderBottomColor: colors.border }]}>
                           <Text numberOfLines={1} style={[type.body as TextStyle, { color: colors.textFaint, textDecorationLine: 'line-through', flex: 1 }]}>
                             {task.title}
@@ -352,9 +352,9 @@ export default function Search() {
             </>
           ) : (
             <EmptyState
-              icon="search" art={<EmptySearch size={EMPTY_ART} />} title={quickFilter && !query.trim() ? `${filterLabels[quickFilter]}${josa(filterLabels[quickFilter], '이/가')} 없습니다` : '찾는 할 일이 없습니다'}
+              icon="search" art={<EmptySearch size={EMPTY_ART} />} title={quickFilter && !query.trim() ? `${filterLabels[quickFilter]}${josa(filterLabels[quickFilter], '이/가')} 없습니다` : '검색 결과가 없습니다'}
               message={query.trim()
-                ? (includeCompleted ? '다른 검색어나 초성으로 찾아보세요.' : '위의 ‘완료한 일 포함’을 켜면 완료 기록까지 함께 찾습니다.')
+                ? (includeCompleted ? '다른 검색어나 초성으로 다시 찾아보세요.' : '이미 완료한 일에 있을 수도 있습니다.')
                 : undefined}
               action={quickFilter && !query.trim() ? (
                 <Button label="필터 해제" kind="secondary" onPress={() => setQuickFilter(null)} />
@@ -375,7 +375,7 @@ export default function Search() {
             setManagingTag(null);
           }} />
         <Row
-          icon="trash-2" label="태그 삭제" tone="danger" detail="할 일은 남습니다"
+          icon="trash-2" label="태그 삭제" tone="danger" detail="할 일은 그대로 남습니다"
           onPress={() => {
             if (!managingTag) return;
             const removed = managingTag.name;

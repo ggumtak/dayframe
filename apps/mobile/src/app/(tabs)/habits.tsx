@@ -91,8 +91,8 @@ export default function Habits() {
             <>
               <Card style={{ gap: space.sm, paddingVertical: space.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }}>이번 주 습관 달성</Txt>
-                  <Txt variant="caption" tone="faint">요일 점을 눌러 기록 수정</Txt>
+                  <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }}>이번 주 달성 현황</Txt>
+                  <Txt variant="caption" tone="faint">요일을 눌러 기록 수정</Txt>
                 </View>
                 <View style={styles.weekBars}>
                   {weeklySummary.map((bar) => {
@@ -144,10 +144,10 @@ export default function Habits() {
             </>
           ) : (
             <EmptyState
-              icon="repeat" art={<EmptyHabits size={EMPTY_ART} />} title="습관을 만들어 보세요" message="매일 또는 매주 반복할 일을 정하고, 체크할 때마다 연속 기록이 쌓입니다."
+              icon="repeat" art={<EmptyHabits size={EMPTY_ART} />} title="습관을 만들어 보세요" message="매일이나 매주 반복할 습관을 정해 보세요. 체크할 때마다 연속 기록이 쌓입니다."
               action={(
                 <View style={{ gap: space.sm, marginTop: space.md, alignSelf: 'stretch' }}>
-                  <Button label="갤러리에서 고르기" icon="star" onPress={() => router.push('/routines')} />
+                  <Button label="습관 갤러리에서 고르기" icon="star" onPress={() => router.push('/routines')} />
                   <Button label="직접 만들기" kind="secondary" icon="plus" onPress={() => router.push('/habit/new')} />
                 </View>
               )} />
@@ -155,7 +155,7 @@ export default function Habits() {
           {archived.length ? (
             <View style={{ gap: space.sm, marginTop: space.md }}>
               <Pressable
-                accessibilityRole="button" accessibilityLabel={`보관한 습관 ${archived.length}개 ${showArchived ? '접기' : '보기'}`}
+                accessibilityRole="button" accessibilityLabel={`보관한 습관 ${archived.length}개 ${showArchived ? '접기' : '펼치기'}`}
                 onPress={() => setShowArchived((open) => !open)}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: space.xs, opacity: pressed ? 0.6 : 1 })}>
                 <Icon name="archive" size={14} color={colors.textMuted} />

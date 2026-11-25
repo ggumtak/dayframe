@@ -9,8 +9,11 @@ export interface ReminderContext {
   projectName: (task: Task) => string | undefined;
   openSubtasks: (task: Task) => number;
 }
+export const LOG_HABIT = 'log';
+export const SNOOZE_HABIT = 'snooze-habit';
 export const COMPLETE = 'complete';
 export const SNOOZE = 'snooze';
+export const POSTPONE = 'postpone';
 export async function prepareReminders(): Promise<void> {}
 export async function reminderPermission(): Promise<PermissionState> { return 'denied'; }
 export async function requestReminderPermission(_force?: boolean): Promise<PermissionState> { return 'denied'; }
@@ -20,5 +23,8 @@ export async function syncReminders(
 ): Promise<void> {}
 export async function clearReminders(): Promise<void> {}
 export async function handleReminderAction(_response: unknown): Promise<void> {}
-export function listenForReminders(_open: (target: { taskId: string } | { habitId: string }) => void, _changed: () => void): () => void { return () => {}; }
+export function listenForReminders(
+  _open: (target: { taskId: string } | { habitId: string } | { today: true }) => void,
+  _changed: () => void,
+): () => void { return () => {}; }
 export async function openNotificationSettings(): Promise<void> {}

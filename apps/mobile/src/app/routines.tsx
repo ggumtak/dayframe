@@ -15,7 +15,7 @@ const PresetCard = memo(function PresetCard({ routine, added, onOpen }: { routin
   return (
     <Pressable
       accessibilityRole="button" accessibilityState={{ selected: added }}
-      accessibilityLabel={`${routine.name}, ${routineLabel(routine)}, ${routine.quote}${added ? ', 이미 있는 습관' : ', 눌러서 만들기'}`}
+      accessibilityLabel={`${routine.name}, ${routineLabel(routine)}, ${routine.quote}${added ? ', 이미 추가한 습관' : ', 눌러서 추가하기'}`}
       onPress={() => onOpen(routine)}
       style={({ pressed }) => [styles.card, {
         backgroundColor: colors.surface, borderColor: added ? colors.accentSoft : colors.border, opacity: pressed ? 0.7 : 1,
@@ -52,7 +52,7 @@ export default function Routines() {
 
   const open = useCallback((routine: Routine) => {
     if (owned.has(routineKey(routine.name))) {
-      showToast('이미 추가한 습관입니다. 습관 탭에서 볼 수 있습니다.');
+      showToast('이미 추가된 습관입니다. 습관 탭에서 확인해 보세요.');
       return;
     }
     router.push({
@@ -67,7 +67,7 @@ export default function Routines() {
   return (
     <Screen>
       <Header
-        title="습관 갤러리" subtitle="골라서 내 습관으로 시작해 보세요"
+        title="습관 갤러리" subtitle="마음에 드는 습관을 골라 시작해 보세요"
         left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} style={{ flexGrow: 0, flexShrink: 0 }}>
         {galleryCategories.map((item) => (
@@ -79,7 +79,7 @@ export default function Routines() {
           <PresetCard key={routine.name} routine={routine} added={owned.has(routineKey(routine.name))} onOpen={open} />
         ))}
         <Txt variant="small" tone="faint" style={{ textAlign: 'center', marginTop: space.sm }}>
-          만든 뒤에는 습관 상세 화면에서 아이콘, 문구, 알림 시각을 바꿀 수 있습니다.
+          추가한 뒤에도 습관 상세 화면에서 아이콘과 응원 문구, 알림 시간을 바꿀 수 있습니다.
         </Txt>
       </ScrollView>
       <View style={[styles.footer, { paddingBottom: insets.bottom + space.md, backgroundColor: colors.background, borderTopColor: colors.border }]}>

@@ -334,3 +334,68 @@ test("estimated duration parsing in Korean and English", () => {
   assert.throws(() => parse("30분간 1시간 동안 회의"));
   assert.throws(() => parse("25시간 동안 작업"));
 });
+
+test("exclamation priority marks (!!!, !!, !, !1-!4) and standalone Korean weekdays", () => {
+  // Reference: Sunday 2026-11-22 18:00 KST
+  assert.equal(parse("!!! 분기 보고서 제출").priority, 1);
+  assert.equal(parse("!!! 분기 보고서 제출").title, "분기 보고서 제출");
+  assert.equal(parse("장보기 !!").priority, 2);
+  assert.equal(parse("우산 챙기기 !").priority, 3);
+  assert.equal(parse("세금 납부 !1").priority, 1);
+  assert.equal(parse("청소 !4").priority, 4);
+  // Attached exclamation marks stay untouched (title punctuation or completion-based recurrence).
+  assert.equal(parse("화이팅!").priority, 4);
+  assert.equal(parse("화이팅!").title, "화이팅!");
+  assert.equal(parse("매일! 스트레칭 !!").recurrence_mode, "completion");
+  assert.equal(parse("매일! 스트레칭 !!").priority, 2);
+  assert.throws(() => parse("회의 p1 !!"));
+
+  // Standalone Korean weekdays resolve to the upcoming occurrence (today if matching, otherwise next 1..6 days).
+  assert.equal(parse("월요일 오전 10시 주간회의").due_at, "2026-11-23T01:00:00Z"); // Monday 2026-11-23 10:00 KST
+  assert.equal(parse("금요일까지 시안 전달").due_at, "2026-11-26T15:00:00Z"); // Friday 2026-11-27 00:00 KST
+  assert.equal(parse("금요일까지 시안 전달").title, "시안 전달");
+  assert.equal(parse("일요일 저녁 8시 독서").due_at, "2026-11-22T11:00:00Z"); // Today Sunday 20:00 KST
+  // Words like 금요일의 are part of a phrase and not consumed as a date.
+  assert.equal(parse("금요일의 영화 감상").due_at, null);
+});
+
+test("compound Korean dates and recurrences keep their 에 particle without being stolen by standalone weekdays", () => {
+  // Monday 2026-11-23 09:00 KST (ISO week 2026-11-23..2026-11-29).
+  const mon = "2026-11-23T00:00:00Z";
+  const nextMon = parse("다음 주 월요일에 회의", mon);
+  assert.equal(nextMon.title, "회의");
+  assert.equal(nextMon.due_at, "2026-11-29T15:00:00Z"); // Monday 2026-11-30 00:00 KST
+
+  const thisFri = parse("이번 주 금요일에 회식");
+  assert.equal(thisFri.title, "회식");
+  assert.equal(thisFri.due_at, "2026-11-19T15:00:00Z"); // Friday 2026-11-20 00:00 KST
+
+  const thisMon = parse("이번 주 월요일에 회의");
+  assert.equal(thisMon.title, "회의");
+  assert.equal(thisMon.due_at, "2026-11-15T15:00:00Z"); // Monday 2026-11-16 00:00 KST
+
+  const weekly = parse("매주 월, 수요일에 회의");
+  assert.equal(weekly.title, "회의");
+  assert.equal(weekly.recurrence_rule, "FREQ=WEEKLY;BYDAY=MO,WE");
+  assert.equal(weekly.due_at, "2026-11-22T15:00:00Z"); // Monday 2026-11-23 00:00 KST
+
+  const biweekly = parse("격주 화요일에 회의");
+  assert.equal(biweekly.title, "회의");
+  assert.equal(biweekly.recurrence_rule, "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU");
+
+  const compactEvery = parse("매주 월수금마다 운동");
+  assert.equal(compactEvery.title, "운동");
+  assert.equal(compactEvery.recurrence_rule, "FREQ=WEEKLY;BYDAY=MO,WE,FR");
+
+  const thisWeekend = parse("이번 주말에 등산", mon);
+  assert.equal(thisWeekend.title, "등산");
+  assert.equal(thisWeekend.due_at, "2026-11-27T15:00:00Z"); // Saturday 2026-11-28 00:00 KST
+
+  const nextWeekend = parse("다음 주말에 여행", mon);
+  assert.equal(nextWeekend.title, "여행");
+  assert.equal(nextWeekend.due_at, "2026-12-04T15:00:00Z"); // Saturday 2026-12-05 00:00 KST
+
+  const monthEnd = parse("이번 달 말일에 정산");
+  assert.equal(monthEnd.title, "정산");
+  assert.equal(monthEnd.due_at, "2026-11-29T15:00:00Z"); // 2026-11-30 00:00 KST
+});

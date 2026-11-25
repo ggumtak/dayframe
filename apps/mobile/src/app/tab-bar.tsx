@@ -27,7 +27,7 @@ export default function TabBarSettings() {
             <View style={styles.row}>
               <Icon name={TAB_ICONS.index} size={20} color={colors.textMuted} />
               <Txt style={{ flex: 1 }}>{TAB_LABELS.index}</Txt>
-              <Txt variant="small" tone="faint">항상 첫 번째</Txt>
+              <Txt variant="small" tone="faint">첫 번째 고정</Txt>
               <Icon name="lock" size={16} color={colors.textFaint} />
             </View>
             {config.order.map((tab, index) => {
@@ -54,11 +54,11 @@ export default function TabBarSettings() {
               );
             })}
           </Card>
-          <Txt variant="small" tone="muted">숨긴 탭의 화면은 설정의 ‘숨긴 화면’에서 열 수 있습니다.</Txt>
+          <Txt variant="small" tone="muted">숨긴 탭은 설정의 ‘숨긴 탭’에서 언제든 열 수 있습니다.</Txt>
         </View>
 
         <Button
-          label="기본값으로" kind="secondary" icon="rotate-ccw" disabled={isDefaultTabBar(config)}
+          label="기본 설정으로 되돌리기" kind="secondary" icon="rotate-ccw" disabled={isDefaultTabBar(config)}
           onPress={() => setTabBarConfig(DEFAULT_TAB_BAR)} />
       </ScrollView>
     </Screen>
@@ -71,7 +71,7 @@ function MoveButton({ tab, label, direction, disabled }: { tab: MovableTab; labe
   const name: IconName = direction < 0 ? 'chevron-up' : 'chevron-down';
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={`${label} ${direction < 0 ? '앞으로' : '뒤로'} 옮기기`}
+      accessibilityRole="button" accessibilityLabel={`${label} 탭 ${direction < 0 ? '앞으로' : '뒤로'} 이동`}
       accessibilityState={{ disabled }} disabled={disabled} hitSlop={4}
       onPress={() => {
         haptic.tap();

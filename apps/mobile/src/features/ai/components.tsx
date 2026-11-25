@@ -40,8 +40,8 @@ export function AiScreen({ title, subtitle, right, children, footer, scroll = tr
 export function NeedKey({ onLeave }: { onLeave?: () => void }) {
   return (
     <EmptyState
-      icon="key" title="키가 필요합니다"
-      message="AI 비서는 내 Anthropic 키로 동작합니다. 키를 저장하면 바로 쓸 수 있습니다."
+      icon="key" title="Anthropic 키가 필요합니다"
+      message="AI 비서는 내 Anthropic 키로 작동합니다. 키를 저장하면 바로 사용할 수 있습니다."
       action={<Button label="키 저장하기" icon="key" onPress={() => { onLeave?.(); router.push(AI_ROUTES.key); }} style={{ marginTop: space.sm }} />} />
   );
 }
@@ -63,7 +63,7 @@ export function AiLoading({ message, onCancel }: { message: string; onCancel: ()
     <View style={styles.center} accessibilityLiveRegion="polite">
       <ActivityIndicator color={colors.accent} size="large" />
       <Txt variant="bodyStrong" style={{ textAlign: 'center' }}>{message}</Txt>
-      <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>보통 10~30초 걸립니다.</Txt>
+      <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>보통 10~30초 정도 걸립니다.</Txt>
       <Button label="취소" kind="secondary" onPress={onCancel} style={{ marginTop: space.sm, minWidth: 120 }} />
     </View>
   );
@@ -83,9 +83,9 @@ export function ErrorDetail({ detail, align = 'center' }: { detail: string | nul
     try {
       const Clipboard = await import('expo-clipboard');
       await Clipboard.setStringAsync(detail);
-      showToast('자세한 내용을 복사했습니다.');
+      showToast('오류 정보를 복사했습니다.');
     } catch {
-      showToast('복사하지 못했습니다. 글자를 길게 눌러 복사해 주세요.', { tone: 'error' });
+      showToast('복사하지 못했습니다. 내용을 길게 눌러 직접 복사해 주세요.', { tone: 'error' });
     }
   };
   return (
@@ -99,7 +99,7 @@ export function ErrorDetail({ detail, align = 'center' }: { detail: string | nul
       {open ? (
         <View style={[styles.detail, { backgroundColor: colors.surfaceMuted }]}>
           <Txt variant="caption" tone="muted" selectable style={{ flex: 1 }}>{detail}</Txt>
-          <Pressable accessibilityRole="button" accessibilityLabel="자세한 내용 복사" hitSlop={8} onPress={() => void copy()} style={styles.detailCopy}>
+          <Pressable accessibilityRole="button" accessibilityLabel="오류 정보 복사" hitSlop={8} onPress={() => void copy()} style={styles.detailCopy}>
             <Icon name="copy" size={13} color={colors.accentText} />
             <Txt variant="caption" tone="accent">복사</Txt>
           </Pressable>

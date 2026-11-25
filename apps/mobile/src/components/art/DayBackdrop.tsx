@@ -1,9 +1,9 @@
 import { memo } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { ArtView } from './ArtView';
-import { BACKDROP_ASPECT, BACKDROP_H, BACKDROPS, type BackdropVariant } from './backdrop';
-import { useArtPalette } from './Illustrations';
+import { ArtView } from './ArtView.tsx';
+import { BACKDROP_ASPECT, BACKDROP_H, BACKDROPS, type BackdropVariant } from './backdrop.ts';
+import { useArtPalette } from './Illustrations.tsx';
 
 export interface DayBackdropProps {
   /** Which sky to draw; pick it with backdropFor(new Date().getHours()). */

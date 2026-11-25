@@ -66,7 +66,7 @@ export function YearCalendar({ year, today, counts, columns = 3, onYearChange, o
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {year === today.year ? null : (
             <Pressable
-              accessibilityRole="button" accessibilityLabel="올해로" hitSlop={8}
+              accessibilityRole="button" accessibilityLabel="올해로 이동" hitSlop={8}
               onPress={() => {
                 haptic.tap();
                 onYearChange(today.year);
@@ -136,7 +136,7 @@ const MonthBlock = memo(function MonthBlock({ year, month, levels, total, todayD
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${year}년 ${month}월, ${total ? '할 일 ' + total + '개' : '할 일 없음'}, 눌러서 달력으로 보기`}
+      accessibilityLabel={`${year}년 ${month}월, ${total ? '예정된 할 일 ' + total + '개' : '할 일 없음'}, 눌러서 월간 보기`}
       onPress={press}
       style={({ pressed }) => [width, { opacity: pressed ? 0.6 : dimmed ? 0.55 : 1 }]}>
       <Text maxFontSizeMultiplier={1.3} style={[styles.monthTitle, { color: current ? colours.titleCurrent : colours.title }]}>{month}월</Text>

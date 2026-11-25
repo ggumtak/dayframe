@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 
 import { Icon, IconButton, Txt } from '@/components/ui';
+import { josa } from '@/lib/josa';
 import { radius, space, useTheme } from '@/theme';
 
 import { useUpdate } from './useUpdate';
@@ -23,7 +24,7 @@ export function UpdateBanner() {
         <Icon name="download" size={16} color={colors.textMuted} />
         <View style={{ flex: 1 }}>
           <Txt variant="smallStrong">
-            {required ? '업데이트가 필요합니다' : `새 버전 ${release.version} 사용 가능`}
+            {required ? '업데이트가 필요합니다' : `새 버전 ${release.version}${josa(release.version, '이/가')} 나왔습니다`}
           </Txt>
         </View>
         <Txt variant="smallStrong" tone="accent">업데이트</Txt>

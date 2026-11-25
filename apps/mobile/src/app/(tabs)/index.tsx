@@ -4,7 +4,7 @@ import { Pressable, RefreshControl, type ScrollViewInstance, Share, StyleSheet, 
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { EmptyToday, OfflineArt } from '@/components/art';
-import { Button, Card, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
+import { Button, Card, Chip, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, SectionTitle, Segmented, Sheet, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
 import { byPriority, bySchedule, useDoneToday, useProjects, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
@@ -19,7 +19,7 @@ import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
 import { TaskList } from '@/features/tasks/TaskList';
 import { Timeline } from '@/features/tasks/Timeline';
 import { OverdueStrip, TodayGroups } from '@/features/tasks/TodayGroups';
-import { buildShareText, createTodayReuser, deriveToday } from '@/features/tasks/todayList';
+import { buildShareText, createTodayReuser, deriveToday, type TodayGrouping } from '@/features/tasks/todayList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
 import { useTaskFlow } from '@/features/tasks/useTaskFlow';
 import { UpdateBanner } from '@/features/update/UpdateBanner';
@@ -37,7 +37,6 @@ import { showToast } from '@/lib/toast';
 import { space, useTheme } from '@/theme';
 
 type TodayView = 'list' | 'timeline' | 'matrix';
-
 type TodaySort = 'schedule' | 'smart' | 'priority';
 
 const sortLabels: Record<TodaySort, string> = {
@@ -46,12 +45,16 @@ const sortLabels: Record<TodaySort, string> = {
   priority: '우선순위순',
 };
 
-type TodayGrouping = 'project' | 'none';
-type OptionsSheet = null | 'menu' | 'sort';
+const groupLabels: Record<TodayGrouping, string> = {
+  project: '목록별',
+  time: '시간대별',
+  priority: '우선순위별',
+  none: '그룹 없음',
+};
 
 const isTodayView = (value: string): value is TodayView => value === 'list' || value === 'timeline' || value === 'matrix';
 const isTodaySort = (value: string): value is TodaySort => value in sortLabels;
-const isTodayGrouping = (value: string): value is TodayGrouping => value === 'project' || value === 'none';
+const isTodayGrouping = (value: string): value is TodayGrouping => value in groupLabels;
 
 export default function Today() {
   const { colors } = useTheme();
@@ -65,13 +68,11 @@ export default function Today() {
   const quickAdd = useQuickAdd();
 
   const [view, setView] = usePersistentState<TodayView>('dayframe-today-view', 'list', isTodayView);
-  // A landscape tablet shows the timeline beside the list for good, so the main pane is the list or the matrix; the
-  // saved view is left alone and comes back in portrait.
   const { twoPane } = useLayout();
   const mainView: TodayView = twoPane && view === 'timeline' ? 'list' : view;
   const [sort, setSort] = usePersistentState<TodaySort>('dayframe-today-sort', 'schedule', isTodaySort);
   const [grouping, setGrouping] = usePersistentState<TodayGrouping>('dayframe-today-group', 'project', isTodayGrouping);
-  const [options, setOptions] = useState<OptionsSheet>(null);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -79,13 +80,11 @@ export default function Today() {
   useTabScrollTop('index', scrollRef);
   const { data: projects } = useProjects();
 
-  // Re-renders this screen once a minute (and on return to the foreground) so the day rolls over.
   const minute = useMinute();
   const timeZone = deviceTimeZone();
   const date = today(timeZone);
   useScreenDefaults({ dueToday: true });
 
-  // Only the smart order depends on the clock; the other two stay the same function all day.
   const smartNowMs = sort === 'smart' ? minute * 60_000 : 0;
   const compare = useMemo(() => {
     if (sort === 'priority') return byPriority;
@@ -95,23 +94,18 @@ export default function Today() {
   }, [sort, subtaskProgress, smartNowMs]);
   const projectIds = useMemo(() => (projects ?? []).map((project) => project.id), [projects]);
 
-  // Overdue / today / per-list groups, worked out once per input change (each task's bucket once). The
-  // minute tick re-derives so midnight rolls over, but the reuser hands back the previous lists when
-  // nothing moved, so memoised lists and rows see identical props and do not re-render.
   const [reuseToday] = useState(createTodayReuser);
   const { overdue, due, groups } = useMemo(
-    () => reuseToday(deriveToday(tasks, compare, projectIds, minute * 60_000)),
-    [reuseToday, tasks, compare, projectIds, minute],
+    () => reuseToday(deriveToday(tasks, compare, projectIds, minute * 60_000, grouping)),
+    [reuseToday, tasks, compare, projectIds, minute, grouping],
   );
   const allVisibleToday = useMemo(() => [...overdue, ...due], [overdue, due]);
-  const grouped = grouping === 'project';
+  const grouped = grouping !== 'none';
 
   const remaining = overdue.length + due.length;
-
-  // The day's numbers live in the subtitle, once; there is no progress bar repeating them.
   const summary = remaining || done.length
-    ? [remaining ? `남은 일 ${remaining}` : '', done.length ? `완료 ${done.length}` : ''].filter(Boolean).join(' · ')
-    : '남은 할 일 없음';
+    ? [remaining ? `${remaining}개 남음` : '', done.length ? `${done.length}개 완료` : ''].filter(Boolean).join(' · ')
+    : '할 일 없음';
 
   const selectedTasks = useMemo(
     () => (selectedIds ? allVisibleToday.filter((t) => selectedIds.has(t.id)) : []),
@@ -140,7 +134,7 @@ export default function Today() {
   const moveOverdue = () => {
     haptic.success();
     flow.rescheduleOverdue();
-    showToast(`지연된 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
+    showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
   };
 
   const openPlanning = () => {
@@ -162,7 +156,7 @@ export default function Today() {
     Share.share({ message }).catch(() => showToast('공유하지 못했습니다.'));
   };
 
-  const closeOptions = () => setOptions(null);
+  const closeOptions = () => setOptionsOpen(false);
 
   const addAt = (minutes: number) => {
     const clock = String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
@@ -210,21 +204,19 @@ export default function Today() {
         },
       });
     });
-    showToast('체험 체크리스트를 넣었습니다. 눌러서 펼쳐 보세요.');
+    showToast('체험 체크리스트를 추가했습니다. 눌러서 펼쳐 보세요.');
   };
 
   const showOnboarding = !isLoading && !isError && tasks.length === 0 && done.length === 0 && !onboardingDismissed;
 
-  // A plain line, not a coloured card: one accent check is the only celebration that stays on screen (the moment
-  // of completion already had its animation and haptic).
   const allDoneCard = (
     <View style={styles.allDone}>
       <Icon name="check-circle" size={20} color={done.length ? colors.accentText : colors.textMuted} />
       <View style={{ flex: 1 }}>
         <Txt variant="bodyStrong">
-          {done.length ? `오늘 예정된 ${done.length}개를 모두 마쳤습니다` : '오늘 남은 할 일이 없습니다'}
+          {done.length ? `오늘 할 일 ${done.length}개를 모두 마쳤습니다` : '오늘 남은 할 일이 없습니다'}
         </Txt>
-        {done.length ? <Txt variant="small" tone="muted">수고하셨습니다. 남은 일정도 살펴볼까요?</Txt> : null}
+        {done.length ? <Txt variant="small" tone="muted">수고하셨습니다. 다른 할 일도 살펴볼까요?</Txt> : null}
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel="추천 보기" hitSlop={8} onPress={() => setPlanning(true)}>
         <Txt variant="smallStrong" tone="accent">추천 보기</Txt>
@@ -234,11 +226,12 @@ export default function Today() {
 
   const timeline = (
     <Timeline
-      // Beside the list, the list's own overdue line already says it: the timeline does not repeat it in red.
       tasks={due} sessions={sessions ?? []} timeZone={timeZone} overdueCount={twoPane ? 0 : overdue.length}
       onComplete={flow.complete} onAddAt={addAt} onRescheduleTime={rescheduleOnTimeline}
       onPlanOverdue={() => setPlanning(true)} />
   );
+
+  const hasCustomViewBar = mainView === 'list' && remaining > 0 && (grouping !== 'project' || sort !== 'schedule');
 
   return (
     <Screen maxWidth={twoPane ? PANE_FRAME_MAX : undefined}>
@@ -258,13 +251,12 @@ export default function Today() {
               name="more-vertical" label="보기 옵션"
               onPress={() => {
                 haptic.tap();
-                setOptions('menu');
+                setOptionsOpen(true);
               }}
-              color={selectedIds ? colors.accentText : colors.textMuted} />
+              color={selectedIds || hasCustomViewBar ? colors.accentText : colors.textMuted} />
           </View>
         )} />
       <UpdateBanner />
-      {/* One structure in every size, so a rotation re-lays the panes out without remounting the list. */}
       <View style={twoPane ? styles.panes : styles.single}>
         <View style={twoPane ? { width: twoPane.listWidth } : styles.single}>
           <View style={{ paddingHorizontal: space.lg, paddingBottom: space.sm }}>
@@ -283,6 +275,17 @@ export default function Today() {
                 { value: 'matrix', label: '매트릭스', icon: 'grid' },
               ]} />
           </View>
+
+          {hasCustomViewBar ? (
+            <View style={styles.viewPillRow}>
+              <Chip
+                icon="layers" label={groupLabels[grouping]} selected={grouping !== 'project'}
+                onPress={() => setOptionsOpen(true)} />
+              <Chip
+                icon="sliders" label={sortLabels[sort]} selected={sort !== 'schedule'}
+                onPress={() => setOptionsOpen(true)} />
+            </View>
+          ) : null}
 
           {isLoading ? <Loading /> : mainView === 'timeline' ? timeline : mainView === 'matrix' ? (
             <EisenhowerView roots={roots} subtaskProgress={subtaskProgress} refreshing={refreshing} onRefresh={refresh} />
@@ -308,10 +311,10 @@ export default function Today() {
                       </View>
                     </View>
                     <Txt variant="small" tone="muted">
-                      직접 따라 해 볼 수 있는 4단계 체험 체크리스트를 오늘 할 일에 넣어 드릴까요?
+                      바로 써 볼 수 있는 4단계 체험 체크리스트를 오늘 할 일에 추가해 드릴까요?
                     </Txt>
                     <View style={{ flexDirection: 'row', gap: space.sm }}>
-                      <Button label="체험 체크리스트 넣기" icon="check-square" onPress={createStarterChecklist} style={{ flex: 1, minHeight: 42 }} />
+                      <Button label="체험 체크리스트 추가" kind="secondary" icon="check-square" onPress={createStarterChecklist} style={{ flex: 1, minHeight: 42 }} />
                       <Button label="건너뛰기" kind="secondary" onPress={dismissOnboarding} style={{ minHeight: 42 }} />
                     </View>
                   </Card>
@@ -320,8 +323,8 @@ export default function Today() {
               ) : remaining === 0 && done.length === 0 && !hasHabits ? (
                 <EmptyState
                   icon="sun" art={<EmptyToday size={EMPTY_ART} />} title="오늘 할 일이 없습니다"
-                  message="아래 + 버튼으로 추가하거나 하루 계획에서 남은 일을 가져올 수 있습니다."
-                  action={<Button label="오늘 할 일 추천 보기" kind="secondary" icon="compass" onPress={() => setPlanning(true)} />} />
+                  message="아래 + 버튼으로 추가하거나, 하루 계획에서 다른 할 일을 가져올 수 있습니다."
+                  action={<Button label="할 일 추천 보기" kind="secondary" icon="compass" onPress={() => setPlanning(true)} />} />
               ) : grouped ? (
                 <>
                   {overdue.length ? (
@@ -340,24 +343,24 @@ export default function Today() {
                   {overdue.length ? (
                     <>
                       <SectionTitle
-                        title="지연됨" count={overdue.length} tone="danger"
+                        title="기한 지남" count={overdue.length} tone="danger"
                         action={(
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
                             {overdue.length >= 2 ? (
                               <Pressable
-                                accessibilityRole="button" accessibilityLabel="여러 날에 나눠 잡기" hitSlop={8}
+                                accessibilityRole="button" accessibilityLabel="여러 날로 일정 나누기" hitSlop={8}
                                 onPress={() => {
                                   haptic.tap();
                                   setPlanning(true);
                                 }}
                                 style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-                                <Txt variant="smallStrong">나눠 잡기</Txt>
+                                <Txt variant="smallStrong">일정 나누기</Txt>
                               </Pressable>
                             ) : null}
                             <Pressable
-                              accessibilityRole="button" accessibilityLabel="오늘로 옮기기" hitSlop={8} onPress={moveOverdue}
+                              accessibilityRole="button" accessibilityLabel="기한 지난 할 일 오늘로 옮기기" hitSlop={8} onPress={moveOverdue}
                               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-                              <Txt variant="smallStrong" tone="muted">오늘로</Txt>
+                              <Txt variant="smallStrong" tone="muted">오늘로 이동</Txt>
                             </Pressable>
                           </View>
                         )} />
@@ -374,7 +377,7 @@ export default function Today() {
                         tasks={due} hideDate selectedIds={selectedIds} onToggleSelect={toggleSelect} onStartSelect={startSelect} />
                     </>
                   ) : overdue.length ? (
-                    <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 일은 없습니다.</Txt>
+                    <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 할 일이 없습니다.</Txt>
                   ) : (
                     allDoneCard
                   )}
@@ -407,71 +410,65 @@ export default function Today() {
         visible={planning} onClose={() => setPlanning(false)}
         overdue={overdue} allOpen={tasks} openRoots={roots} subtaskProgress={subtaskProgress} />
 
-      {/* Mounted only while open: a hidden Sheet still runs its gesture and animation hooks on every render. */}
-      {options ? (
-        <Sheet visible onClose={closeOptions} title={options === 'sort' ? '오늘 정렬 기준' : '보기 옵션'}>
-          {options === 'sort' ? (
-            (['schedule', 'smart', 'priority'] as TodaySort[]).map((option) => (
-              <Row
-                key={option}
-                icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : 'flag'}
-                label={sortLabels[option]}
-                detail={option === 'smart' ? '긴급도 · 우선순위 · 진행률' : undefined}
-                trailing={sort === option ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
-                onPress={() => {
-                  haptic.tap();
-                  setSort(option);
-                  closeOptions();
-                }} />
-            ))
-          ) : (
-            <>
-              {mainView === 'list' ? (
-                <>
-                  <Row
-                    icon="sliders" label="정렬" detail={sortLabels[sort]}
-                    trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
-                    onPress={() => {
-                      haptic.tap();
-                      setOptions('sort');
-                    }} />
-                  <Row
-                    icon="layers" label="묶기" detail={grouped ? '목록별' : '묶지 않기'}
-                    onPress={() => {
-                      haptic.tap();
-                      setGrouping(grouped ? 'none' : 'project');
-                    }} />
-                  {selectedIds || allVisibleToday.length > 1 ? (
-                    <Row
-                      icon="check-square" label={selectedIds ? '선택 끝내기' : '여러 개 선택'}
-                      onPress={() => {
-                        haptic.tap();
-                        closeOptions();
-                        setSelectedIds((prev) => (prev ? null : new Set()));
-                      }} />
-                  ) : null}
-                </>
-              ) : null}
-              <Row
-                icon="share-2" label="오늘 할 일 공유"
-                onPress={() => {
-                  closeOptions();
-                  shareToday();
-                }} />
-              <Row
-                icon="zap" label="AI 비서"
-                onPress={() => {
-                  closeOptions();
-                  router.push(AI_ROUTES.hub);
-                }} />
-              <Row
-                icon="settings" label="설정"
-                onPress={() => {
-                  closeOptions();
-                  router.push('/settings');
-                }} />
-            </>
-          )}
+      {optionsOpen ? (
+        <Sheet visible onClose={closeOptions} title="보기 옵션">
+          {mainView === 'list' ? (
+            <View style={{ gap: space.md, marginBottom: space.sm }}>
+              <View style={{ gap: 6 }}>
+                <Txt variant="caption" tone="muted">그룹 기준</Txt>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {(['project', 'time', 'priority', 'none'] as TodayGrouping[]).map((option) => (
+                    <Chip
+                      key={option}
+                      icon={option === 'project' ? 'hash' : option === 'time' ? 'clock' : option === 'priority' ? 'flag' : 'list'}
+                      label={groupLabels[option]}
+                      selected={grouping === option}
+                      onPress={() => setGrouping(option)} />
+                  ))}
+                </View>
+              </View>
+              <View style={{ gap: 6 }}>
+                <Txt variant="caption" tone="muted">정렬 기준</Txt>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {(['schedule', 'smart', 'priority'] as TodaySort[]).map((option) => (
+                    <Chip
+                      key={option}
+                      icon={option === 'schedule' ? 'calendar' : option === 'smart' ? 'zap' : 'flag'}
+                      label={sortLabels[option]}
+                      selected={sort === option}
+                      onPress={() => setSort(option)} />
+                  ))}
+                </View>
+              </View>
+            </View>
+          ) : null}
+          {mainView === 'list' && (selectedIds || allVisibleToday.length > 1) ? (
+            <Row
+              icon="check-square" label={selectedIds ? '선택 취소' : '여러 개 선택'}
+              onPress={() => {
+                haptic.tap();
+                closeOptions();
+                setSelectedIds((prev) => (prev ? null : new Set()));
+              }} />
+          ) : null}
+          <Row
+            icon="share-2" label="오늘 할 일 공유"
+            onPress={() => {
+              closeOptions();
+              shareToday();
+            }} />
+          <Row
+            icon="zap" label="AI 비서"
+            onPress={() => {
+              closeOptions();
+              router.push(AI_ROUTES.hub);
+            }} />
+          <Row
+            icon="settings" label="설정"
+            onPress={() => {
+              closeOptions();
+              router.push('/settings');
+            }} />
         </Sheet>
       ) : null}
     </Screen>
@@ -482,6 +479,7 @@ const styles = StyleSheet.create({
   single: { flex: 1 },
   panes: { flex: 1, flexDirection: 'row' },
   side: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth },
+  viewPillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: space.lg, paddingBottom: space.xs },
   guideBadge: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   allDone: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.lg },
 });

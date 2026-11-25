@@ -10,10 +10,10 @@ import { AI_ROUTES } from '@/features/ai/routes';
 import { radius, space, useTheme } from '@/theme';
 
 const FEATURES: { icon: IconName; name: string; description: string; route: string }[] = [
-  { icon: 'edit-3', name: '메모 정리', description: '머릿속 메모를 바로 추가할 수 있는 할 일로 바꿉니다.', route: AI_ROUTES.organize },
+  { icon: 'edit-3', name: '메모 정리', description: '두서없이 적은 메모를 깔끔한 할 일로 정리합니다.', route: AI_ROUTES.organize },
   { icon: 'clock', name: '하루 계획', description: '오늘 할 일을 남은 시간에 맞춰 배치합니다.', route: AI_ROUTES.plan },
-  { icon: 'layers', name: '큰 일 쪼개기', description: '막막한 할 일을 바로 시작할 수 있는 하위 작업으로 나눕니다.', route: AI_ROUTES.breakdown },
-  { icon: 'bar-chart-2', name: '주간 돌아보기', description: '지난 7일의 완료, 습관, 집중 기록을 돌아봅니다.', route: AI_ROUTES.review },
+  { icon: 'layers', name: '큰 일 쪼개기', description: '막막한 할 일을 바로 시작할 수 있는 작은 단계로 나눕니다.', route: AI_ROUTES.breakdown },
+  { icon: 'bar-chart-2', name: '주간 돌아보기', description: '지난 7일간의 할 일·습관·집중 기록을 돌아봅니다.', route: AI_ROUTES.review },
 ];
 
 /**
@@ -54,14 +54,14 @@ export default function AssistantHub() {
       {ready && !hasKey ? (
         <FeatureCard
           highlight icon="key" name="먼저 키를 저장해 주세요"
-          description="AI 비서는 내 Anthropic 키로 동작하고, 쓴 만큼만 요금이 청구됩니다."
+          description="내 Anthropic 키로 작동하며, 사용한 만큼만 요금이 청구됩니다."
           onPress={() => router.push(AI_ROUTES.key)} />
       ) : null}
       {FEATURES.map((feature) => (
         <FeatureCard key={feature.route} {...feature} onPress={() => router.push(feature.route as never)} />
       ))}
       <Txt variant="caption" tone="faint" style={{ textAlign: 'center', marginTop: space.sm }}>
-        AI가 제안한 내용은 미리 보고 고른 것만 반영됩니다.
+        AI 제안은 미리 확인한 뒤 선택한 항목만 반영됩니다.
       </Txt>
     </AiScreen>
   );

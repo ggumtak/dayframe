@@ -2,9 +2,9 @@ import { memo, useMemo } from 'react';
 
 import { useTheme } from '@/theme';
 
-import { ArtView } from './ArtView';
-import { ART_H, ART_W, ILLUSTRATIONS, type IllustrationName } from './illustrations';
-import { type Art, artPalette } from './scene';
+import { ArtView } from './ArtView.tsx';
+import { ART_H, ART_W, ILLUSTRATIONS, type IllustrationName } from './illustrations.ts';
+import { type Art, artPalette } from './scene.ts';
 
 export interface IllustrationProps {
   /** Width in logical px; height follows at 3:4. Default 160 (160×120). */

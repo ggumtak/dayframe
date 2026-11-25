@@ -8,12 +8,12 @@ import { useUpdate } from './useUpdate';
 import { updateDateLabel } from './version';
 
 function checkedLabel(timestamp: number): string {
-  if (!timestamp) return '아직 확인하지 않았습니다';
+  if (!timestamp) return '아직 확인 전';
   const minutes = Math.floor((Date.now() - timestamp) / 60000);
-  if (minutes < 1) return '방금 확인함';
-  if (minutes < 60) return minutes + '분 전 확인함';
+  if (minutes < 1) return '방금 확인';
+  if (minutes < 60) return minutes + '분 전 확인';
   const hours = Math.floor(minutes / 60);
-  return hours < 24 ? hours + '시간 전 확인함' : Math.floor(hours / 24) + '일 전 확인함';
+  return hours < 24 ? hours + '시간 전 확인' : Math.floor(hours / 24) + '일 전 확인';
 }
 
 /** Settings card: current version, the check button, release notes, and the update flow itself. */
@@ -27,7 +27,7 @@ export function UpdateCard() {
   // "1.9.0 · 11월 24일 업데이트" while running an over-the-air update, "1.9.0 (10900)" on the APK's own code.
   const updated = updateDateLabel(update.runningUpdateDate, new Date());
   const current = (installed.version ?? '알 수 없음') + (updated ? ` · ${updated}` : installed.build ? ` (${installed.build})` : '');
-  const title = otaReady ? '업데이트 준비됨' : update.available ? `새 버전 ${release?.version}` : '최신 버전입니다';
+  const title = otaReady ? '업데이트가 준비되었습니다' : update.available ? `새 버전 ${release?.version}` : '최신 버전입니다';
 
   return (
     <Card style={{ gap: space.md }}>
@@ -46,9 +46,9 @@ export function UpdateCard() {
       ) : null}
 
       {otaReady ? (
-        <Txt variant="small" tone="muted">새 버전을 내려받았습니다. 다시 시작하면 바로, 아니면 다음에 앱을 열 때 적용됩니다.</Txt>
+        <Txt variant="small" tone="muted">새 버전을 다운로드했습니다. 지금 다시 시작하면 바로 적용되며, 다음에 앱을 열 때도 자동으로 적용됩니다.</Txt>
       ) : null}
-      {update.ota === 'downloading' ? <Txt variant="small" tone="muted" accessibilityLiveRegion="polite">새 버전을 내려받는 중…</Txt> : null}
+      {update.ota === 'downloading' ? <Txt variant="small" tone="muted" accessibilityLiveRegion="polite">새 버전을 다운로드하는 중…</Txt> : null}
 
       {!otaReady && update.available && release?.notes ? (
         <View style={{ backgroundColor: colors.surfaceMuted, borderRadius: 10, padding: space.md, gap: 4 }}>
@@ -58,13 +58,13 @@ export function UpdateCard() {
       ) : null}
 
       {update.required ? (
-        <Txt variant="smallStrong">이 버전은 더 이상 지원되지 않습니다. 계속 쓰려면 업데이트해 주세요.</Txt>
+        <Txt variant="smallStrong">이 버전은 더 이상 지원되지 않습니다. 계속 사용하려면 업데이트해 주세요.</Txt>
       ) : null}
 
       {phase.name === 'permission' ? (
         <View style={{ gap: space.sm }}>
           <Txt variant="small" tone="muted">
-            처음 한 번만 허용하면 됩니다. 설정에서 ‘이 출처 허용’을 켜고 돌아오면 바로 다운로드를 시작합니다.
+            처음 한 번만 허용하면 됩니다. 설정에서 ‘이 출처 허용’을 켜고 돌아오면 다운로드가 자동으로 시작됩니다.
           </Txt>
           <Button label="설치 권한 설정 열기" icon="shield" onPress={update.openPermissionSettings} />
           <Button label="취소" kind="ghost" onPress={update.cancel} />
@@ -88,12 +88,12 @@ export function UpdateCard() {
 
       {!otaReady && update.available && update.action === 'none' ? (
         <Txt variant="small" tone="muted">
-          {Platform.OS === 'web' ? '앱 설치는 Android 기기에서 진행해 주세요.' : '이 버전의 설치 파일이 아직 올라오지 않았습니다.'}
+          {Platform.OS === 'web' ? '앱 설치는 Android 기기에서 진행해 주세요.' : '이 버전의 설치 파일이 아직 준비되지 않았습니다.'}
         </Txt>
       ) : null}
 
       {phase.name === 'permission' || busy ? null : otaReady ? (
-        <Button label="다시 시작해 적용" icon="rotate-cw" onPress={update.restart} />
+        <Button label="지금 다시 시작" icon="rotate-cw" onPress={update.restart} />
       ) : (
         <View style={{ flexDirection: 'row', gap: space.sm }}>
           {update.action !== 'none' ? (

@@ -108,28 +108,28 @@ const config: ExpoConfig = {
     // previewImage is what the home screen's widget picker shows; redraw with scripts/widget-previews.mjs.
     ['react-native-android-widget', {
       widgets: [{
-        name: 'Today', previewImage: './assets/widgets/today.webp', label: '오늘 할 일', description: '오늘 할 일과 지연된 할 일을 보고 바로 완료합니다.',
+        name: 'Today', previewImage: './assets/widgets/today.webp', label: '오늘 할 일', description: '오늘 할 일과 기한이 지난 할 일을 확인하고 바로 완료할 수 있습니다.',
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         // The app redraws the widget whenever tasks change; this only catches the day rolling over.
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Upcoming', previewImage: './assets/widgets/upcoming.webp', label: '예정', description: '앞으로 7일의 할 일을 날짜별로 봅니다.',
+        name: 'Upcoming', previewImage: './assets/widgets/upcoming.webp', label: '예정', description: '앞으로 7일간의 할 일을 날짜별로 한눈에 확인할 수 있습니다.',
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Calendar', previewImage: './assets/widgets/calendar.webp', label: '달력', description: '일정이 있는 날을 이번 달 달력에 표시합니다. 날짜를 누르면 그날을 엽니다.',
+        name: 'Calendar', previewImage: './assets/widgets/calendar.webp', label: '달력', description: '월간 일정을 달력으로 보고, 날짜를 눌러 바로 확인할 수 있습니다.',
         minWidth: '250dp', minHeight: '250dp', targetCellWidth: 4, targetCellHeight: 4, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Habits', previewImage: './assets/widgets/habits.webp', label: '습관', description: '오늘의 습관을 보고 누르면 바로 기록합니다.',
+        name: 'Habits', previewImage: './assets/widgets/habits.webp', label: '습관', description: '오늘의 습관을 확인하고, 눌러서 바로 기록할 수 있습니다.',
         minWidth: '180dp', minHeight: '110dp', targetCellWidth: 4, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'Focus', previewImage: './assets/widgets/focus.webp', label: '집중', description: '25분·50분 뽀모도로를 홈 화면에서 시작합니다.',
+        name: 'Focus', previewImage: './assets/widgets/focus.webp', label: '집중', description: '홈 화면에서 15분·25분·50분 집중 타이머를 바로 시작할 수 있습니다.',
         minWidth: '110dp', minHeight: '110dp', targetCellWidth: 2, targetCellHeight: 2, resizeMode: 'horizontal|vertical',
         updatePeriodMillis: 1800000,
       }, {
-        name: 'QuickAdd', previewImage: './assets/widgets/quickadd.webp', label: '빠른 추가', description: '눌러서 바로 할 일을 추가합니다.',
+        name: 'QuickAdd', previewImage: './assets/widgets/quickadd.webp', label: '빠른 추가', description: '홈 화면에서 바로 할 일을 추가하고 검색·집중을 열 수 있습니다.',
         minWidth: '180dp', minHeight: '40dp', targetCellWidth: 4, targetCellHeight: 1, resizeMode: 'horizontal',
       }],
     }],

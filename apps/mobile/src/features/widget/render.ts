@@ -1,17 +1,19 @@
 import { requestWidgetUpdate, type WidgetTaskHandler } from 'react-native-android-widget';
 
+import { periodProgress } from '@/data/habits';
 import { nextCheckIn } from '@/features/habits/checkIn';
 import { cancelHabitAlert, cancelOccurrence } from '@/features/reminders/cancel';
 import { completeOccurrence } from '@/features/reminders/complete';
 import { cancelAlert, scheduleAlert } from '@/lib/alerts';
 import { ApiFailure, api } from '@/lib/api';
-import { deviceTimeZone, today as localToday } from '@/lib/dates';
+import { deviceTimeZone, sameInstant, today as localToday } from '@/lib/dates';
 import { uuid } from '@/lib/ids';
 import { countByDate } from '@/lib/occurrences';
 import { nextOccurrence, type Task } from '@/lib/shared';
 
 import {
-  CALENDAR_RANGE, calendarGrid, focusState, habitToday, snapshotTasks, upcomingRows, type WidgetFocus, type WidgetHabit, type WidgetSnapshot, widgetDate, widgetRows,
+  CALENDAR_RANGE, calendarGrid, focusState, habitToday, snapshotTasks, todayOverview, todayWidgetItems,
+  upcomingRows, type WidgetDoneToday, type WidgetFocus, type WidgetHabit, type WidgetSnapshot, widgetRows,
 } from './items';
 import { externalChange } from './events';
 import { readSnapshot, withTask, writeSnapshot } from './store';
@@ -24,7 +26,7 @@ export function drawWidget(name: string, snapshot: WidgetSnapshot, now = Date.no
   const { signedIn, notice } = snapshot;
   switch (name) {
     case WIDGETS.upcoming:
-      return upcomingWidget({ rows: upcomingRows(snapshot.tasks, now, zone), signedIn });
+      return upcomingWidget({ rows: upcomingRows(snapshot.tasks, now, zone, nextOccurrence), signedIn, stamp: now, notice });
     case WIDGETS.habits:
       return habitsWidget({
         signedIn, notice,
@@ -49,8 +51,18 @@ export function drawWidget(name: string, snapshot: WidgetSnapshot, now = Date.no
       const grid = calendarGrid(now, zone, offset, snapshot.calendar ?? {});
       return calendarWidget({ signedIn, ...grid, stamp: now, canBack: offset > -CALENDAR_RANGE.back, canAhead: offset < CALENDAR_RANGE.ahead });
     }
-    default:
-      return todayWidget({ rows: widgetRows(snapshot.tasks, now), date: widgetDate(now, zone), signedIn, notice });
+    default: {
+      const rows = widgetRows(snapshot.tasks, now);
+      const overview = todayOverview(rows, snapshot.doneToday, now, zone);
+      return todayWidget({
+        items: todayWidgetItems(rows),
+        subtitle: overview.subtitle,
+        progress: overview.ratio,
+        doneCount: overview.doneCount,
+        signedIn,
+        notice,
+      });
+    }
   }
 }
 
@@ -78,18 +90,39 @@ function update(change: (snapshot: WidgetSnapshot) => WidgetSnapshot): Promise<W
 
 /** Called by the app whenever its data changes. `null` tasks means signed out. */
 export async function saveWidget(
-  tasks: Task[] | null, extra: { habits?: WidgetHabit[]; focus?: WidgetFocus | null; calendar?: Record<string, number> } = {},
+  tasks: Task[] | null,
+  extra: {
+    habits?: WidgetHabit[];
+    focus?: WidgetFocus | null;
+    calendar?: Record<string, number>;
+    doneToday?: WidgetDoneToday;
+    projectName?: (task: { id: string; project_id?: string | null }) => string | undefined;
+    subtaskLabel?: (taskId: string) => string | undefined;
+  } = {},
 ): Promise<void> {
   await update((previous) => (tasks ? {
-    signedIn: true, tasks: snapshotTasks(tasks, Date.now()),
-    habits: extra.habits ?? previous.habits, focus: extra.focus !== undefined ? extra.focus : previous.focus,
-    calendar: extra.calendar ?? previous.calendar, calendarOffset: previous.calendarOffset,
+    signedIn: true,
+    tasks: snapshotTasks(tasks, Date.now(), {
+      projectName: extra.projectName
+        ? (widgetTask) => {
+          const full = tasks.find((item) => item.id === widgetTask.id);
+          return full ? extra.projectName!(full) : widgetTask.projectName;
+        }
+        : undefined,
+      subtaskLabel: extra.subtaskLabel,
+    }),
+    doneToday: extra.doneToday ?? previous.doneToday,
+    habits: extra.habits ?? previous.habits,
+    focus: extra.focus !== undefined ? extra.focus : previous.focus,
+    calendar: extra.calendar ?? previous.calendar,
+    calendarOffset: previous.calendarOffset,
   } : { signedIn: false, tasks: [] }));
 }
 
-/** Applies a completion made outside the app to the widgets. */
-export async function widgetTaskChanged(taskId: string, task: Task | null): Promise<void> {
-  await update((snapshot) => withTask(snapshot, taskId, task));
+/** Applies a completion or reschedule made outside the app to the widgets. */
+export async function widgetTaskChanged(taskId: string, task: Task | null, options?: { completed?: boolean }): Promise<void> {
+  const completedOnDate = options?.completed ? localToday(deviceTimeZone()).toString() : undefined;
+  await update((snapshot) => withTask(snapshot, taskId, task, { completedOnDate }));
   externalChange();
 }
 
@@ -102,19 +135,76 @@ export async function widgetHabitChanged(habitId: string, date: string, todayCou
   externalChange();
 }
 
-/** Fresh tasks from the server, used when the home screen asks for an update while the app is closed. */
-async function fetched(snapshot: WidgetSnapshot): Promise<WidgetSnapshot> {
+/** Fresh tasks (and optionally habits) from the server, used on periodic updates or when tapping the widget's refresh icon. */
+async function fetched(snapshot: WidgetSnapshot, includeHabits = false): Promise<WidgetSnapshot> {
   if (!snapshot.signedIn) return snapshot;
   try {
-    const tasks = await Promise.race([
-      api.openTasks(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+    const zone = deviceTimeZone();
+    const todayDate = localToday(zone);
+    const timeout = <T,>(promise: Promise<T>) => Promise.race([
+      promise, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
     ]);
-    const month = localToday(deviceTimeZone()).toPlainYearMonth();
+    const [tasks, projects, completions] = await timeout(Promise.all([
+      api.openTasks(),
+      api.projects().catch(() => []),
+      api.completionsSince(todayDate.toZonedDateTime(zone).toInstant().toString()).catch(() => []),
+    ]));
+    const projectMap = new Map(projects.map((p) => [p.id, p.name]));
+    const childCounts = new Map<string, number>();
+    for (const item of tasks) {
+      if (item.parent_task_id) childCounts.set(item.parent_task_id, (childCounts.get(item.parent_task_id) ?? 0) + 1);
+    }
+    const month = todayDate.toPlainYearMonth();
     const end = month.add({ months: CALENDAR_RANGE.ahead });
     const calendar = countByDate(tasks, month.subtract({ months: CALENDAR_RANGE.back }).toPlainDate({ day: 1 }),
       end.toPlainDate({ day: end.daysInMonth }), nextOccurrence);
-    // Merged into the newest snapshot: a tap made during the fetch is kept.
-    return await update((current) => ({ ...current, notice: null, tasks: snapshotTasks(tasks, Date.now()), calendar }));
+
+    let freshHabits: WidgetHabit[] | undefined;
+    if (includeHabits) {
+      const activeHabits = (await timeout(api.habits())).filter((h) => !h.archived_at);
+      const logsList = await timeout(Promise.all(activeHabits.map((h) => api.habitLogs(h.id).catch(() => []))));
+      freshHabits = activeHabits.map((habit, idx) => {
+        const d = localToday(habit.timezone).toString();
+        const logs = logsList[idx];
+        return {
+          id: habit.id, name: habit.name, cadence: habit.cadence, target_count: habit.target_count,
+          timezone: habit.timezone, date: d,
+          todayCount: logs.find((l) => l.log_date === d)?.count ?? 0,
+          progress: periodProgress(habit, logs, d),
+        };
+      });
+    }
+
+    const openById = new Map(tasks.map((task) => [task.id, task]));
+    const seen = new Set<string>();
+    let doneCount = 0;
+    for (const completion of completions) {
+      const open = openById.get(completion.task.id);
+      const repeats = !!completion.task.recurrence_rule;
+      if (repeats ? !open || sameInstant(open.due_at, completion.occurrence_due_at) : !!open) continue;
+      if (!repeats && seen.has(completion.task.id)) continue;
+      seen.add(completion.task.id);
+      doneCount += 1;
+    }
+    const doneToday: WidgetDoneToday = { date: todayDate.toString(), count: doneCount };
+
+    return await update((current) => ({
+      ...current,
+      notice: null,
+      tasks: snapshotTasks(tasks, Date.now(), {
+        projectName: (wt) => {
+          const full = tasks.find((t) => t.id === wt.id);
+          return full?.project_id ? projectMap.get(full.project_id) : undefined;
+        },
+        subtaskLabel: (id) => {
+          const openCount = childCounts.get(id) ?? 0;
+          return openCount > 0 ? `하위 ${openCount}` : undefined;
+        },
+      }),
+      doneToday,
+      calendar,
+      ...(freshHabits ? { habits: freshHabits } : {}),
+    }));
   } catch {
     return snapshot;
   }
@@ -138,7 +228,7 @@ async function checkInHabit(id: string): Promise<void> {
     externalChange();
   } catch {
     // Put the figures back so the widget never shows a check the server does not have.
-    await update((current) => ({ ...current, notice: '오프라인이라 기록하지 못했습니다', habits: current.habits?.map((item) => (item.id === id ? habit : item)) }));
+    await update((current) => ({ ...current, notice: '연결되지 않아 기록하지 못했습니다', habits: current.habits?.map((item) => (item.id === id ? habit : item)) }));
   }
 }
 
@@ -178,14 +268,14 @@ async function startFocus(minutes: number): Promise<void> {
       await start();
     }
   } catch (error) {
-    await update((current) => ({ ...current, notice: error instanceof ApiFailure ? '시작하지 못했습니다. 앱에서 확인해 주세요' : '오프라인이라 시작하지 못했습니다' }));
+    await update((current) => ({ ...current, notice: error instanceof ApiFailure ? '시작하지 못했습니다. 앱에서 확인해 주세요' : '연결되지 않아 시작하지 못했습니다' }));
     return;
   }
   await update((current) => ({
     ...current, notice: null,
     focus: { ...(current.focus ?? { date: '', count: 0, seconds: 0 }), running: { id, startedAt, plannedSeconds: minutes * 60 } },
   }));
-  await scheduleAlert('focus', Date.parse(startedAt) + minutes * 60_000, `집중 ${minutes}분 완료`, `${minutes === 50 ? 10 : 5}분 쉬어 가세요.`);
+  await scheduleAlert('focus', Date.parse(startedAt) + minutes * 60_000, `집중 ${minutes}분 완료`, `${minutes >= 50 ? 10 : 5}분 쉬어 가세요.`);
   externalChange();
 }
 
@@ -198,7 +288,7 @@ async function stopFocus(id: string): Promise<void> {
       ? { status: 'completed', ended_at: new Date(end).toISOString() }
       : { status: 'cancelled', ended_at: new Date().toISOString() });
   } catch {
-    await update((current) => ({ ...current, notice: '오프라인이라 멈추지 못했습니다' }));
+    await update((current) => ({ ...current, notice: '연결되지 않아 중단하지 못했습니다' }));
     return;
   }
   await cancelAlert('focus');
@@ -218,20 +308,27 @@ export const widgetTaskHandler: WidgetTaskHandler = async ({ widgetInfo, widgetA
       const before = await readSnapshot();
       renderWidget(drawWidget(name, { ...before, notice: null, tasks: before.tasks.filter((task) => task.id !== id) }));
       const outcome = await completeOccurrence(id, occurrence);
-      if (outcome.status === 'failed') await update((current) => ({ ...current, notice: '오프라인이라 완료하지 못했습니다' }));
+      if (outcome.status === 'failed') await update((current) => ({ ...current, notice: '연결되지 않아 완료하지 못했습니다' }));
       else {
-        await widgetTaskChanged(id, outcome.task);
+        await widgetTaskChanged(id, outcome.task, { completed: outcome.status === 'done' });
         await cancelOccurrence(id, occurrence);
       }
     } else if (clickAction === ACTIONS.habit) await checkInHabit(String(data.id ?? ''));
-    else if (clickAction === ACTIONS.startFocus) await startFocus(Number(data.minutes) === 50 ? 50 : 25);
-    else if (clickAction === ACTIONS.stopFocus) await stopFocus(String(data.id ?? ''));
+    else if (clickAction === ACTIONS.startFocus) {
+      const rawMinutes = Number(data.minutes);
+      await startFocus(rawMinutes === 15 || rawMinutes === 50 ? rawMinutes : 25);
+    } else if (clickAction === ACTIONS.stopFocus) await stopFocus(String(data.id ?? ''));
     else if (clickAction === ACTIONS.calendarMove) {
       const by = Number(data.by) || 0;
       await update((current) => ({
         ...current,
         calendarOffset: by === 0 ? 0 : Math.max(-CALENDAR_RANGE.back, Math.min(CALENDAR_RANGE.ahead, (current.calendarOffset ?? 0) + by)),
       }));
+    } else if (clickAction === ACTIONS.refresh) {
+      const refreshed = await fetched(await readSnapshot(), true);
+      externalChange();
+      renderWidget(drawWidget(name, refreshed));
+      return;
     }
     renderWidget(drawWidget(name, await readSnapshot()));
     return;
@@ -239,8 +336,8 @@ export const widgetTaskHandler: WidgetTaskHandler = async ({ widgetInfo, widgetA
   let snapshot = await readSnapshot();
   renderWidget(drawWidget(name, snapshot));
   if ((widgetAction === 'WIDGET_UPDATE' || widgetAction === 'WIDGET_ADDED')
-    && (name === WIDGETS.today || name === WIDGETS.upcoming || name === WIDGETS.calendar)) {
-    snapshot = await fetched(snapshot);
+    && (name === WIDGETS.today || name === WIDGETS.upcoming || name === WIDGETS.calendar || name === WIDGETS.habits)) {
+    snapshot = await fetched(snapshot, name === WIDGETS.habits);
     renderWidget(drawWidget(name, snapshot));
   }
 };

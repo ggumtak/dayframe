@@ -154,7 +154,7 @@ function DraggableBlock({
         ]}>
         <Pressable
           accessibilityRole="button" accessibilityLabel={rangeLabel + ' ' + task.title}
-          accessibilityHint={onRescheduleTime ? '길게 눌러 위아래로 끌면 시간이 바뀝니다' : undefined}
+          accessibilityHint={onRescheduleTime ? '길게 눌러 위아래로 옮기면 시간을 바꿀 수 있습니다' : undefined}
           onPress={() => router.push({ pathname: '/task/[id]', params: { id: task.id } })}
           style={[
             styles.blockInner,
@@ -248,12 +248,12 @@ export function Timeline({
     <View style={{ flex: 1 }}>
       {overdueCount > 0 && onPlanOverdue ? (
         <Pressable
-          accessibilityRole="button" accessibilityLabel={`지연된 할 일 ${overdueCount}개 정리하기`}
+          accessibilityRole="button" accessibilityLabel={`기한이 지난 할 일 ${overdueCount}개 정리하기`}
           onPress={onPlanOverdue}
           style={({ pressed }) => [styles.overdueBar, { backgroundColor: colors.surfaceMuted, borderBottomColor: colors.border, opacity: pressed ? 0.7 : 1 }]}>
           <Icon name="alert-circle" size={14} color={colors.danger} />
           <Txt variant="caption" style={{ color: colors.danger, fontWeight: '700', flex: 1 }}>
-            지연된 할 일 {overdueCount}개가 타임라인 밖에 있습니다
+            기한이 지난 할 일 {overdueCount}개가 남아 있습니다
           </Txt>
           <Txt variant="caption" style={{ fontWeight: '700' }}>정리하기 →</Txt>
         </Pressable>
@@ -267,10 +267,10 @@ export function Timeline({
               plannedTotalMinutes > 0 ? `오늘 예정 ${formatDurationMinutes(plannedTotalMinutes)}` : null,
               focusTotalMinutes > 0 ? `집중 ${formatDurationMinutes(focusTotalMinutes)}` : null,
             ].filter(Boolean).join(' · ')
-            : '빈 시간 눌러 추가 · 블록 길게 눌러 이동'}
+            : '빈 시간을 눌러 추가 · 길게 눌러 시간 이동'}
         </Txt>
         {plannedTotalMinutes > 0 || focusTotalMinutes > 0 ? (
-          <Txt variant="caption" tone="faint">블록 길게 눌러 이동</Txt>
+          <Txt variant="caption" tone="faint">길게 눌러 이동</Txt>
         ) : null}
       </View>
 
@@ -368,13 +368,13 @@ export function Timeline({
         {picked ? (
           <View style={{ gap: space.sm }}>
             <Txt tone="muted">{formatTime(picked.start) + ' ~ ' + formatTime(picked.end) + ' · ' + (picked.spent < 1 ? '1분 미만' : picked.spent + '분')}</Txt>
-            <Txt variant="small" tone="faint" style={{ marginBottom: space.md }}>타임라인의 막대는 마친 집중 시간입니다. 잠깐 시험해 본 기록이라면 지워도 됩니다.</Txt>
+            <Txt variant="small" tone="faint" style={{ marginBottom: space.md }}>타임라인에 표시된 완료한 집중 기록입니다. 필요 없는 기록이라면 삭제할 수 있습니다.</Txt>
             <Button
               label="이 기록 삭제" kind="danger" icon="trash-2"
               onPress={() => {
                 deleteFocus.mutate(picked.id);
                 setPicked(null);
-                showToast('집중 기록을 지웠습니다.');
+                showToast('집중 기록을 삭제했습니다.');
               }} />
             <Button label="닫기" kind="secondary" onPress={() => setPicked(null)} />
           </View>
