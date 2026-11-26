@@ -24,17 +24,27 @@ import { elevation, radius, space, type, useTheme } from '@/theme';
 
 import { OverdueBar } from './OverdueBar';
 import { priorityMark } from './priority';
+import {
+  assignRowTracks,
+  BASE_HOUR_HEIGHT,
+  computeHourOffsets,
+  EXTRA_TRACK_HEIGHT,
+  FOCUS_STRIP_HEIGHT,
+  type HourSlice,
+  hourRowHeight,
+  sliceIntervalByHour,
+  snapMinutesFromDrag,
+} from './timelineLayout';
 import { useTaskFlow } from './useTaskFlow';
 
-const HOUR = 76;
-const GUTTER = 66;
+const GUTTER = 58;
 const EARLY_END_HOUR = 6;
 const EARLY_BANNER_HEIGHT = 40;
 const DEFAULT_BLOCK_MINUTES = 30;
-const MIN_VISUAL_MINUTES = 24;
-const SNAP_MINUTES = 15;
-const MAX_SLOT_MINUTES = 23 * 60 + 30;
-const DURATION_PRESETS = [15, 30, 45, 60, 90] as const;
+const SNAP_MINUTES = 10;
+const MAX_SLOT_MINUTES = 23 * 60 + 50;
+const MINUTE_MARKS = [0, 10, 20, 30, 40, 50] as const;
+const DURATION_PRESETS = [10, 15, 30, 45, 60, 90] as const;
 
 const clampSlot = (minutes: number) => Math.max(0, Math.min(MAX_SLOT_MINUTES, minutes));
 const nearestHalfHour = (minutes: number) => clampSlot(Math.round(minutes / 30) * 30);
@@ -48,8 +58,6 @@ interface Placed {
   task: Task;
   start: number;
   duration: number;
-  column: number;
-  columns: number;
   completed?: boolean;
   undoable?: boolean;
   occurrenceDueAt?: string | null;
@@ -62,39 +70,35 @@ interface PlaceEntry {
   occurrenceDueAt?: string | null;
 }
 
-/** Lays out timed tasks using each task's estimated duration (default 30 min); overlapping blocks share the row width. */
+interface TaskSlice extends HourSlice {
+  entry: Placed;
+}
+
+interface FocusBlock {
+  id: string;
+  start: number;
+  minutes: number;
+  end: number;
+  spent: number;
+  label: string;
+}
+
+interface FocusSlice extends HourSlice {
+  block: FocusBlock;
+}
+
+/** Collects timed tasks with their exact start minute and true duration (default 30 min). */
 function place(entries: PlaceEntry[]): Placed[] {
-  const timed = entries
+  return entries
     .map((entry) => {
       const start = dueMinutes(entry.task);
       if (start === null) return null;
       const raw = entry.task.duration_minutes ?? DEFAULT_BLOCK_MINUTES;
-      const duration = Math.max(MIN_VISUAL_MINUTES, Math.min(1440 - start, raw));
+      const duration = Math.max(5, Math.min(1440 - start, raw));
       return { ...entry, start, duration };
     })
-    .filter((item): item is PlaceEntry & { start: number; duration: number } => item !== null)
+    .filter((item): item is Placed => item !== null)
     .sort((a, b) => a.start - b.start || b.duration - a.duration);
-
-  const placed: Placed[] = [];
-  let group: Placed[] = [];
-  let groupEnd = -1;
-  const close = () => {
-    const columns = Math.max(1, ...group.map((item) => item.column + 1));
-    group.forEach((item) => { item.columns = columns; });
-    group = [];
-  };
-  for (const { task, start, duration, completed, undoable, occurrenceDueAt } of timed) {
-    if (start >= groupEnd) close();
-    const taken = new Set(group.filter((item) => item.start + item.duration > start).map((item) => item.column));
-    let column = 0;
-    while (taken.has(column)) column++;
-    const item: Placed = { task, start, duration, column, columns: 1, completed, undoable, occurrenceDueAt };
-    group.push(item);
-    placed.push(item);
-    groupEnd = Math.max(groupEnd, start + duration);
-  }
-  close();
-  return placed;
 }
 
 /** Finds the next open 30-minute slot after `nowMinutes` that fits `duration` without overlapping existing blocks. */
@@ -107,10 +111,28 @@ export function findNextFreeSlot(placed: Pick<Placed, 'start' | 'duration'>[], n
   return Math.min(23 * 60 + 30, rounded);
 }
 
-function DraggableBlock({
-  item, nowMinutes, startHour, timeFormat, onComplete, onUncomplete, onTapTask, onRescheduleTime,
+function HorizontalTaskBar({
+  slice,
+  track,
+  trackHeight,
+  topOffset,
+  laneWidth,
+  rowHeight,
+  nowMinutes,
+  startHour,
+  timeFormat,
+  onComplete,
+  onUncomplete,
+  onTapTask,
+  onRescheduleTime,
+  onDragPreview,
 }: {
-  item: Placed;
+  slice: TaskSlice;
+  track: number;
+  trackHeight: number;
+  topOffset: number;
+  laneWidth: number;
+  rowHeight: number;
   nowMinutes: number;
   startHour: number;
   timeFormat: TimeFormat;
@@ -118,45 +140,45 @@ function DraggableBlock({
   onUncomplete: (task: Task, occurrenceDueAt: string | null) => void;
   onTapTask: (task: Task) => void;
   onRescheduleTime?: (task: Task, minutes: number) => void;
+  onDragPreview: (preview: { title: string; start: number; duration: number } | null) => void;
 }) {
   const { colors } = useTheme();
-  const { task, start, duration, column, columns, completed, undoable, occurrenceDueAt } = item;
+  const { entry, leftPct, widthPct, isFirst, isLast } = slice;
+  const { task, start, duration, completed, undoable, occurrenceDueAt } = entry;
   const mark = priorityMark(task.priority);
-  const blockHeight = Math.max(30, (duration / 60) * HOUR - 2);
-  const tall = blockHeight >= 52;
   const minMinutes = startHour * 60;
 
+  const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
   const dragging = useSharedValue(false);
   const lastSnap = useSharedValue(start);
-  const [previewMinutes, setPreviewMinutes] = useState<number | null>(null);
 
   const pan = Gesture.Pan()
-    .enabled(!completed && !!onRescheduleTime)
+    .enabled(!completed && isFirst && !!onRescheduleTime)
     .activateAfterLongPress(220)
     .runOnJS(true)
     .onStart(() => {
       haptic.medium();
       dragging.set(true);
       lastSnap.set(start);
-      setPreviewMinutes(start);
+      onDragPreview({ title: task.title, start, duration });
     })
     .onUpdate((event) => {
-      const deltaMin = Math.round(((event.translationY / HOUR) * 60) / SNAP_MINUTES) * SNAP_MINUTES;
-      const clamped = Math.max(minMinutes, Math.min(24 * 60 - SNAP_MINUTES, start + deltaMin));
-      const snappedPx = ((clamped - start) / 60) * HOUR;
-      dragY.set(snappedPx);
-      if (clamped !== lastSnap.get()) {
-        lastSnap.set(clamped);
+      dragX.set(event.translationX);
+      dragY.set(event.translationY);
+      const next = snapMinutesFromDrag(start, event.translationX, event.translationY, laneWidth, rowHeight, SNAP_MINUTES, minMinutes);
+      if (next !== lastSnap.get()) {
+        lastSnap.set(next);
         haptic.tap();
-        setPreviewMinutes(clamped);
+        onDragPreview({ title: task.title, start: next, duration });
       }
     })
     .onEnd(() => {
       const target = lastSnap.get();
       dragging.set(false);
+      dragX.set(withSpring(0, { damping: 20, stiffness: 280 }));
       dragY.set(withSpring(0, { damping: 20, stiffness: 280 }));
-      setPreviewMinutes(null);
+      onDragPreview(null);
       if (target !== start) {
         onRescheduleTime?.(task, target);
       }
@@ -164,53 +186,48 @@ function DraggableBlock({
     .onFinalize((_event, success) => {
       if (!success) {
         dragging.set(false);
+        dragX.set(withSpring(0, { damping: 20, stiffness: 280 }));
         dragY.set(withSpring(0, { damping: 20, stiffness: 280 }));
-        setPreviewMinutes(null);
+        onDragPreview(null);
       }
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: dragY.value }, { scale: dragging.value ? 1.02 : 1 }],
-    zIndex: dragging.value ? 20 : completed ? 0 : 1,
-    opacity: dragging.value ? 0.95 : completed ? 0.55 : 1,
+    transform: [{ translateX: dragX.value }, { translateY: dragY.value }, { scale: dragging.value ? 1.03 : 1 }],
+    zIndex: dragging.value ? 30 : completed ? 1 : 4,
+    opacity: dragging.value ? 0.94 : completed ? 0.55 : 1,
   }));
 
-  const shownStart = previewMinutes ?? start;
-  const end = (shownStart + (task.duration_minutes ?? DEFAULT_BLOCK_MINUTES)) % 1440;
-  const rangeLabel = task.duration_minutes
-    ? `${formatTime(shownStart, timeFormat)} ~ ${formatTime(end, timeFormat)} · ${formatDurationMinutes(task.duration_minutes)}`
-    : formatTime(shownStart, timeFormat);
-  const shortMeta = previewMinutes !== null
-    ? formatTime(previewMinutes, timeFormat)
-    : task.duration_minutes
-      ? `${formatTime(start, timeFormat)} · ${formatDurationMinutes(task.duration_minutes)}`
-      : formatTime(start, timeFormat);
+  const end = (start + duration) % 1440;
+  const isPastDue = !completed && start + duration <= nowMinutes;
+  const rangeLabel = `${formatTime(start, timeFormat)} ~ ${formatTime(end, timeFormat)} · ${formatDurationMinutes(duration)}`;
+  const showCheckbox = isFirst && widthPct >= 33;
+  const showTime = isFirst && widthPct >= 62;
+  const compactBar = widthPct < 28;
 
-  const metaTone = completed
-    ? 'faint'
-    : previewMinutes !== null
-      ? 'accent'
-      : start < nowMinutes
-        ? 'danger'
-        : 'muted';
+  const edgeColor = completed
+    ? colors.border
+    : isPastDue
+      ? colors.danger
+      : colors.accent;
 
   return (
     <GestureDetector gesture={pan}>
       <Animated.View
         style={[
-          styles.block,
+          styles.barWrap,
           {
-            top: ((start - startHour * 60) / 60) * HOUR + 1,
-            height: blockHeight,
-            left: `${(column / columns) * 100}%`,
-            width: `${100 / columns}%`,
+            top: topOffset + track * EXTRA_TRACK_HEIGHT,
+            height: trackHeight,
+            left: `${leftPct}%`,
+            width: `${widthPct}%`,
           },
           animatedStyle,
         ]}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={(completed ? '완료됨 ' : '') + rangeLabel + ' ' + task.title}
-          accessibilityHint={!completed && onRescheduleTime ? '누르면 빠른 조작, 길게 눌러 위아래로 옮기면 시간을 바꿀 수 있습니다' : undefined}
+          accessibilityHint={!completed && onRescheduleTime ? '누르면 빠른 조작, 길게 눌러 옮기면 시간을 바꿀 수 있습니다' : undefined}
           onPress={() => {
             haptic.tap();
             if (completed) {
@@ -219,67 +236,65 @@ function DraggableBlock({
               onTapTask(task);
             }
           }}
-          style={[
-            styles.blockInner,
+          style={({ pressed }) => [
+            styles.barInner,
+            compactBar && styles.barInnerCompact,
             {
-              backgroundColor: completed ? colors.surfaceMuted : colors.surface,
-              borderColor: previewMinutes !== null ? colors.accent : colors.border,
+              backgroundColor: completed ? colors.surface : colors.surfaceMuted,
+              borderColor: colors.border,
+              borderLeftWidth: isFirst ? 3 : StyleSheet.hairlineWidth,
+              borderLeftColor: isFirst ? edgeColor : colors.border,
+              borderTopLeftRadius: isFirst ? radius.sm : 2,
+              borderBottomLeftRadius: isFirst ? radius.sm : 2,
+              borderTopRightRadius: isLast ? radius.sm : 2,
+              borderBottomRightRadius: isLast ? radius.sm : 2,
+              opacity: pressed ? 0.8 : 1,
             },
-            tall && styles.blockInnerTall,
-            previewMinutes !== null && elevation(colors, 2),
           ]}>
-          <Checkbox
-            checked={!!completed}
-            done={!!completed}
-            size={18}
-            onPress={() => {
-              if (completed) {
-                if (undoable) onUncomplete(task, occurrenceDueAt ?? null);
-              } else {
-                onComplete(task);
-              }
-            }}
-            label={task.title + (completed ? ' 완료 취소' : ' 완료')} />
-          {tall ? (
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text
-                numberOfLines={2}
-                style={[
-                  type.smallStrong as TextStyle,
-                  { color: completed ? colors.textFaint : colors.text },
-                  completed && styles.struck,
-                ]}>
-                {!completed && mark ? <Text style={styles.mark}>{mark + ' '}</Text> : null}{task.title}
-              </Text>
-              <Txt variant="caption" tone={metaTone} tabular numberOfLines={1}>
-                {rangeLabel}
-              </Txt>
-            </View>
-          ) : (
-            <>
-              <Text
-                numberOfLines={1}
-                style={[
-                  type.small as TextStyle,
-                  { color: completed ? colors.textFaint : colors.text, flex: 1 },
-                  completed && styles.struck,
-                ]}>
-                {!completed && mark ? <Text style={styles.mark}>{mark + ' '}</Text> : null}{task.title}
-              </Text>
-              {columns === 1 ? (
-                <Txt variant="caption" tone={metaTone} tabular numberOfLines={1}>
-                  {shortMeta}
-                </Txt>
-              ) : null}
-            </>
-          )}
+          {showCheckbox ? (
+            <Checkbox
+              checked={!!completed}
+              done={!!completed}
+              size={16}
+              onPress={() => {
+                if (completed) {
+                  if (undoable) onUncomplete(task, occurrenceDueAt ?? null);
+                } else {
+                  onComplete(task);
+                }
+              }}
+              label={task.title + (completed ? ' 완료 취소' : ' 완료')} />
+          ) : null}
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[
+              (compactBar ? type.caption : type.small) as TextStyle,
+              {
+                color: completed ? colors.textFaint : isFirst ? colors.text : colors.textMuted,
+                fontWeight: isFirst && !completed ? '600' : '400',
+                flex: 1,
+              },
+              completed && styles.struck,
+            ]}>
+            {isFirst && !completed && mark ? <Text style={styles.mark}>{mark + ' '}</Text> : null}
+            {isFirst ? task.title : `${task.title} (이어짐)`}
+          </Text>
+          {showTime ? (
+            <Txt variant="caption" tone={isPastDue ? 'danger' : 'faint'} tabular numberOfLines={1}>
+              {`${formatTime(start, timeFormat)}`}
+            </Txt>
+          ) : null}
         </Pressable>
       </Animated.View>
     </GestureDetector>
   );
 }
 
-/** A day laid out by the clock: draggable duration-scaled blocks, 30-min tap slots, collapsible all-day tray, and focus sessions. */
+/**
+ * A day laid out as a horizontal 60-minute-per-row time grid (00–60 min across each hour row):
+ * every task and focus bar spans strictly its exact minute interval (e.g. 12:10–12:40 -> 16.7%–66.7% of hour 12).
+ */
 export function Timeline({
   tasks, sessions, timeZone, overdueCount = 0, completedToday = [], onComplete, onAddAt, onRescheduleTime,
   onPlanOverdue, onMoveOverdueToday, keyboardActive = false,
@@ -315,12 +330,14 @@ export function Timeline({
 
   const [allDayExpanded, setAllDayExpanded] = useState(false);
   const [earlyExpanded, setEarlyExpanded] = useState(false);
-  const [pickedFocus, setPickedFocus] = useState<{ id: string; start: number; end: number; spent: number; label: string } | null>(null);
+  const [pickedFocus, setPickedFocus] = useState<FocusBlock | null>(null);
   const [pickedTaskId, setPickedTaskId] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const selectedSlotRef = useRef<number | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ title: string; start: number; duration: number } | null>(null);
   const [scrollY, setScrollY] = useState(0);
   const [viewportH, setViewportH] = useState(0);
+  const [laneWidth, setLaneWidth] = useState(320);
 
   const pickedTask = useMemo(
     () => (pickedTaskId ? tasks.find((task) => task.id === pickedTaskId) ?? null : null),
@@ -365,11 +382,12 @@ export function Timeline({
   const shownAllDay = allDayExpanded ? allDay : allDay.slice(0, 2);
   const hiddenAllDay = allDay.length - shownAllDay.length;
 
-  const focusBlocks = useMemo(() => sessions.flatMap((session) => {
+  const focusBlocks = useMemo<FocusBlock[]>(() => sessions.flatMap((session) => {
     if (session.status !== 'completed' || !session.ended_at) return [];
     const start = Temporal.Instant.from(session.started_at).toZonedDateTimeISO(timeZone);
     if (Temporal.PlainDate.compare(start.toPlainDate(), logicalDay) !== 0) return [];
-    const minutes = Math.max(10, Temporal.Instant.from(session.started_at).until(Temporal.Instant.from(session.ended_at)).total('minutes'));
+    const totalMinutes = Temporal.Instant.from(session.started_at).until(Temporal.Instant.from(session.ended_at)).total('minutes');
+    const minutes = Math.max(5, totalMinutes);
     const end = Temporal.Instant.from(session.ended_at).toZonedDateTimeISO(timeZone);
     const label = session.task_id
       ? (titleByTaskId.get(session.task_id) ?? '집중')
@@ -381,10 +399,47 @@ export function Timeline({
       start: start.hour * 60 + start.minute,
       minutes,
       end: end.hour * 60 + end.minute,
-      spent: Math.round(Temporal.Instant.from(session.started_at).until(Temporal.Instant.from(session.ended_at)).total('minutes')),
+      spent: Math.round(totalMinutes),
       label,
     }];
   }), [sessions, timeZone, logicalDay, titleByTaskId, nameByHabitId]);
+
+  const taskSlicesByHour = useMemo(() => {
+    const byHour = new Map<number, TaskSlice[]>();
+    for (const entry of placed) {
+      for (const slice of sliceIntervalByHour(entry.start, entry.duration)) {
+        const list = byHour.get(slice.hour) ?? [];
+        list.push({ ...slice, entry });
+        byHour.set(slice.hour, list);
+      }
+    }
+    const tracked = new Map<number, ReturnType<typeof assignRowTracks<TaskSlice>>>();
+    byHour.forEach((list, hour) => {
+      tracked.set(hour, assignRowTracks(list));
+    });
+    return tracked;
+  }, [placed]);
+
+  const focusSlicesByHour = useMemo(() => {
+    const byHour = new Map<number, (FocusSlice & { showLabel: boolean })[]>();
+    for (const block of focusBlocks) {
+      const slices = sliceIntervalByHour(block.start, block.minutes);
+      let labelIndex = -1;
+      let maxWidth = 0;
+      slices.forEach((slice, index) => {
+        if (slice.widthPct > maxWidth) {
+          maxWidth = slice.widthPct;
+          labelIndex = index;
+        }
+      });
+      slices.forEach((slice, index) => {
+        const list = byHour.get(slice.hour) ?? [];
+        list.push({ ...slice, block, showLabel: index === labelIndex && slice.widthPct >= 25 });
+        byHour.set(slice.hour, list);
+      });
+    }
+    return byHour;
+  }, [focusBlocks]);
 
   const activeSlot = keyboardActive && keyboardMode ? selectedSlot : null;
   const hasEarlyContent = useMemo(
@@ -396,7 +451,27 @@ export function Timeline({
   );
   const startHour = !hasEarlyContent && !earlyExpanded ? EARLY_END_HOUR : 0;
   const showEarlyToggle = !hasEarlyContent;
-  const gridOffsetTop = space.md + (showEarlyToggle ? EARLY_BANNER_HEIGHT : 0);
+  const gridOffsetTop = showEarlyToggle ? EARLY_BANNER_HEIGHT : 0;
+
+  const visibleHours = useMemo(
+    () => Array.from({ length: 24 - startHour }, (_, index) => startHour + index),
+    [startHour],
+  );
+
+  const heightsByHour = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const hour of visibleHours) {
+      const taskTracks = taskSlicesByHour.get(hour)?.[0]?.trackCount ?? 0;
+      const hasFocus = (focusSlicesByHour.get(hour)?.length ?? 0) > 0;
+      map.set(hour, hourRowHeight(taskTracks, hasFocus));
+    }
+    return map;
+  }, [visibleHours, taskSlicesByHour, focusSlicesByHour]);
+
+  const { offsets: hourOffsets } = useMemo(
+    () => computeHourOffsets(visibleHours, heightsByHour),
+    [visibleHours, heightsByHour],
+  );
 
   const updateSlot = useCallback((next: number | null) => {
     selectedSlotRef.current = next;
@@ -404,17 +479,21 @@ export function Timeline({
   }, []);
 
   const yForMinutes = useCallback(
-    (minutes: number) => gridOffsetTop + ((minutes - startHour * 60) / 60) * HOUR,
-    [gridOffsetTop, startHour],
+    (minutes: number) => {
+      const hour = Math.max(startHour, Math.min(23, Math.floor(minutes / 60)));
+      const offset = hourOffsets.get(hour) ?? (hour - startHour) * BASE_HOUR_HEIGHT;
+      return gridOffsetTop + offset;
+    },
+    [gridOffsetTop, hourOffsets, startHour],
   );
 
   const scrollToMinutes = useCallback((minutes: number, animated = true) => {
     if (minutes < startHour * 60) {
       setEarlyExpanded(true);
-      scroll.current?.scrollTo({ y: Math.max(0, (minutes / 60 - 1.5) * HOUR), animated });
+      scroll.current?.scrollTo({ y: Math.max(0, Math.floor(minutes / 60) * BASE_HOUR_HEIGHT - BASE_HOUR_HEIGHT), animated });
       return;
     }
-    const y = Math.max(0, yForMinutes(minutes) - 1.5 * HOUR);
+    const y = Math.max(0, yForMinutes(minutes) - BASE_HOUR_HEIGHT * 1.5);
     scroll.current?.scrollTo({ y, animated });
   }, [startHour, yForMinutes]);
 
@@ -470,9 +549,9 @@ export function Timeline({
     priority: KEY_PRIORITY.screen,
   });
 
-  const nowClock = formatTime(nowMinutes, timeFormat);
   const nowY = yForMinutes(nowMinutes);
-  const nowOffscreen = viewportH > 0 && (nowY < scrollY + 20 || nowY > scrollY + viewportH - 36);
+  const nowRowH = heightsByHour.get(now.hour) ?? BASE_HOUR_HEIGHT;
+  const nowOffscreen = viewportH > 0 && (nowY + nowRowH < scrollY + 16 || nowY > scrollY + viewportH - 32);
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     setScrollY(event.nativeEvent.contentOffset.y);
@@ -494,7 +573,7 @@ export function Timeline({
 
   const setPickedDuration = (minutes: number) => {
     if (!pickedTask) return;
-    const clamped = Math.max(15, Math.min(480, minutes));
+    const clamped = Math.max(5, Math.min(480, minutes));
     haptic.tap();
     flow.update(pickedTask.id, { duration_minutes: clamped });
   };
@@ -538,10 +617,6 @@ export function Timeline({
   const pickedStart = pickedTask ? dueMinutes(pickedTask) : null;
   const pickedDuration = pickedTask?.duration_minutes ?? DEFAULT_BLOCK_MINUTES;
   const pickedEnd = pickedStart !== null ? (pickedStart + pickedDuration) % 1440 : null;
-  const visibleHours = useMemo(
-    () => Array.from({ length: 24 - startHour }, (_, index) => startHour + index),
-    [startHour],
-  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -554,7 +629,7 @@ export function Timeline({
 
       {allDay.length ? (
         <View style={[styles.allDay, { borderBottomColor: colors.border }]}>
-          <Txt variant="caption" tone="faint" tabular style={{ width: GUTTER - space.lg, paddingTop: 8 }}>종일 {allDay.length}</Txt>
+          <Txt variant="caption" tone="faint" tabular style={{ width: GUTTER - space.sm, paddingTop: 8 }}>종일 {allDay.length}</Txt>
           <View style={{ flex: 1, gap: 6 }}>
             {shownAllDay.map((task) => (
               <Pressable
@@ -596,6 +671,25 @@ export function Timeline({
         </View>
       ) : null}
 
+      {/* Box-less 60-minute horizontal ruler header (00, 10, 20, 30, 40, 50) */}
+      <View style={[styles.rulerRow, { borderBottomColor: colors.border }]}>
+        <View style={styles.gutterCol}>
+          <Txt variant="caption" tone="faint">시간</Txt>
+        </View>
+        <View
+          style={styles.rulerTrack}
+          onLayout={(event) => {
+            const w = event.nativeEvent.layout.width;
+            if (w > 0) setLaneWidth(w);
+          }}>
+          {MINUTE_MARKS.map((mark) => (
+            <View key={mark} style={styles.rulerCell}>
+              <Txt variant="caption" tone="faint" tabular>{String(mark).padStart(2, '0')}</Txt>
+            </View>
+          ))}
+        </View>
+      </View>
+
       <View style={{ flex: 1, position: 'relative' }}>
         <ScrollView
           ref={scroll}
@@ -629,98 +723,155 @@ export function Timeline({
             </Pressable>
           ) : null}
 
-          <View style={{ height: HOUR * visibleHours.length, marginTop: space.md }}>
-            {visibleHours.map((hour) => (
-              <View key={hour} style={[styles.hour, { top: (hour - startHour) * HOUR, borderTopColor: colors.border }]}>
-                <Txt variant="caption" tone="faint" tabular style={styles.hourLabel} numberOfLines={1}>
-                  {hourLabel(hour, timeFormat)}
-                </Txt>
-                <Pressable
-                  accessibilityRole="button" accessibilityLabel={formatTime(hour * 60, timeFormat) + '에 할 일 추가'}
-                  onPress={() => onAddAt(hour * 60)}
-                  style={[
-                    styles.halfHour,
-                    activeSlot === hour * 60 && [
-                      styles.halfHourSelected,
-                      { backgroundColor: colors.accentSoft, borderLeftColor: colors.accent },
-                    ],
-                  ]} />
-                <Pressable
-                  accessibilityRole="button" accessibilityLabel={formatTime(hour * 60 + 30, timeFormat) + '에 할 일 추가'}
-                  onPress={() => onAddAt(hour * 60 + 30)}
-                  style={[
-                    styles.halfHour,
-                    styles.halfHourBottom,
-                    { borderTopColor: colors.border },
-                    activeSlot === hour * 60 + 30 && [
-                      styles.halfHourSelected,
-                      { backgroundColor: colors.accentSoft, borderLeftColor: colors.accent },
-                    ],
-                  ]} />
-              </View>
-            ))}
+          {visibleHours.map((hour) => {
+            const rowHeight = heightsByHour.get(hour) ?? BASE_HOUR_HEIGHT;
+            const trackedTasks = taskSlicesByHour.get(hour) ?? [];
+            const rowFocus = focusSlicesByHour.get(hour) ?? [];
+            const isNowHour = hour === now.hour;
+            const hasTasks = trackedTasks.length > 0;
+            const taskBarHeight = 32;
+            const taskTopOffset = rowFocus.length > 0 ? 6 : Math.max(6, (BASE_HOUR_HEIGHT - taskBarHeight) / 2);
 
-            {focusBlocks.map((block) => {
-              const blockHeight = Math.max(16, (block.minutes / 60) * HOUR);
-              return (
-                <Pressable
-                  key={block.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`집중 기록 ${block.label} ${formatTime(block.start, timeFormat)}, ${block.spent}분`}
-                  onPress={() => {
-                    haptic.tap();
-                    setPickedFocus(block);
-                  }}
-                  style={[
-                    styles.focus,
-                    {
-                      top: ((block.start - startHour * 60) / 60) * HOUR,
-                      height: blockHeight,
-                      backgroundColor: colors.surfaceMuted,
-                      borderLeftColor: colors.textFaint,
-                    },
-                  ]}>
-                  {blockHeight >= 18 ? (
-                    <View style={styles.focusRow}>
-                      <Icon name="clock" size={11} color={colors.textFaint} />
-                      <Txt variant="caption" tone="muted" numberOfLines={1} style={{ flex: 1 }}>
-                        {block.label}
-                      </Txt>
-                      {block.spent >= 1 ? (
-                        <Txt variant="caption" tone="faint" tabular>{block.spent}분</Txt>
-                      ) : null}
+            return (
+              <View
+                key={hour}
+                style={[styles.hourRow, { height: rowHeight, borderBottomColor: colors.border }]}>
+                <View style={styles.gutterCol}>
+                  {isNowHour ? (
+                    <View style={[styles.nowHourPill, { backgroundColor: colors.text }]}>
+                      <Text numberOfLines={1} style={[styles.nowHourText, { color: colors.background }]}>
+                        {hourLabel(hour, timeFormat)}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Txt variant="caption" tone="faint" tabular numberOfLines={1}>
+                      {hourLabel(hour, timeFormat)}
+                    </Txt>
+                  )}
+                </View>
+
+                <View style={styles.hourGrid}>
+                  {/* Six 10-minute background grid cells (00, 10, 20, 30, 40, 50) */}
+                  <View style={styles.slotRow}>
+                    {MINUTE_MARKS.map((mark, index) => {
+                      const slotMinutes = hour * 60 + mark;
+                      const slotSelected = activeSlot !== null && activeSlot >= slotMinutes && activeSlot < slotMinutes + 10;
+                      const isHalfHour = mark === 30;
+                      return (
+                        <Pressable
+                          key={mark}
+                          accessibilityRole="button"
+                          accessibilityLabel={formatTime(slotMinutes, timeFormat) + '에 할 일 추가'}
+                          onPress={() => onAddAt(slotMinutes)}
+                          style={({ pressed }) => [
+                            styles.slotCell,
+                            index > 0 && {
+                              borderLeftWidth: StyleSheet.hairlineWidth,
+                              borderLeftColor: colors.border,
+                              opacity: isHalfHour ? 0.85 : 0.45,
+                            },
+                            pressed && { backgroundColor: colors.surfaceMuted, opacity: 1 },
+                            slotSelected && { backgroundColor: colors.accentSoft, opacity: 1 },
+                          ]} />
+                      );
+                    })}
+                  </View>
+
+                  {/* Focus sessions placed strictly on their exact minute span */}
+                  {rowFocus.map((slice) => {
+                    const { block, leftPct, widthPct, isFirst, isLast, showLabel } = slice;
+                    const focusBottom = hasTasks ? 4 : Math.max(8, (rowHeight - FOCUS_STRIP_HEIGHT) / 2);
+                    return (
+                      <Pressable
+                        key={`${block.id}:${hour}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`집중 기록 ${block.label} ${formatTime(block.start, timeFormat)}, ${block.spent}분`}
+                        onPress={() => {
+                          haptic.tap();
+                          setPickedFocus(block);
+                        }}
+                        style={({ pressed }) => [
+                          styles.focusBar,
+                          {
+                            left: `${leftPct}%`,
+                            width: `${widthPct}%`,
+                            bottom: focusBottom,
+                            height: hasTasks ? FOCUS_STRIP_HEIGHT : 26,
+                            backgroundColor: colors.accentRamp[0],
+                            borderLeftWidth: isFirst ? 2 : 0,
+                            borderLeftColor: colors.accent,
+                            borderTopLeftRadius: isFirst ? 5 : 1,
+                            borderBottomLeftRadius: isFirst ? 5 : 1,
+                            borderTopRightRadius: isLast ? 5 : 1,
+                            borderBottomRightRadius: isLast ? 5 : 1,
+                            opacity: pressed ? 0.72 : 1,
+                          },
+                        ]}>
+                        {showLabel ? (
+                          <View style={styles.focusRow}>
+                            <Icon name="clock" size={10} color={colors.accentText} />
+                            <Txt variant="caption" tone="accent" numberOfLines={1} style={{ flex: 1 }}>
+                              {block.label}
+                            </Txt>
+                            {widthPct >= 45 && block.spent >= 1 ? (
+                              <Txt variant="caption" tone="accent" tabular>{block.spent}분</Txt>
+                            ) : null}
+                          </View>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+
+                  {/* Scheduled tasks placed strictly on their exact minute span */}
+                  {trackedTasks.map(({ item: slice, track }) => (
+                    <HorizontalTaskBar
+                      key={`${slice.entry.completed ? 'done:' : ''}${slice.entry.task.id}:${hour}`}
+                      slice={slice}
+                      track={track}
+                      trackHeight={taskBarHeight}
+                      topOffset={taskTopOffset}
+                      laneWidth={laneWidth}
+                      rowHeight={rowHeight}
+                      nowMinutes={nowMinutes}
+                      startHour={startHour}
+                      timeFormat={timeFormat}
+                      onComplete={onComplete}
+                      onUncomplete={flow.uncomplete}
+                      onTapTask={(task) => setPickedTaskId(task.id)}
+                      onRescheduleTime={onRescheduleTime}
+                      onDragPreview={setDragPreview} />
+                  ))}
+
+                  {/* Vertical current-time indicator at exact minute position inside current hour */}
+                  {isNowHour ? (
+                    <View
+                      pointerEvents="none"
+                      style={[styles.nowLineWrap, { left: `${(now.minute / 60) * 100}%` }]}>
+                      <View style={[styles.nowDot, { backgroundColor: colors.text }]} />
+                      <View style={[styles.nowLine, { backgroundColor: colors.text }]} />
                     </View>
                   ) : null}
-                </Pressable>
-              );
-            })}
-
-            <View pointerEvents="box-none" style={styles.lane}>
-              {placed.map((item) => (
-                <DraggableBlock
-                  key={(item.completed ? 'done:' : '') + item.task.id}
-                  item={item}
-                  nowMinutes={nowMinutes}
-                  startHour={startHour}
-                  timeFormat={timeFormat}
-                  onComplete={onComplete}
-                  onUncomplete={flow.uncomplete}
-                  onTapTask={(task) => setPickedTaskId(task.id)}
-                  onRescheduleTime={onRescheduleTime} />
-              ))}
-            </View>
-
-            <View pointerEvents="none" style={[styles.now, { top: ((nowMinutes - startHour * 60) / 60) * HOUR - 9 }]}>
-              {/* Now is a neutral ink line: red stays for what is overdue. */}
-              <View style={[styles.nowPill, { backgroundColor: colors.text }]}>
-                <Text numberOfLines={1} style={[styles.nowPillText, { color: colors.background }]}>{nowClock}</Text>
+                </View>
               </View>
-              <View style={{ flex: 1, height: 1.5, backgroundColor: colors.text }} />
-            </View>
-          </View>
+            );
+          })}
         </ScrollView>
 
-        {nowOffscreen ? (
+        {dragPreview ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.dragBanner,
+              { backgroundColor: colors.text },
+              elevation(colors, 2),
+            ]}>
+            <Text numberOfLines={1} style={[styles.dragBannerText, { color: colors.background }]}>
+              {`${formatTime(dragPreview.start, timeFormat)} ~ ${formatTime((dragPreview.start + dragPreview.duration) % 1440, timeFormat)} · ${dragPreview.title}`}
+            </Text>
+          </View>
+        ) : null}
+
+        {nowOffscreen && !dragPreview ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="현재 시간으로 이동"
@@ -769,8 +920,10 @@ export function Timeline({
             <View style={{ gap: 6 }}>
               <Txt variant="caption" tone="muted">시작 시간 조절</Txt>
               <View style={{ flexDirection: 'row', gap: 6 }}>
-                <Chip icon="minus" label="15분 앞당기기" onPress={() => shiftPickedStart(-15)} style={{ flex: 1, justifyContent: 'center' }} />
-                <Chip icon="plus" label="15분 미루기" onPress={() => shiftPickedStart(15)} style={{ flex: 1, justifyContent: 'center' }} />
+                <Chip label="-30분" onPress={() => shiftPickedStart(-30)} style={{ flex: 1, justifyContent: 'center' }} />
+                <Chip label="-10분" onPress={() => shiftPickedStart(-10)} style={{ flex: 1, justifyContent: 'center' }} />
+                <Chip label="+10분" onPress={() => shiftPickedStart(10)} style={{ flex: 1, justifyContent: 'center' }} />
+                <Chip label="+30분" onPress={() => shiftPickedStart(30)} style={{ flex: 1, justifyContent: 'center' }} />
               </View>
             </View>
 
@@ -815,35 +968,50 @@ export function Timeline({
 const styles = StyleSheet.create({
   allDay: { flexDirection: 'row', paddingHorizontal: space.lg, paddingVertical: space.sm, borderBottomWidth: StyleSheet.hairlineWidth },
   allDayItem: { flexDirection: 'row', alignItems: 'center', gap: space.sm, borderRadius: radius.sm, paddingLeft: space.sm, paddingRight: 4, minHeight: 34 },
+  rulerRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingLeft: space.sm, paddingRight: space.lg, height: 26,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  gutterCol: { width: GUTTER, paddingRight: space.sm, alignItems: 'flex-end', justifyContent: 'center' },
+  rulerTrack: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  rulerCell: { flex: 1, paddingLeft: 2 },
   earlyToggle: {
     height: EARLY_BANNER_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  // Every layer stops at the same right margin as the rest of the app.
-  hour: { position: 'absolute', left: GUTTER, right: space.lg, height: HOUR, borderTopWidth: StyleSheet.hairlineWidth },
-  halfHour: { flex: 1 },
-  halfHourBottom: { borderTopWidth: StyleSheet.hairlineWidth, opacity: 0.45 },
-  halfHourSelected: { borderLeftWidth: 3, opacity: 1 },
-  hourLabel: { position: 'absolute', left: -GUTTER + space.sm, top: -7, width: GUTTER - space.md },
-  lane: { position: 'absolute', top: 0, bottom: 0, left: GUTTER + 4, right: space.lg },
-  block: { position: 'absolute', paddingRight: 4 },
-  blockInner: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.sm, borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: space.sm,
+  hourRow: {
+    flexDirection: 'row', paddingLeft: space.sm, paddingRight: space.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  blockInnerTall: { alignItems: 'flex-start', paddingVertical: 6 },
+  hourGrid: { flex: 1, position: 'relative' },
+  slotRow: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, flexDirection: 'row' },
+  slotCell: { flex: 1, height: '100%' },
+  barWrap: { position: 'absolute', paddingHorizontal: 1 },
+  barInner: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 7, overflow: 'hidden',
+  },
+  barInnerCompact: { paddingHorizontal: 4, gap: 3 },
   struck: { textDecorationLine: 'line-through' },
-  focus: {
-    position: 'absolute', left: GUTTER + 4, right: space.lg, borderRadius: radius.sm, borderLeftWidth: 3, opacity: 0.85,
-    paddingHorizontal: space.sm, justifyContent: 'center',
+  focusBar: {
+    position: 'absolute', justifyContent: 'center', paddingHorizontal: 5, overflow: 'hidden', zIndex: 2,
   },
-  focusRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  now: { position: 'absolute', left: space.xs, right: space.lg, flexDirection: 'row', alignItems: 'center' },
-  nowPill: {
-    width: GUTTER - space.xs - 2, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 3, marginRight: 2,
+  focusRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  nowHourPill: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
   },
-  nowPillText: { fontSize: 10, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  nowHourText: { fontSize: 10, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  nowLineWrap: {
+    position: 'absolute', top: 0, bottom: 0, width: 2, marginLeft: -1, alignItems: 'center', zIndex: 10,
+  },
+  nowDot: { width: 6, height: 6, borderRadius: 3, marginTop: -2 },
+  nowLine: { flex: 1, width: 1.5 },
+  dragBanner: {
+    position: 'absolute', top: space.sm, alignSelf: 'center', maxWidth: '88%',
+    borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: 6,
+  },
+  dragBannerText: { fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
   jumpNowPill: {
     position: 'absolute', top: space.sm, right: space.lg,
     flexDirection: 'row', alignItems: 'center', gap: 5,
