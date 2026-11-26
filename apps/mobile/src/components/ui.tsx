@@ -134,8 +134,10 @@ export function Button({ label, onPress, kind = 'primary', icon, loading, disabl
   );
 }
 
-export function Chip({ label, icon, selected, tone, color, onPress, style }: {
+export function Chip({ label, icon, selected, tone, color, onPress, style, accessibilityLabel }: {
   label: string; icon?: IconName; selected?: boolean;
+  /** Screen-reader label when the visible word alone is too short ("이번 주" → "이번 주 할 일만 보기"). */
+  accessibilityLabel?: string;
   /** `set`: the chip shows a value (a date, a tag) in full-strength text; `danger`: that value is overdue. */
   tone?: 'set' | 'danger';
   color?: string; onPress?: () => void; style?: StyleProp<ViewStyle>;
@@ -156,7 +158,7 @@ export function Chip({ label, icon, selected, tone, color, onPress, style }: {
   if (!onPress) return <View style={base}>{content}</View>;
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: !!selected }}
+      accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} accessibilityState={{ selected: !!selected }}
       hitSlop={CHIP_HIT_SLOP}
       onPress={() => {
         haptic.tap();

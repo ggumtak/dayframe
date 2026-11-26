@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Pressable, RefreshControl, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
-import { Icon, type IconName, Segmented, Txt } from '@/components/ui';
+import { QuadrantIcon } from '@/components/QuadrantIcon';
+import { Chip, Icon, Txt } from '@/components/ui';
 import { type HardwareKeyEvent, matchesCombo, useListCursor, useTaskShortcuts } from '@/features/keyboard';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { usePersonalPrefs } from '@/features/settings/prefsStore';
@@ -13,7 +14,7 @@ import { haptic } from '@/lib/haptics';
 import { usePersistentState } from '@/lib/persist';
 import type { Task } from '@/lib/shared';
 import { bySmartRank, classifyEisenhower, type EisenhowerQuadrant, type SubtaskProgress } from '@/lib/smart';
-import { radius, space, useTheme } from '@/theme';
+import { space, useTheme } from '@/theme';
 
 type MatrixScope = 'near' | 'all';
 const isMatrixScope = (value: string): value is MatrixScope => value === 'near' || value === 'all';
@@ -26,18 +27,19 @@ const taskId = (task: Task) => task.id;
 
 interface QuadrantMeta {
   key: EisenhowerQuadrant;
+  /** One word on screen (DESIGN.md rule 15); the icon's filled cell shows where the quadrant sits. */
   title: string;
-  subtitle: string;
-  icon: IconName;
+  /** What screen readers hear: the word plus what puts a task there. */
+  a11y: string;
   quickAddText: string;
   dueToday?: boolean;
 }
 
 const QUADRANTS: QuadrantMeta[] = [
-  { key: 'q1', title: '긴급 · 중요', subtitle: '지금 바로 처리하기', icon: 'alert-circle', quickAddText: '오늘 p1 ', dueToday: true },
-  { key: 'q2', title: '중요 · 계획', subtitle: '일정 잡아 집중하기', icon: 'compass', quickAddText: 'p2 ' },
-  { key: 'q3', title: '긴급 · 빠른 처리', subtitle: '짧게 끝내기', icon: 'clock', quickAddText: '오늘 ', dueToday: true },
-  { key: 'q4', title: '나중에 · 보류', subtitle: '여유 있을 때 정리하기', icon: 'inbox', quickAddText: '' },
+  { key: 'q1', title: '먼저', a11y: '먼저 (중요하고 오늘까지)', quickAddText: '오늘 p1 ', dueToday: true },
+  { key: 'q2', title: '계획', a11y: '계획 (중요, 여유 있음)', quickAddText: 'p2 ' },
+  { key: 'q3', title: '오늘', a11y: '오늘 (오늘까지)', quickAddText: '오늘 ', dueToday: true },
+  { key: 'q4', title: '나중에', a11y: '나중에', quickAddText: '' },
 ];
 
 /** TickTick-style Eisenhower Matrix grouping every open root task into 4 actionable quadrants. */
@@ -57,7 +59,6 @@ export function EisenhowerView({
   const nowMs = useMinute() * 60_000;
   const [scope, setScope] = usePersistentState<MatrixScope>('dayframe-matrix-scope', 'near', isMatrixScope);
   const [collapsedRaw, setCollapsedRaw] = usePersistentState<string>('dayframe-matrix-collapsed', 'q4', isCollapsedString);
-  const [focusedQuadrant, setFocusedQuadrant] = useState<EisenhowerQuadrant | null>(null);
   const scrollRef = useRef<ScrollViewInstance>(null);
 
   const collapsed = useMemo(
@@ -94,14 +95,9 @@ export function EisenhowerView({
     return map;
   }, [scopedRoots, subtaskProgress, nowMs, effectiveNowMs]);
 
-  const visibleQuadrants = useMemo(
-    () => (focusedQuadrant ? QUADRANTS.filter((q) => q.key === focusedQuadrant) : QUADRANTS),
-    [focusedQuadrant],
-  );
-
   const flatTasks = useMemo(
-    () => visibleQuadrants.flatMap((q) => (!focusedQuadrant && collapsed.has(q.key) ? [] : grouped[q.key])),
-    [visibleQuadrants, focusedQuadrant, collapsed, grouped],
+    () => QUADRANTS.flatMap((q) => (collapsed.has(q.key) ? [] : grouped[q.key])),
+    [collapsed, grouped],
   );
 
   const cursor = useListCursor(flatTasks, taskId, {
@@ -123,12 +119,8 @@ export function EisenhowerView({
       }
       return true;
     }
-    if (matchesCombo(event, 'escape') && focusedQuadrant) {
-      if (!event.repeat) setFocusedQuadrant(null);
-      return true;
-    }
     return false;
-  }, [scope, setScope, focusedQuadrant]);
+  }, [scope, setScope]);
 
   useTaskShortcuts(cursor, {
     enabled: keyboardActive && !sheets.scheduling && !sheets.menu,
@@ -151,125 +143,59 @@ export function EisenhowerView({
     persistCollapsed(next);
   }, [collapsed, persistCollapsed]);
 
-  const selectQuadrant = useCallback((key: EisenhowerQuadrant) => {
-    haptic.tap();
-    if (focusedQuadrant === key) {
-      setFocusedQuadrant(null);
-      return;
-    }
-    if (collapsed.has(key)) {
-      const next = new Set(collapsed);
-      next.delete(key);
-      persistCollapsed(next);
-    }
-    setFocusedQuadrant(key);
-  }, [focusedQuadrant, collapsed, persistCollapsed]);
-
   return (
     <>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={{ paddingTop: space.md, paddingBottom: 140, gap: space.md }}
+        contentContainerStyle={{ paddingTop: space.xs, paddingBottom: 140 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />}>
-        <View style={{ paddingHorizontal: space.lg, gap: space.md }}>
-          <Segmented<MatrixScope>
-            value={scope} onChange={setScope}
-            options={[
-              { value: 'near', label: '오늘 · 이번 주', icon: 'sun' },
-              { value: 'all', label: `전체 (${roots.length})`, icon: 'layers' },
-            ]} />
-
-          <View style={styles.grid}>
-            {QUADRANTS.map((meta) => {
-              const count = grouped[meta.key].length;
-              const active = focusedQuadrant === meta.key;
-              return (
-                <Pressable
-                  key={meta.key}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${meta.title} ${count}개 ${active ? '필터 해제' : '만 보기'}`}
-                  accessibilityState={{ selected: active }}
-                  onPress={() => selectQuadrant(meta.key)}
-                  style={({ pressed }) => [
-                    styles.gridCard,
-                    {
-                      backgroundColor: active ? colors.accentSoft : colors.surface,
-                      borderColor: active ? colors.accent : colors.border,
-                      opacity: pressed ? 0.78 : 1,
-                    },
-                  ]}>
-                  <View style={styles.gridCardTop}>
-                    <Icon name={meta.icon} size={14} color={active ? colors.accentText : colors.textFaint} />
-                    <Txt variant="smallStrong" tone={active ? 'accent' : 'default'} numberOfLines={1} style={{ flex: 1 }}>
-                      {meta.title}
-                    </Txt>
-                    <Txt variant="bodyStrong" tone={active ? 'accent' : count > 0 ? 'default' : 'faint'} tabular>
-                      {count}
-                    </Txt>
-                  </View>
-                  <Txt variant="caption" tone={active ? 'accent' : 'muted'} numberOfLines={1}>
-                    {meta.subtitle}
-                  </Txt>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {focusedQuadrant ? (
-            <View style={styles.filterBar}>
-              <Txt variant="caption" tone="muted">선택한 사분면만 보고 있습니다</Txt>
-              <Pressable
-                accessibilityRole="button" accessibilityLabel="모든 사분면 보기" hitSlop={8}
-                onPress={() => {
-                  haptic.tap();
-                  setFocusedQuadrant(null);
-                }}>
-                <Txt variant="smallStrong" tone="accent">전체 보기</Txt>
-              </Pressable>
-            </View>
-          ) : null}
+        <View style={styles.scopeRow}>
+          <Chip
+            label="이번 주" accessibilityLabel="이번 주 할 일만 보기" selected={scope === 'near'}
+            onPress={() => setScope('near')} />
+          <Chip
+            label="전체" accessibilityLabel="전체 할 일 보기" selected={scope === 'all'}
+            onPress={() => setScope('all')} />
         </View>
 
-        {visibleQuadrants.map((meta) => {
+        {QUADRANTS.map((meta, index) => {
           const items = grouped[meta.key];
-          const isCollapsed = !focusedQuadrant && collapsed.has(meta.key);
+          const empty = items.length === 0;
+          const isCollapsed = collapsed.has(meta.key);
+          const add = (
+            <Pressable
+              accessibilityRole="button" accessibilityLabel={meta.title + '에 할 일 추가'} hitSlop={10}
+              onPress={() => quickAdd.open({ initialText: meta.quickAddText, dueToday: meta.dueToday })}
+              style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.6 : 1 }]}>
+              <Icon name="plus" size={17} color={colors.textMuted} />
+            </Pressable>
+          );
           return (
             // The quadrant's place in the order is its meaning, so every quadrant looks the same: a heading, then rows.
-            <View key={meta.key}>
+            // An empty quadrant is one quiet row: dimmed mark and name, no count, nothing to fold.
+            <View key={meta.key} style={index > 0 ? styles.section : undefined}>
               <View style={[styles.head, { borderBottomColor: colors.border }]}>
-                <Pressable
-                  accessibilityRole="button" accessibilityLabel={`${meta.title} ${items.length}개 ${isCollapsed ? '펼치기' : '접기'}`}
-                  disabled={!!focusedQuadrant}
-                  onPress={() => toggle(meta.key)}
-                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                  <Icon name={meta.icon} size={16} color={colors.textFaint} />
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Txt variant="bodyStrong" style={{ fontWeight: '700' }}>{meta.title}</Txt>
-                      <Txt variant="small" tone="faint" tabular>{items.length}</Txt>
-                    </View>
-                    <Txt variant="caption" tone="muted">{meta.subtitle}</Txt>
+                {empty ? (
+                  <View style={styles.headMain} accessible accessibilityRole="header" accessibilityLabel={`${meta.a11y} 0개`}>
+                    <QuadrantIcon quadrant={meta.key} dim />
+                    <Txt variant="bodyStrong" tone="faint" style={styles.headTitle}>{meta.title}</Txt>
                   </View>
-                  {!focusedQuadrant ? (
-                    <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
-                  ) : null}
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button" accessibilityLabel={meta.title + '에 할 일 추가'} hitSlop={10}
-                  onPress={() => quickAdd.open({ initialText: meta.quickAddText, dueToday: meta.dueToday })}
-                  style={({ pressed }) => [styles.addBtn, { opacity: pressed ? 0.6 : 1 }]}>
-                  <Icon name="plus" size={17} color={colors.textMuted} />
-                </Pressable>
-              </View>
-              {!isCollapsed ? (
-                items.length > 0 ? (
-                  <TaskRows model={model} tasks={items} focusedTaskId={cursor.focusedId} />
                 ) : (
-                  <Txt variant="small" tone="faint" style={{ paddingHorizontal: space.lg, paddingVertical: space.md }}>
-                    해당하는 할 일이 없습니다.
-                  </Txt>
-                )
-              ) : null}
+                  <Pressable
+                    accessibilityRole="button" accessibilityLabel={`${meta.a11y} ${items.length}개 ${isCollapsed ? '펼치기' : '접기'}`}
+                    accessibilityState={{ expanded: !isCollapsed }}
+                    onPress={() => toggle(meta.key)}
+                    style={styles.headMain}>
+                    <QuadrantIcon quadrant={meta.key} />
+                    <Txt variant="bodyStrong" style={styles.headTitle}>{meta.title}</Txt>
+                    <Txt variant="small" tone="faint" tabular>{items.length}</Txt>
+                    <View style={{ flex: 1 }} />
+                    <Icon name={isCollapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.textFaint} />
+                  </Pressable>
+                )}
+                {add}
+              </View>
+              {!isCollapsed && !empty ? <TaskRows model={model} tasks={items} focusedTaskId={cursor.focusedId} /> : null}
             </View>
           );
         })}
@@ -280,21 +206,13 @@ export function EisenhowerView({
 }
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  gridCard: {
-    width: '48.5%',
-    flexGrow: 1,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: space.md,
-    paddingVertical: 10,
-    gap: 4,
-  },
-  gridCardTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  filterBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  scopeRow: { flexDirection: 'row', gap: space.sm, paddingHorizontal: space.lg, paddingBottom: space.xs },
   head: {
     flexDirection: 'row', alignItems: 'center', gap: space.sm, borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingLeft: space.lg, paddingRight: space.sm, paddingVertical: 8,
+    paddingLeft: space.lg, paddingRight: space.sm, minHeight: 44,
   },
+  section: { marginTop: space.sm },
+  headMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 44 },
+  headTitle: { fontWeight: '700' },
   addBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
 });
