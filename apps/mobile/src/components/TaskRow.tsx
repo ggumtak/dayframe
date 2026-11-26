@@ -305,7 +305,6 @@ export const TaskRow = memo(function TaskRow({
     meta.push({ key: 'subtasks', icon: 'git-merge', text: subtaskLabel, color: colors.textMuted, tabular: true });
   }
   const mark = priorityMark(task.priority);
-  const isP1 = task.priority === 1;
   const subtaskTone = subtasksExpanded ? colors.accentText : colors.textMuted;
 
   const row = (
@@ -360,11 +359,6 @@ export const TaskRow = memo(function TaskRow({
             },
           ]}>
           <View style={styles.titleRow}>
-            {isP1 ? (
-              <View style={[styles.p1Pill, { backgroundColor: colors.surfaceMuted }]}>
-                <Text style={[styles.p1Mark, { color: checked ? colors.textFaint : colors.text }]}>{mark}</Text>
-              </View>
-            ) : null}
             <Text
               numberOfLines={2}
               style={[
@@ -373,7 +367,7 @@ export const TaskRow = memo(function TaskRow({
                 { color: checked ? colors.textFaint : colors.text },
                 checked && { textDecorationLine: 'line-through' },
               ]}>
-              {mark && !isP1 ? <Text style={styles.mark}>{mark + ' '}</Text> : null}
+              {mark ? <Text style={styles.mark}>{mark + ' '}</Text> : null}
               {task.title}
             </Text>
             {isMit || isEvening ? (
@@ -490,11 +484,6 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: 3, paddingVertical: 11, paddingRight: space.lg, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 46 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5 },
   titleText: { flex: 1 },
-  p1Pill: {
-    paddingHorizontal: 5, paddingVertical: 1, borderRadius: radius.sm - 3, marginTop: 2,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  p1Mark: { fontFamily, fontSize: 12, lineHeight: 16, fontWeight: '800', letterSpacing: -0.6 },
   badges: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   metaRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
   meta: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.md, rowGap: 2 },

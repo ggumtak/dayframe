@@ -29,7 +29,8 @@ import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
 import { TaskListSheets, TaskRows, useTaskListModel } from '@/features/tasks/TaskList';
 import { Timeline } from '@/features/tasks/Timeline';
 import { useTodayFoldedGroups } from '@/features/tasks/todayFold';
-import { OverdueStrip, TodayGroups } from '@/features/tasks/TodayGroups';
+import { OverdueBar } from '@/features/tasks/OverdueBar';
+import { TodayGroups } from '@/features/tasks/TodayGroups';
 import {
   buildShareText, buildTodayGroups, createTodayReuser, deriveToday, partitionDailyFocus, type TodayGrouping,
 } from '@/features/tasks/todayList';
@@ -421,8 +422,9 @@ export default function Today() {
 
   const showOnboarding = !isLoading && !isError && tasks.length === 0 && done.length === 0 && !onboardingDismissed;
   const showHabitsOnToday = hasHabits && prefs.todayHabitsPosition !== 'hidden';
+  // The day bar: progress and planned/focused time, above the list and the timeline alike.
   const showFocusStrip = prefs.showTodayFocusStrip
-    && mainView === 'list'
+    && (mainView === 'list' || mainView === 'timeline')
     && !isLoading
     && !showOnboarding
     && (remaining > 0 || done.length > 0 || todayFocusMinutes > 0);
@@ -542,7 +544,12 @@ export default function Today() {
   return (
     <Screen maxWidth={twoPane ? PANE_FRAME_MAX : undefined}>
       <Header
-        title="오늘" subtitle={`${date.month}월 ${date.day}일 (${weekdayName(date)}) · ${summary}`}
+        title="오늘"
+        subtitle={[
+          `${date.month}월 ${date.day}일 (${weekdayName(date)})`,
+          // The day bar already shows done/total, so the subtitle keeps only what is left.
+          showFocusStrip ? (remaining ? `${remaining}개 남음` : '') : summary,
+        ].filter(Boolean).join(' · ')}
         right={(
           <View style={{ flexDirection: 'row' }}>
             <View style={{ position: 'relative' }}>
@@ -585,33 +592,27 @@ export default function Today() {
           </View>
 
           {showFocusStrip ? (
-            <View style={[styles.focusStrip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.focusStripRow}>
-                <View style={styles.focusStripMeta}>
-                  <Txt variant="smallStrong" tabular>{done.length}/{totalToday}</Txt>
-                  {plannedMinutes > 0 || todayFocusMinutes > 0 ? (
-                    <Txt variant="caption" tone="muted" tabular numberOfLines={1} style={{ flexShrink: 1 }}>
-                      {[
-                        plannedMinutes > 0 ? `예정 ${formatDurationMinutes(plannedMinutes)}` : null,
-                        todayFocusMinutes > 0 ? `집중 ${formatDurationMinutes(todayFocusMinutes)}` : null,
-                      ].filter(Boolean).join(' · ')}
-                    </Txt>
-                  ) : (
-                    <Txt variant="caption" tone="faint" numberOfLines={1}>오늘 진행률</Txt>
-                  )}
-                </View>
+            <View style={styles.dayBar}>
+              <View style={styles.dayBarRow}>
+                <Txt variant="smallStrong" tabular>{done.length}/{totalToday}</Txt>
+                {plannedMinutes > 0 || todayFocusMinutes > 0 ? (
+                  <Txt variant="caption" tone="muted" tabular numberOfLines={1} style={{ flexShrink: 1 }}>
+                    {[
+                      plannedMinutes > 0 ? `예정 ${formatDurationMinutes(plannedMinutes)}` : null,
+                      todayFocusMinutes > 0 ? `집중 ${formatDurationMinutes(todayFocusMinutes)}` : null,
+                    ].filter(Boolean).join(' · ')}
+                  </Txt>
+                ) : null}
+                <View style={{ flex: 1 }} />
                 {focusTarget ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`${focusTarget.title} 집중 시작`}
-                    hitSlop={6}
+                    hitSlop={8}
                     onPress={() => startQuickFocus(focusTarget)}
-                    style={({ pressed }) => [
-                      styles.focusStartPill,
-                      { borderColor: colors.border, backgroundColor: pressed ? colors.surfaceMuted : 'transparent' },
-                    ]}>
+                    style={({ pressed }) => [styles.focusStart, { opacity: pressed ? 0.6 : 1 }]}>
                     <Icon name="play" size={11} color={colors.accentText} />
-                    <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>집중 시작</Txt>
+                    <Txt variant="smallStrong" tone="accent">집중 시작</Txt>
                   </Pressable>
                 ) : null}
               </View>
@@ -682,7 +683,7 @@ export default function Today() {
               ) : grouped ? (
                 <>
                   {overdue.length && grouping !== 'time' ? (
-                    <OverdueStrip count={overdue.length} onSpread={overdue.length >= 2 ? () => openPlanning('overdue') : undefined} onMoveToday={moveOverdue} />
+                    <OverdueBar count={overdue.length} onSpread={overdue.length >= 2 ? () => openPlanning('overdue') : undefined} onMoveToday={moveOverdue} />
                   ) : null}
                   {!selectedIds && prefs.todayHabitsPosition === 'top' ? <TodayHabits /> : null}
                   {mitSection}
@@ -860,16 +861,9 @@ const styles = StyleSheet.create({
   panes: { flex: 1, flexDirection: 'row' },
   side: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth },
   headerBadgeDot: { position: 'absolute', top: 7, right: 7, width: 7, height: 7, borderRadius: 4 },
-  focusStrip: {
-    marginHorizontal: space.lg, marginBottom: space.xs, paddingHorizontal: space.md, paddingVertical: 8,
-    borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, gap: 6,
-  },
-  focusStripRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  focusStripMeta: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  focusStartPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, minHeight: 28, borderRadius: radius.pill, borderWidth: 1,
-  },
+  dayBar: { paddingHorizontal: space.lg, paddingBottom: space.xs, gap: 6 },
+  dayBarRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 28 },
+  focusStart: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 28 },
   focusSection: { marginTop: space.md },
   focusSectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, minHeight: 40,
