@@ -861,7 +861,7 @@ const styles = StyleSheet.create({
   panes: { flex: 1, flexDirection: 'row' },
   side: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth },
   headerBadgeDot: { position: 'absolute', top: 7, right: 7, width: 7, height: 7, borderRadius: 4 },
-  dayBar: { paddingHorizontal: space.lg, paddingBottom: space.xs, gap: 6 },
+  dayBar: { paddingHorizontal: space.lg, paddingBottom: space.sm, gap: 6 },
   dayBarRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 28 },
   focusStart: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 28 },
   focusSection: { marginTop: space.md },
