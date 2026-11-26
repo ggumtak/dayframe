@@ -910,7 +910,7 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
           onFocus={() => { if (openPane === 'calendar') closePane(); }}
           placeholder={
             parent
-              ? '하위 작업 입력 · 여러 줄 붙여넣기 가능'
+              ? '하위 작업 입력'
               : checklistMode
                 ? '제목 입력 후 Enter로 체크리스트 항목 추가'
                 : '예: 금요일 3시 30분간 회의 #업무 !!!'
@@ -1095,8 +1095,7 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
                 })}
               </ScrollView>
             ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 }}>
-                <Txt variant="caption" tone="muted">@태그명으로 새 태그를 바로 만들 수 있습니다.</Txt>
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 }}>
                 <Pressable
                   hitSlop={6}
                   onPress={() => {

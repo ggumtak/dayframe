@@ -793,7 +793,7 @@ function TaskEditor({ task }: { task: Task }) {
               ref={subtaskInput}
               value={subtaskText}
               onChangeText={handleSubtaskChange}
-              placeholder="하위 작업 추가 · 여러 줄 붙여넣기 가능"
+              placeholder="하위 작업 추가"
               placeholderTextColor={colors.textFaint}
               multiline
               returnKeyType="done"

@@ -283,9 +283,6 @@ export default function HabitOverview() {
               />
             ))}
           </Card>
-          <Txt variant="caption" tone="faint" style={{ textAlign: 'center' }}>
-            날짜 칸을 눌러 바로 기록을 켜고 끌 수 있습니다
-          </Txt>
           <Legend />
         </ScrollView>
       ) : (
