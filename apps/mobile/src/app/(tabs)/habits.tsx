@@ -270,12 +270,9 @@ export default function Habits() {
           {habits.length ? (
             <>
               <Card style={{ gap: space.sm, paddingVertical: space.md }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm }}>
-                  <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }} tabular>
-                    이번 주 달성 현황 · {weeklyPct}%
-                  </Txt>
-                  <Txt variant="caption" tone="faint">요일을 눌러 그날 기록 보기</Txt>
-                </View>
+                <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }} tabular>
+                  이번 주 달성 현황 · {weeklyPct}%
+                </Txt>
                 <View style={styles.weekBars}>
                   {weeklySummary.map((bar) => {
                     const isToday = bar.date.equals(nowDay);

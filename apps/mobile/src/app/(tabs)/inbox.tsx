@@ -57,12 +57,12 @@ const sortLabels: Record<SortMode, string> = {
   title: '이름순',
 };
 
-const filterOptions: { value: ListFilter; label: string; icon?: IconName }[] = [
+const filterOptions: { value: ListFilter; label: string }[] = [
   { value: 'all', label: '전체' },
-  { value: 'due', label: '오늘·기한 지남', icon: 'sun' },
-  { value: 'undated', label: '날짜 없음', icon: 'slash' },
-  { value: 'priority', label: '중요', icon: 'flag' },
-  { value: 'checklist', label: '하위 작업', icon: 'check-square' },
+  { value: 'due', label: '오늘까지' },
+  { value: 'undated', label: '날짜 없음' },
+  { value: 'priority', label: '중요' },
+  { value: 'checklist', label: '하위 작업' },
 ];
 const FILTER_ORDER: readonly ListFilter[] = ['all', 'due', 'undated', 'priority', 'checklist'];
 const PRIORITIES: readonly Priority[] = [1, 2, 3, 4];
@@ -572,7 +572,10 @@ export default function Inbox() {
       ? activeSavedFilter.name
       : selected?.name ?? '목록';
   const subtitle = tasks.length
-    ? `${tasks.length}개 · ${canSortManually ? '길게 눌러 순서 변경' : effectiveScope === 'all' && sort === 'manual' ? '목록별' : activeSavedFilter ? '스마트 뷰' : sortLabels[sort]}`
+    ? [
+      `${tasks.length}개`,
+      canSortManually ? '' : effectiveScope === 'all' && sort === 'manual' ? '목록별' : activeSavedFilter ? '스마트 뷰' : sortLabels[sort],
+    ].filter(Boolean).join(' · ')
     : activeSavedFilter
       ? '스마트 뷰'
       : undefined;
@@ -788,33 +791,29 @@ export default function Inbox() {
         </View>
       ) : null}
 
-      {!selectedIds && effectiveScope === 'inbox' && scopeRoots.length >= 2 ? (
-        <Pressable
-          accessibilityRole="button" accessibilityLabel={`미분류 ${scopeRoots.length}개 빠르게 정리`}
-          onPress={openTriage}
-          style={({ pressed }) => [
-            styles.triageBanner,
-            { backgroundColor: colors.surfaceMuted, borderColor: colors.border, opacity: pressed ? 0.72 : 1 },
-          ]}>
-          <Icon name="zap" size={15} color={colors.accentText} />
-          <Txt variant="smallStrong" tabular style={{ flex: 1 }}>미분류 {scopeRoots.length}개 빠르게 정리</Txt>
-          <Txt variant="smallStrong" tone="accent">시작</Txt>
-          <Icon name="chevron-right" size={15} color={colors.accentText} />
-        </Pressable>
-      ) : null}
-
       {scopeRoots.length > 0 || listFilter !== 'all' ? (
         <PlainScroll
           horizontal showsHorizontalScrollIndicator={false}
           style={{ flexGrow: 0, flexShrink: 0 }}
-          contentContainerStyle={{ paddingHorizontal: space.lg, gap: 6, paddingTop: 2, paddingBottom: space.sm, alignItems: 'center' }}>
+          contentContainerStyle={{ paddingHorizontal: space.lg, gap: 2, paddingTop: 2, paddingBottom: space.xs, alignItems: 'center' }}>
           {filterOptions.map((option) => (
-            <Chip
-              key={option.value} icon={option.icon} label={option.label}
+            <FilterPill
+              key={option.value} label={option.label}
               selected={listFilter === option.value}
               onPress={() => selectFilter(option.value)} />
           ))}
         </PlainScroll>
+      ) : null}
+
+      {!selectedIds && effectiveScope === 'inbox' && scopeRoots.length >= 2 ? (
+        <Pressable
+          accessibilityRole="button" accessibilityLabel={`미분류 ${scopeRoots.length}개 빠르게 정리`}
+          onPress={openTriage}
+          style={({ pressed }) => [styles.triageRow, { opacity: pressed ? 0.6 : 1 }]}>
+          <Icon name="zap" size={14} color={colors.accentText} />
+          <Txt variant="smallStrong" tone="accent" tabular>{scopeRoots.length}개 빠르게 정리</Txt>
+          <Icon name="chevron-right" size={14} color={colors.accentText} />
+        </Pressable>
       ) : null}
 
       {isLoading ? <Loading /> : (
@@ -1171,7 +1170,7 @@ export default function Inbox() {
             icon={option === 'manual' ? 'menu' : option === 'smart' ? 'zap' : option === 'schedule' ? 'calendar' : option === 'priority' ? 'flag' : 'type'}
             label={sortLabels[option]}
             detail={option === 'manual'
-              ? (effectiveScope === 'all' ? '목록별로 묶어 표시' : '길게 눌러 순서 변경')
+              ? (effectiveScope === 'all' ? '목록별로 묶어 표시' : undefined)
               : option === 'smart' ? '긴급도 · 우선순위 · 진행률' : undefined}
             trailing={sort === option ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
             onPress={() => {
@@ -1421,17 +1420,32 @@ export default function Inbox() {
   );
 }
 
+/** A filter inside the chosen list: plain text, the selected one on a quiet fill, so it never reads as a second list row. */
+function FilterPill({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected }} hitSlop={{ top: 6, bottom: 6 }}
+      onPress={() => {
+        haptic.tap();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.filterPill,
+        { backgroundColor: selected ? colors.surfaceMuted : 'transparent', opacity: pressed ? 0.6 : 1 },
+      ]}>
+      <Txt variant="smallStrong" tone={selected ? 'default' : 'muted'} style={{ fontWeight: selected ? '600' : '500' }}>{label}</Txt>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   chipStripRow: { flexDirection: 'row', alignItems: 'center' },
   projectChipWrap: { flexDirection: 'row', alignItems: 'center' },
   progressWrap: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm, gap: 6 },
   progressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  triageBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: space.sm,
-    marginHorizontal: space.lg, marginTop: space.xs, marginBottom: space.sm,
-    paddingHorizontal: space.md, paddingVertical: 10,
-    borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth,
-  },
+  triageRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, paddingLeft: space.lg, paddingRight: space.md, paddingVertical: 8 },
+  filterPill: { height: 30, paddingHorizontal: 10, borderRadius: radius.sm, justifyContent: 'center' },
   triageCard: {
     borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, padding: space.md, gap: 4,
   },

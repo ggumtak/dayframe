@@ -521,9 +521,8 @@ export default function Focus() {
             {targetName ? (
               <Txt variant="small" tone="muted" numberOfLines={1} style={{ maxWidth: SIZE - 64, marginTop: 4 }}>{targetName}</Txt>
             ) : canConfigure ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
-                <Icon name="edit-2" size={11} color={colors.textFaint} />
-                <Txt variant="caption" tone="muted">눌러서 시간 설정</Txt>
+              <View style={{ marginTop: 8 }}>
+                <Icon name="edit-2" size={13} color={colors.textFaint} />
               </View>
             ) : null}
           </Pressable>
@@ -590,13 +589,8 @@ export default function Focus() {
                       ))}
                       <Chip icon="sliders" label="직접 설정" onPress={() => setConfiguring(true)} />
                     </ScrollView>
-                    <Txt variant="small" tone="muted">설정한 시간이 지나면 휴식 없이 종료됩니다.</Txt>
                   </View>
-                ) : (
-                  <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>
-                    시간 제한 없이 측정합니다. 마치면 ‘기록 완료’를 눌러 주세요.
-                  </Txt>
-                )}
+                ) : null}
 
                 {durationOverride !== null && prefs.mode !== 'stopwatch' ? (
                   <View style={styles.overrideNote}>
@@ -705,7 +699,6 @@ export default function Focus() {
                 );
               })}
             </View>
-            <Txt variant="caption" tone="faint">최근 7일간 날짜별 집중 시간입니다.</Txt>
           </Card>
         ) : null}
 
@@ -786,7 +779,6 @@ export default function Focus() {
                     }} />
                 ))}
               </View>
-              <Txt variant="small" tone="muted">숫자를 눌러 1분부터 480분(8시간)까지 직접 입력할 수 있습니다.</Txt>
             </>
           )}
           <Button label="완료" onPress={() => setConfiguring(false)} style={{ marginTop: space.xs }} />

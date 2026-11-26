@@ -256,9 +256,6 @@ export function PlanDaySheet({
                 <Icon name="zap" size={15} color={colors.textMuted} />
                 <Txt variant="smallStrong">여러 날에 나누어 배정</Txt>
               </View>
-              <Txt variant="caption" tone="muted">
-                앞으로 7일간의 일정과 우선순위를 바탕으로, 하루에 몰리지 않게 나누어 보았습니다.
-              </Txt>
               <View style={{ flexDirection: 'row', gap: space.sm, marginTop: 4 }}>
                 <Button label="이대로 적용" icon="zap" onPress={applyBalanced} style={{ flex: 1, minHeight: 40 }} />
                 <Button label="모두 오늘로" kind="secondary" onPress={applyAllToday} style={{ minHeight: 40 }} />
@@ -356,9 +353,6 @@ export function PlanDaySheet({
 
             {suggestions.length > 0 ? (
               <>
-                <Txt variant="small" tone="muted">
-                  진행 중인 체크리스트와 우선순위가 높은 일, 오래 미뤄 둔 할 일 중에서 오늘 챙기기 좋은 항목을 골랐습니다.
-                </Txt>
                 {suggestions.map(({ task, reason }) => (
                   <View
                     key={task.id}

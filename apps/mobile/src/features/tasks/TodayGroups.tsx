@@ -5,39 +5,12 @@ import { Icon, type IconName, Txt } from '@/components/ui';
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import { haptic } from '@/lib/haptics';
 import type { Task } from '@/lib/shared';
-import { radius, space, useTheme } from '@/theme';
+import { space, useTheme } from '@/theme';
 
 import { listColor } from './listColors';
 import { type TaskListModel, TaskListSheets, TaskRows, useTaskListModel } from './TaskList';
 import { toggleTodayGroupFold, useTodayFoldedGroups } from './todayFold';
 import type { TodayGroup } from './todayList';
-
-function StripAction({ label, a11y, onPress }: { label: string; a11y: string; onPress: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button" accessibilityLabel={a11y} hitSlop={6}
-      onPress={() => {
-        haptic.tap();
-        onPress();
-      }}
-      style={({ pressed }) => [styles.pill, { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.6 : 1 }]}>
-      <Txt variant="smallStrong">{label}</Txt>
-    </Pressable>
-  );
-}
-
-export function OverdueStrip({ count, onSpread, onMoveToday }: { count: number; onSpread?: () => void; onMoveToday: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <View style={[styles.strip, { backgroundColor: colors.surfaceMuted }]}>
-      <Icon name="alert-circle" size={16} color={colors.danger} />
-      <Txt variant="smallStrong" tone="danger" tabular style={styles.stripCount} accessibilityRole="header">기한 지남 {count}개</Txt>
-      {onSpread ? <StripAction label="일정 분산" a11y="여러 날에 나누어 배정하기" onPress={onSpread} /> : null}
-      <StripAction label="오늘로" a11y="모두 오늘로 옮기기" onPress={onMoveToday} />
-    </View>
-  );
-}
 
 const GroupSection = memo(function GroupSection({ group, model, folded, selectedIds, onToggleSelect, focusedTaskId, todayIso }: {
   group: TodayGroup;
@@ -174,12 +147,6 @@ export const TodayGroups = memo(function TodayGroups(props: TodayGroupsProps) {
 
 const styles = StyleSheet.create({
   list: { paddingTop: space.xs },
-  strip: {
-    flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, marginTop: space.sm,
-    paddingLeft: space.md, paddingRight: space.sm, paddingVertical: 6, borderRadius: radius.md,
-  },
-  stripCount: { flex: 1, fontSize: 14, fontWeight: '700' },
-  pill: { borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: space.md, minHeight: 30, justifyContent: 'center' },
   section: { marginTop: space.md },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
   header: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, minHeight: 42 },

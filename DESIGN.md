@@ -24,6 +24,16 @@ size, weight, grey level) carries hierarchy; colour is a signal, not decoration.
 12. **Grayscale check**: the order overdue → titles → meta must still read in a black-and-white screenshot.
 13. **User colours live in one small mark.** List colours (muted 톤인톤 set, `listColors.ts`) only on the list icon in
     the 목록 tab and list pickers. Habit colours are stored but not drawn. Weekends are not coloured.
+14. **No instructions on screen (화면에 설명 금지).** No gesture hints ("길게 눌러…", "눌러서…", "밀어…"), no sentence
+    explaining how a screen sorts, groups or works, no caption restating its heading. If a control needs explaining,
+    change the control (an icon, a chevron, an explicit button). Allowed: one-line empty states, errors, destructive
+    confirmations, privacy/billing notices, settings descriptions.
+15. **One name per thing (이름은 하나).** A section, tab or filter label is one word or one short phrase: no "A · B"
+    pairs and no subtitle under a heading. Matrix quadrants are 먼저 / 계획 / 오늘 / 나중에 with `QuadrantIcon` (the
+    filled cell is the quadrant's place in the 2×2: left = due now, top = important).
+16. **Nothing boxed above the first row (첫 줄 위에는 상자 없음).** Above the first content row a screen has its header,
+    at most one segmented control, and box-less one-line bars (day bar, overdue bar, filters). No bordered cards or
+    filled bands there.
 
 ## Tokens by role (역할별 토큰)
 
@@ -50,6 +60,8 @@ Accent options: 파랑 (default), 청록, 보라, 슬레이트 (`palettes.ts`). 
 - Colours come **only** from `useTheme().colors`. Hex / `rgb()` / `hsl()` / alpha suffixes (`+ '2E'`) / named colours
   anywhere else in `apps/mobile/src` fail `npm test` (`src/theme/colorBudget.test.ts`, allow-list in `colorBudget.ts`:
   theme, accent and list palettes, stored habit colours, art maths, native widgets, notification colour).
+- Gesture hints on screen (`길게 눌러`, `눌러서`, `밀어 `, `끌어서`) fail `npm test` (`src/theme/copyBudget.test.ts`);
+  accessibility labels and hints, toasts, comments, widgets and notifications are exempt.
 - New role? Add a token in `tokens.ts` for both modes and a contrast assertion in `tokens.test.ts` first.
 - Before reporting UI work: run the preview harness, light and `--dark`
   (`EXPO_OFFLINE=1 node scripts/preview/run.mjs --shots scripts/preview/calm-shots.mjs --out <dir> [--dark]` in

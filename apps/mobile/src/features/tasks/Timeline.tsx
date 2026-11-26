@@ -22,6 +22,7 @@ import type { FocusSession, Task, TaskPatch } from '@/lib/shared';
 import { showToast } from '@/lib/toast';
 import { elevation, radius, space, type, useTheme } from '@/theme';
 
+import { OverdueBar } from './OverdueBar';
 import { priorityMark } from './priority';
 import { useTaskFlow } from './useTaskFlow';
 
@@ -469,15 +470,6 @@ export function Timeline({
     priority: KEY_PRIORITY.screen,
   });
 
-  const plannedTotalMinutes = useMemo(
-    () => tasks.reduce((sum, task) => sum + (task.duration_minutes ?? (!task.all_day && task.due_at ? DEFAULT_BLOCK_MINUTES : 0)), 0),
-    [tasks],
-  );
-  const focusTotalMinutes = useMemo(
-    () => focusBlocks.reduce((sum, block) => sum + block.spent, 0),
-    [focusBlocks],
-  );
-
   const nowClock = formatTime(nowMinutes, timeFormat);
   const nowY = yForMinutes(nowMinutes);
   const nowOffscreen = viewportH > 0 && (nowY < scrollY + 20 || nowY > scrollY + viewportH - 36);
@@ -553,49 +545,12 @@ export function Timeline({
 
   return (
     <View style={{ flex: 1 }}>
-      {overdueCount > 0 && onPlanOverdue ? (
-        <View style={[styles.overdueBar, { backgroundColor: colors.surfaceMuted, borderBottomColor: colors.border }]}>
-          <Icon name="alert-circle" size={14} color={colors.danger} />
-          <Txt variant="caption" tone="danger" tabular style={{ fontWeight: '700', flex: 1 }}>
-            기한 지남 {overdueCount}개
-          </Txt>
-          <Pressable
-            accessibilityRole="button" accessibilityLabel={`기한이 지난 할 일 ${overdueCount}개 일정 분산`} hitSlop={6}
-            onPress={() => {
-              haptic.tap();
-              onPlanOverdue();
-            }}
-            style={({ pressed }) => [styles.overduePill, { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.6 : 1 }]}>
-            <Txt variant="caption" style={{ fontWeight: '700' }}>일정 분산</Txt>
-          </Pressable>
-          {onMoveOverdueToday ? (
-            <Pressable
-              accessibilityRole="button" accessibilityLabel="기한 지난 할 일 모두 오늘로 옮기기" hitSlop={6}
-              onPress={() => {
-                haptic.tap();
-                onMoveOverdueToday();
-              }}
-              style={({ pressed }) => [styles.overduePill, { borderColor: colors.border, backgroundColor: colors.surface, opacity: pressed ? 0.6 : 1 }]}>
-              <Txt variant="caption" style={{ fontWeight: '700' }}>오늘로</Txt>
-            </Pressable>
-          ) : null}
-        </View>
+      {overdueCount > 0 && onPlanOverdue && onMoveOverdueToday ? (
+        <OverdueBar
+          count={overdueCount} separator
+          onSpread={onPlanOverdue} spreadLabel={`기한이 지난 할 일 ${overdueCount}개 일정 분산`}
+          onMoveToday={onMoveOverdueToday} moveTodayLabel="기한 지난 할 일 모두 오늘로 옮기기" />
       ) : null}
-
-      <View style={[styles.budgetBar, { backgroundColor: colors.surfaceMuted, borderBottomColor: colors.border }]}>
-        <Icon name="clock" size={13} color={colors.textFaint} />
-        <Txt variant="caption" tone="muted" tabular style={{ flex: 1 }} numberOfLines={1}>
-          {plannedTotalMinutes > 0 || focusTotalMinutes > 0
-            ? [
-              plannedTotalMinutes > 0 ? `오늘 예정 ${formatDurationMinutes(plannedTotalMinutes)}` : null,
-              focusTotalMinutes > 0 ? `집중 ${formatDurationMinutes(focusTotalMinutes)}` : null,
-            ].filter(Boolean).join(' · ')
-            : '빈 시간을 눌러 추가 · 길게 눌러 시간 이동'}
-        </Txt>
-        {plannedTotalMinutes > 0 || focusTotalMinutes > 0 ? (
-          <Txt variant="caption" tone="faint">길게 눌러 이동</Txt>
-        ) : null}
-      </View>
 
       {allDay.length ? (
         <View style={[styles.allDay, { borderBottomColor: colors.border }]}>
@@ -787,11 +742,8 @@ export function Timeline({
       <Sheet visible={!!pickedFocus} onClose={() => setPickedFocus(null)} title={pickedFocus?.label ?? '집중 기록'}>
         {pickedFocus ? (
           <View style={{ gap: space.sm }}>
-            <Txt tone="muted" tabular>
+            <Txt tone="muted" tabular style={{ marginBottom: space.md }}>
               {formatTime(pickedFocus.start, timeFormat) + ' ~ ' + formatTime(pickedFocus.end, timeFormat) + ' · ' + (pickedFocus.spent < 1 ? '1분 미만' : pickedFocus.spent + '분')}
-            </Txt>
-            <Txt variant="small" tone="faint" style={{ marginBottom: space.md }}>
-              타임라인에 표시된 완료한 집중 기록입니다. 필요 없는 기록이라면 삭제할 수 있습니다.
             </Txt>
             <Button
               label="이 기록 삭제" kind="danger" icon="trash-2"
@@ -861,17 +813,6 @@ export function Timeline({
 }
 
 const styles = StyleSheet.create({
-  overdueBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  overduePill: {
-    borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 10, minHeight: 28, justifyContent: 'center',
-  },
-  budgetBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingVertical: 7,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
   allDay: { flexDirection: 'row', paddingHorizontal: space.lg, paddingVertical: space.sm, borderBottomWidth: StyleSheet.hairlineWidth },
   allDayItem: { flexDirection: 'row', alignItems: 'center', gap: space.sm, borderRadius: radius.sm, paddingLeft: space.sm, paddingRight: 4, minHeight: 34 },
   earlyToggle: {

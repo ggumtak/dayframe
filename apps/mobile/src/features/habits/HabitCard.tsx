@@ -296,6 +296,20 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
   const streak = stats?.current_streak ?? 0;
   const strength = useMemo(() => computeHabitStrength(habit, logs, day), [habit, logs, day]);
   const look = habitLook(habit.name, meta);
+  const statusText = strength.missedYesterday
+    ? '어제 놓침'
+    : weekly || habit.target_count > 1
+      ? (weekly ? `이번 주 ${progress}/${habit.target_count}회` : `오늘 ${progress}/${habit.target_count}회`)
+        + (todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : '')
+      : !done && todayLog?.status === 'skipped'
+        ? '건너뜀'
+        : !done && todayLog?.status === 'frozen'
+          ? '쉬어감'
+          : '';
+  const streakText = streak > 0 ? `${streak}${weekly ? '주' : '일'} 연속` : '';
+  const strengthText = strength.score > 0 ? `꾸준함 ${strength.score}%` : '';
+  const statsText = [streakText, strengthText].filter(Boolean).join(' · ');
+  const statsLabel = [streakText, strengthText].filter(Boolean).join(', ');
 
   const checkIn = () => {
     // Protect completed multi-count habits from accidental wipe to 0: open the adjust sheet instead.
@@ -331,19 +345,7 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
           <View style={{ flex: 1, gap: space.sm }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
               <HabitAvatar name={habit.name} emoji={look.emoji} size={24} />
-              <Txt variant="bodyStrong" numberOfLines={1} style={{ flexShrink: 1 }}>{habit.name}</Txt>
-              {/* Streak and strength as one quiet line of text, not two coloured badges. */}
-              {streak > 0 || strength.score > 0 ? (
-                <View
-                  style={styles.stats} accessible
-                  accessibilityLabel={[streak > 0 ? `${streak}${weekly ? '주' : '일'} 연속` : '', strength.score > 0 ? `꾸준함 ${strength.score}%` : '']
-                    .filter(Boolean).join(', ')}>
-                  {streak > 0 ? <Icon name="zap" size={11} color={colors.textFaint} /> : null}
-                  <Txt variant="caption" tone="muted" tabular>
-                    {[streak > 0 ? `${streak}${weekly ? '주' : '일'}` : '', strength.score > 0 ? `꾸준함 ${strength.score}%` : ''].filter(Boolean).join(' · ')}
-                  </Txt>
-                </View>
-              ) : null}
+              <Txt variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{habit.name}</Txt>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${habit.name} 메뉴`}
@@ -354,7 +356,6 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
                 }}
                 style={({ pressed }) => [
                   styles.moreBtn,
-                  !(streak > 0 || strength.score > 0) && { marginLeft: 'auto' },
                   pressed && { backgroundColor: colors.surfaceMuted },
                 ]}>
                 <Icon name="more-horizontal" size={16} color={colors.textFaint} />
@@ -415,23 +416,26 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
                 );
               })}
             </View>
-            <Txt
-              variant={strength.missedYesterday ? 'smallStrong' : 'small'}
-              tone={strength.missedYesterday ? 'danger' : 'muted'}
-              tabular>
-              {strength.missedYesterday
-                ? '어제 놓쳤습니다 · 오늘은 이어가 보세요'
-                : weekly || habit.target_count > 1
-                  ? (weekly ? `이번 주 ${progress}/${habit.target_count}회` : `오늘 ${progress}/${habit.target_count}회`)
-                    + (todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : '')
-                  : done
-                    ? '오늘 완료'
-                    : todayLog?.status === 'skipped'
-                      ? '오늘 건너뜀'
-                      : todayLog?.status === 'frozen'
-                        ? '오늘 쉬어감'
-                        : '오늘 기록 전'}
-            </Txt>
+            {statusText || statsText ? (
+              // One quiet line: today's status only when the ring cannot show it, then streak and strength.
+              <View style={styles.footer}>
+                {statusText ? (
+                  <Txt
+                    variant={strength.missedYesterday ? 'smallStrong' : 'small'}
+                    tone={strength.missedYesterday ? 'danger' : 'muted'}
+                    tabular numberOfLines={1}>
+                    {statusText}
+                  </Txt>
+                ) : null}
+                {statusText && statsText ? <Txt variant="small" tone="faint">·</Txt> : null}
+                {statsText ? (
+                  <View style={styles.stats} accessible accessibilityLabel={statsLabel}>
+                    {streak > 0 ? <Icon name="zap" size={11} color={colors.textFaint} /> : null}
+                    <Txt variant="small" tone="muted" tabular numberOfLines={1}>{statsText}</Txt>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
           <CheckIn
             progress={progress} target={habit.target_count} done={done} onPress={checkIn} onLongPress={() => setMenu(true)}
@@ -451,7 +455,8 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
 
 const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
-  stats: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 'auto', paddingLeft: space.xs },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stats: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 1 },
   moreBtn: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   todayLabel: { fontWeight: '700' },
   dot: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },

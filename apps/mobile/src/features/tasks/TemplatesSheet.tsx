@@ -410,9 +410,6 @@ export function TemplatesSheet({
         </View>
       ) : (
         <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ gap: space.md, paddingBottom: space.sm }}>
-          <Txt variant="small" tone="muted">
-            자주 쓰는 체크리스트를 선택해 항목과 일정을 고른 뒤 한 번에 추가할 수 있습니다.
-          </Txt>
           {custom.length > 0 ? (
             <View style={{ gap: space.sm }}>
               <Txt variant="section" tone="muted">내 템플릿</Txt>

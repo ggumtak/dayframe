@@ -273,7 +273,7 @@ export default function HabitDetail() {
           </Card>
 
           <Card style={{ gap: space.sm }}>
-            <Txt variant="section" tone="muted">달력 · 눌러서 기록, 길게 눌러 상태 변경</Txt>
+            <Txt variant="section" tone="muted">달력</Txt>
             <MonthCalendar
               initial={day}
               today={day}

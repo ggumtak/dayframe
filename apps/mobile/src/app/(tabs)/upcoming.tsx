@@ -6,7 +6,7 @@ import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handl
 import { EmptyUpcoming } from '@/components/art';
 import { MonthCalendar } from '@/components/MonthCalendar';
 import { YearCalendar } from '@/components/YearCalendar';
-import { FoldHeader, Header, Icon, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
+import { Header, Icon, IconButton, Loading, Screen, SectionTitle, Segmented, Txt } from '@/components/ui';
 import { bySchedule, useSubtaskProgress, useTaskIndex } from '@/data/tasks';
 import {
   type HardwareKeyEvent, KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor, useScreenContext, useScreenFocused, useTaskShortcuts,
@@ -14,6 +14,7 @@ import {
 import { useQuickAdd } from '@/features/quick-add/QuickAdd';
 import type { TimeFormat } from '@/features/settings/prefs';
 import { usePersonalPrefs } from '@/features/settings/prefsStore';
+import { OverdueBar } from '@/features/tasks/OverdueBar';
 import { PlanDaySheet } from '@/features/tasks/PlanDaySheet';
 import { type TaskListModel, TaskListSheets, TaskRows, useTaskListModel } from '@/features/tasks/TaskList';
 import { useScreenDefaults } from '@/features/tasks/useScreenDefaults';
@@ -491,34 +492,15 @@ export default function Upcoming() {
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
               {weekOffset === 0 && !selected && overdue.length > 0 ? (
                 <View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={{ flex: 1 }}>
-                      <FoldHeader
-                        title="기한 지남" titleTone="danger" count={overdue.length} detail={overdueOpen ? '접기' : '펼치기'}
-                        open={overdueOpen} onToggle={() => setOverdueOpen((open) => !open)} label="기한 지난 할 일" />
-                    </View>
-                    <View style={styles.overdueActions}>
-                      <Pressable
-                        accessibilityRole="button" accessibilityLabel="기한 지난 할 일 일정 분산" hitSlop={8}
-                        onPress={() => {
-                          haptic.tap();
-                          setShowPlanDay(true);
-                        }}
-                        style={({ pressed }) => ({ paddingHorizontal: space.xs, paddingTop: space.md, opacity: pressed ? 0.6 : 1 })}>
-                        <Txt variant="smallStrong" tone="accent">일정 분산</Txt>
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button" accessibilityLabel="기한 지난 할 일 모두 오늘로 옮기기" hitSlop={8}
-                        onPress={() => {
-                          haptic.success();
-                          flow.rescheduleOverdue();
-                          showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
-                        }}
-                        style={({ pressed }) => ({ paddingRight: space.lg, paddingLeft: space.xs, paddingTop: space.md, opacity: pressed ? 0.6 : 1 })}>
-                        <Txt variant="smallStrong" tone="muted">오늘로 이동</Txt>
-                      </Pressable>
-                    </View>
-                  </View>
+                  <OverdueBar
+                    count={overdue.length} open={overdueOpen} onToggle={() => setOverdueOpen((open) => !open)}
+                    onSpread={() => setShowPlanDay(true)} spreadLabel="기한 지난 할 일 일정 분산"
+                    onMoveToday={() => {
+                      haptic.success();
+                      flow.rescheduleOverdue();
+                      showToast(`기한 지난 할 일 ${overdue.length}개를 오늘로 옮겼습니다.`);
+                    }}
+                    moveTodayLabel="기한 지난 할 일 모두 오늘로 옮기기" />
                   {overdueOpen ? <TaskRows model={model} tasks={overdue} focusedTaskId={weekCursor.focusedId} /> : null}
                 </View>
               ) : null}
@@ -531,7 +513,7 @@ export default function Upcoming() {
                   return (
                     <View key={day.key} style={[styles.freeDay, { borderBottomColor: colors.border }]}>
                       <Txt variant={date.equals(now) ? 'smallStrong' : 'small'} tone={date.equals(now) ? 'default' : 'faint'} style={{ flex: 1 }}>{title}</Txt>
-                      <AddButton label={title} onPress={() => addOn(date)} />
+                      <AddButton date={date} onPress={() => addOn(date)} />
                     </View>
                   );
                 }
@@ -539,7 +521,7 @@ export default function Upcoming() {
                   <View key={day.key}>
                     <SectionTitle
                       title={title} count={total}
-                      action={<AddButton label={title} onPress={() => addOn(date)} />} />
+                      action={<AddButton date={date} onPress={() => addOn(date)} />} />
                     {day.real.length ? <TaskRows model={model} tasks={day.real} hideDate focusedTaskId={weekCursor.focusedId} /> : null}
                     {day.previews.map((task) => <Preview key={task.id + '-' + day.key} task={task} date={date} timeFormat={prefs.timeFormat} />)}
                   </View>
@@ -566,14 +548,18 @@ function dayTitle(date: Temporal.PlainDate, now: Temporal.PlainDate): string {
   return label.endsWith('요일') ? `${label} · ${day}` : `${label} · ${day} (${weekdayName(date)})`;
 }
 
-function AddButton({ label, onPress }: { label: string; onPress: () => void }) {
+/** The same `+` as Today's group headings. */
+function AddButton({ date, onPress }: { date: Temporal.PlainDate; onPress: () => void }) {
   const { colors } = useTheme();
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={label + '에 할 일 추가'} hitSlop={10} onPress={onPress}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 2, opacity: pressed ? 0.6 : 1 })}>
+      accessibilityRole="button" accessibilityLabel={`${date.month}월 ${date.day}일에 할 일 추가`} hitSlop={10}
+      onPress={() => {
+        haptic.tap();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.addBtn, pressed && { backgroundColor: colors.surfaceMuted, opacity: 0.85 }]}>
       <Icon name="plus" size={16} color={colors.textFaint} />
-      <Txt variant="smallStrong" tone="muted">추가</Txt>
     </Pressable>
   );
 }
@@ -585,7 +571,7 @@ const styles = StyleSheet.create({
   emptyMonth: { alignItems: 'center', gap: space.sm, paddingVertical: space.lg },
   weekNav: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.md, paddingBottom: 2 },
   week: { flexDirection: 'row', paddingHorizontal: space.sm, paddingBottom: space.sm, borderBottomWidth: StyleSheet.hairlineWidth },
-  overdueActions: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  addBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginRight: -space.sm },
   monthBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.lg, paddingTop: space.md, marginTop: space.sm, borderTopWidth: StyleSheet.hairlineWidth },
   preview: { flexDirection: 'row', alignItems: 'flex-start', paddingLeft: space.lg },
   previewIcon: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginTop: 12, marginRight: space.md },
@@ -780,9 +766,21 @@ function MonthView({
       </View>
       <View style={[styles.monthBar, { borderTopColor: colors.border }]}>
         <Txt variant="small" tone="muted" tabular style={{ flex: 1 }}>
-          {selected ? '선택한 날짜를 다시 누르면 전체 보기' : `${month.month}월 일정 ${total}개 · 좌우로 밀어 월 이동`}
+          {picked
+            ? `${picked.month}월 ${picked.day}일 (${weekdayName(picked)}) · ${dotCounts.get(picked.toString()) ?? 0}개`
+            : `${month.month}월 일정 ${total}개`}
         </Txt>
-        {selected ? <AddButton label={title(picked!)} onPress={() => onAdd(picked!)} /> : null}
+        {picked ? (
+          <Pressable
+            accessibilityRole="button" accessibilityLabel="이번 달 전체 보기" hitSlop={10}
+            onPress={() => {
+              haptic.tap();
+              onSelect(null);
+            }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+            <Txt variant="smallStrong" tone="accent">전체 보기</Txt>
+          </Pressable>
+        ) : null}
       </View>
       {listed.length === 0 ? (
         <View style={styles.emptyMonth}>
@@ -796,7 +794,7 @@ function MonthView({
           <View key={key}>
             <SectionTitle
               title={title(date)} count={entry.real.length + entry.previews.length} tone={Temporal.PlainDate.compare(date, now) < 0 ? 'danger' : undefined}
-              action={<AddButton label={title(date)} onPress={() => onAdd(date)} />} />
+              action={<AddButton date={date} onPress={() => onAdd(date)} />} />
             {entry.real.length ? <TaskRows model={model} tasks={entry.real} hideDate focusedTaskId={cursor.focusedId} /> : null}
             {entry.previews.map((task) => <Preview key={task.id + '-' + key} task={task} date={date} timeFormat={timeFormat} />)}
             {entry.real.length + entry.previews.length === 0 ? (

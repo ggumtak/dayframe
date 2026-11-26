@@ -208,7 +208,7 @@ export default function Routines() {
   return (
     <Screen>
       <Header
-        title="습관 갤러리" subtitle="+로 바로 추가하거나 눌러서 맞춤 설정하세요"
+        title="습관 갤러리"
         left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       <View style={styles.topAction}>
         <Button label="직접 만들기" icon="plus" onPress={() => router.push('/habit/new')} style={{ minHeight: 44 }} />
@@ -232,9 +232,6 @@ export default function Routines() {
             onQuickAdd={quickAdd}
           />
         ))}
-        <Txt variant="small" tone="faint" style={{ textAlign: 'center', marginTop: space.sm }}>
-          추가한 뒤에도 습관 상세 화면에서 아이콘과 응원 문구, 알림 시간을 바꿀 수 있습니다.
-        </Txt>
       </ScrollView>
     </Screen>
   );

@@ -446,10 +446,7 @@ export default function Search() {
               ) : null}
 
               <View style={{ gap: space.sm }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Txt variant="section" tone="muted">빠른 필터</Txt>
-                  <Txt variant="caption" tone="faint">여러 개 조합 가능</Txt>
-                </View>
+                <Txt variant="section" tone="muted">빠른 필터</Txt>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                   {filterMeta.map((item) => {
                     const count = counts[item.key];
@@ -491,10 +488,7 @@ export default function Search() {
 
               {tags?.length ? (
                 <View style={{ gap: space.sm }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Txt variant="section" tone="muted">태그별 보기</Txt>
-                    <Txt variant="caption" tone="faint">길게 눌러 수정·삭제</Txt>
-                  </View>
+                  <Txt variant="section" tone="muted">태그별 보기</Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                     {tags.map((tag) => (
                       <Pressable
