@@ -36,36 +36,25 @@ const taskId = (task: Task) => task.id;
 
 const SMART_VIEW_ICONS: IconName[] = ['filter', 'star', 'flag', 'calendar', 'clock', 'zap', 'bookmark', 'inbox'];
 
-const filterMeta: { key: QuickFilterKey; short: string; label: string; icon?: IconName }[] = [
-  { key: 'overdue', short: '기한 지남', label: '기한 지난 할 일', icon: 'alert-circle' },
-  { key: 'today', short: '오늘', label: '오늘 할 일', icon: 'sun' },
-  { key: 'week', short: '이번 주', label: '이번 주 일정', icon: 'calendar' },
-  { key: 'p1', short: '!!! 가장 높음', label: '가장 중요한 할 일' },
-  { key: 'repeating', short: '반복', label: '반복 할 일', icon: 'repeat' },
-  { key: 'checklist', short: '체크리스트', label: '체크리스트', icon: 'check-square' },
-  { key: 'stale', short: '오래 미룬 일', label: '오래 미뤄 둔 할 일', icon: 'clock' },
-  { key: 'unscheduled', short: '날짜 없음', label: '날짜 없는 할 일', icon: 'inbox' },
+const filterMeta: { key: QuickFilterKey; label: string; icon: IconName }[] = [
+  { key: 'overdue', label: '기한 지남', icon: 'alert-circle' },
+  { key: 'today', label: '오늘', icon: 'sun' },
+  { key: 'week', label: '이번 주', icon: 'calendar' },
+  { key: 'p1', label: '!!!', icon: 'flag' },
+  { key: 'repeating', label: '반복', icon: 'repeat' },
+  { key: 'checklist', label: '체크리스트', icon: 'check-square' },
+  { key: 'stale', label: '미룬 일', icon: 'clock' },
+  { key: 'unscheduled', label: '날짜 없음', icon: 'inbox' },
 ];
 
 const filterLabels: Record<QuickFilterKey, string> = {
-  overdue: '기한 지난 할 일',
-  today: '오늘 할 일',
-  week: '이번 주 일정',
-  p1: '가장 중요한 할 일',
-  repeating: '반복 할 일',
-  checklist: '체크리스트',
-  stale: '오래 미뤄 둔 할 일',
-  unscheduled: '날짜 없는 할 일',
-};
-
-const filterShorts: Record<QuickFilterKey, string> = {
   overdue: '기한 지남',
   today: '오늘',
   week: '이번 주',
   p1: '가장 높음',
   repeating: '반복',
   checklist: '체크리스트',
-  stale: '오래 미룬 일',
+  stale: '미룬 일',
   unscheduled: '날짜 없음',
 };
 
@@ -202,6 +191,14 @@ export default function Search() {
     return map;
   }, [tasks, filterCtx]);
 
+  const projectCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const task of tasks) {
+      if (task.project_id) map.set(task.project_id, (map.get(task.project_id) ?? 0) + 1);
+    }
+    return map;
+  }, [tasks]);
+
   // Wrap row open so tapping any result records the typed query in recent searches.
   const searchModel = useMemo(() => ({
     ...model,
@@ -214,13 +211,13 @@ export default function Search() {
   const activeTitle = useMemo(() => {
     if (filterList.length === 0) return '할 일';
     if (filterList.length === 1) return filterLabels[filterList[0]];
-    return filterList.map((k) => filterShorts[k]).join(' · ');
+    return filterList.map((k) => filterLabels[k]).join(' · ');
   }, [filterList]);
 
   const openSaveSmartView = () => {
     const suggested = query.trim()
-      ? (filterList.length ? `${filterList.map((k) => filterShorts[k]).join(' · ')} (${query.trim()})` : query.trim())
-      : filterList.map((k) => filterShorts[k]).join(' · ');
+      ? (filterList.length ? `${filterList.map((k) => filterLabels[k]).join(' · ')} (${query.trim()})` : query.trim())
+      : filterList.map((k) => filterLabels[k]).join(' · ');
     const defaultIcon: IconName = filterList.length === 1
       ? (filterMeta.find((item) => item.key === filterList[0])?.icon ?? 'flag')
       : 'filter';
@@ -366,7 +363,7 @@ export default function Search() {
               }
             }}
             autoFocus
-            placeholder={filterList.length > 0 ? `${activeTitle}에서 검색` : '제목, 초성(ㅈㅂㄱ), #목록, @태그, due:today, -p4'}
+            placeholder={filterList.length > 0 ? `${activeTitle} 검색` : '검색'}
             accessibilityLabel="검색어"
             placeholderTextColor={colors.textFaint} returnKeyType="search" autoCorrect={false}
             style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 15, paddingVertical: 10 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
@@ -385,24 +382,25 @@ export default function Search() {
             contentContainerStyle={{ paddingHorizontal: space.lg, gap: 6 }}>
             {filterMeta.map((item) => {
               const selected = quickFilters.has(item.key);
-              if (item.key === 'stale' && !selected && counts.stale === 0) return null;
+              const count = counts[item.key];
+              if (item.key === 'stale' && !selected && count === 0) return null;
               return (
                 <Chip
                   key={item.key}
                   icon={item.icon}
-                  label={selected ? `${item.short} ×` : item.short}
+                  label={selected ? `${item.label} ×` : `${item.label}${count ? ' ' + count : ''}`}
                   selected={selected}
-                  tone={!selected && item.key === 'overdue' && counts.overdue > 0 ? 'danger' : undefined}
+                  tone={!selected && item.key === 'overdue' && count > 0 ? 'danger' : undefined}
                   onPress={() => toggleQuickFilter(item.key)} />
               );
             })}
           </ScrollView>
           <View style={{ paddingHorizontal: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
             <Chip
-              icon="check-circle" label="완료한 일 포함" selected={includeCompleted}
+              icon="check-circle" label="완료 포함" selected={includeCompleted}
               onPress={() => setIncludeCompleted((prev) => !prev)} />
             <Chip
-              icon="bookmark" label="스마트 뷰 저장"
+              icon="bookmark" label="뷰 저장"
               onPress={openSaveSmartView} />
           </View>
         </View>
@@ -417,7 +415,7 @@ export default function Search() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Txt variant="section" tone="muted">최근 검색</Txt>
                     <Pressable hitSlop={8} onPress={clearRecent}>
-                      <Txt variant="caption" tone="faint">모두 지우기</Txt>
+                      <Txt variant="caption" tone="faint">지우기</Txt>
                     </Pressable>
                   </View>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
@@ -446,7 +444,7 @@ export default function Search() {
               ) : null}
 
               <View style={{ gap: space.sm }}>
-                <Txt variant="section" tone="muted">빠른 필터</Txt>
+                <Txt variant="section" tone="muted">필터</Txt>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                   {filterMeta.map((item) => {
                     const count = counts[item.key];
@@ -455,7 +453,7 @@ export default function Search() {
                       <Chip
                         key={item.key}
                         icon={item.icon}
-                        label={`${item.short}${count ? ' ' + count : ''}`}
+                        label={`${item.label}${count ? ' ' + count : ''}`}
                         tone={item.key === 'overdue' && count > 0 ? 'danger' : undefined}
                         onPress={() => toggleQuickFilter(item.key)} />
                     );
@@ -465,16 +463,17 @@ export default function Search() {
 
               {projects?.length ? (
                 <View style={{ gap: space.sm }}>
-                  <Txt variant="section" tone="muted">목록별 보기</Txt>
+                  <Txt variant="section" tone="muted">목록</Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                     {projects.map((project) => {
                       const meta = projectMeta[project.id];
+                      const count = projectCounts.get(project.id) ?? 0;
                       return (
                         <Chip
                           key={project.id}
                           icon={meta?.icon ?? 'hash'}
                           color={listColor(meta?.color, isDark)}
-                          label={project.name}
+                          label={`${project.name}${count ? ' ' + count : ''}`}
                           onPress={() => {
                             const q = '#' + project.name + ' ';
                             setQuery(q);
@@ -488,7 +487,7 @@ export default function Search() {
 
               {tags?.length ? (
                 <View style={{ gap: space.sm }}>
-                  <Txt variant="section" tone="muted">태그별 보기</Txt>
+                  <Txt variant="section" tone="muted">태그</Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                     {tags.map((tag) => (
                       <Pressable
@@ -515,7 +514,8 @@ export default function Search() {
                 accessibilityRole="button" accessibilityLabel="완료한 일 보기" onPress={() => router.push('/completed')}
                 style={({ pressed }) => [styles.link, { borderColor: colors.border, opacity: pressed ? 0.6 : 1 }]}>
                 <Icon name="check-circle" size={18} color={colors.textMuted} />
-                <Txt style={{ flex: 1 }}>완료한 일 전체 보기</Txt>
+                <Txt style={{ flex: 1 }}>완료 기록</Txt>
+                {completedAll?.length ? <Txt variant="small" tone="faint" tabular>{completedAll.length}</Txt> : null}
                 <Icon name="chevron-right" size={18} color={colors.textFaint} />
               </Pressable>
             </View>
@@ -566,22 +566,21 @@ export default function Search() {
           ) : (
             <EmptyState
               icon="search" art={<EmptySearch size={EMPTY_ART} />}
-              title={filterList.length > 0 && !query.trim() ? `${activeTitle}${josa(activeTitle, '이/가')} 없습니다` : '검색 결과가 없습니다'}
-              message={includeCompleted ? '다른 검색어나 필터로 다시 찾아보세요.' : '이미 완료한 일에 있을 수도 있습니다.'}
+              title="검색 결과 없음"
               action={filterList.length > 0 && !query.trim() && includeCompleted ? (
                 <Button label="필터 해제" kind="secondary" onPress={() => setQuickFilters(new Set())} />
               ) : !includeCompleted ? (
-                <Button label="완료한 일에서도 찾기" kind="secondary" onPress={() => setIncludeCompleted(true)} />
+                <Button label="완료 포함" kind="secondary" onPress={() => setIncludeCompleted(true)} />
               ) : undefined} />
           )}
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <Sheet visible={savingView} onClose={() => setSavingView(false)} title="스마트 뷰로 저장">
+      <Sheet visible={savingView} onClose={() => setSavingView(false)} title="스마트 뷰">
         <View style={{ gap: space.md }}>
           <TextInput
             value={viewName} onChangeText={setViewName} autoFocus maxLength={60}
-            placeholder="예: 급한 회사 일, 이번 주 체크리스트" placeholderTextColor={colors.textFaint}
+            placeholder="뷰 이름" placeholderTextColor={colors.textFaint}
             returnKeyType="done" onSubmitEditing={confirmSaveSmartView} accessibilityLabel="스마트 뷰 이름"
             style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
           <View style={{ gap: 6 }}>
@@ -610,7 +609,7 @@ export default function Search() {
             </View>
           </View>
           <Row
-            icon="bookmark" label="목록 탭에 고정" detail="목록 상단에서 바로 열기"
+            icon="bookmark" label="목록에 고정"
             trailing={(
               <Switch
                 value={viewPinned} onValueChange={setViewPinned}
@@ -624,7 +623,7 @@ export default function Search() {
         </View>
       </Sheet>
 
-      <Sheet visible={!!inspectingDone} onClose={() => setInspectingDone(null)} title="완료한 할 일">
+      <Sheet visible={!!inspectingDone} onClose={() => setInspectingDone(null)} title="완료 기록">
         {inspectingDone ? (
           <View style={{ gap: space.md }}>
             <Txt variant="bodyStrong">{inspectingDone.title}</Txt>
@@ -633,7 +632,7 @@ export default function Search() {
                 <View style={styles.detailMetaRow}>
                   <Icon name="check-circle" size={15} color={colors.textFaint} />
                   <Txt variant="small" tone="muted" tabular>
-                    {formatDate(inspectedAt.toPlainDate(), nowDate)} {formatTime(inspectedAt.hour * 60 + inspectedAt.minute, prefs.timeFormat)} 완료
+                    {formatDate(inspectedAt.toPlainDate(), nowDate)} {formatTime(inspectedAt.hour * 60 + inspectedAt.minute, prefs.timeFormat)}
                   </Txt>
                 </View>
               ) : null}
@@ -686,7 +685,7 @@ export default function Search() {
 
       <Sheet visible={!!managingTag} onClose={() => setManagingTag(null)} title={managingTag ? '@' + managingTag.name : ''}>
         <Row
-          icon="edit-2" label="태그 이름 바꾸기"
+          icon="edit-2" label="이름 변경"
           onPress={() => {
             if (!managingTag) return;
             setTagInput(managingTag.name);
@@ -694,7 +693,7 @@ export default function Search() {
             setManagingTag(null);
           }} />
         <Row
-          icon="trash-2" label="태그 삭제" tone="danger" detail="할 일은 그대로 남습니다"
+          icon="trash-2" label="태그 삭제" tone="danger"
           onPress={() => {
             if (!managingTag) return;
             const removed = managingTag.name;
@@ -704,11 +703,11 @@ export default function Search() {
           }} />
       </Sheet>
 
-      <Sheet visible={!!renamingTag} onClose={() => setRenamingTag(null)} title="태그 이름 바꾸기">
+      <Sheet visible={!!renamingTag} onClose={() => setRenamingTag(null)} title="태그 이름">
         <View style={{ gap: space.md }}>
           <TextInput
             value={tagInput} onChangeText={setTagInput} autoFocus maxLength={120}
-            placeholder="새 태그 이름" placeholderTextColor={colors.textFaint}
+            placeholder="태그 이름" placeholderTextColor={colors.textFaint}
             returnKeyType="done" onSubmitEditing={saveTagRename} accessibilityLabel="새 태그 이름"
             style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
           <View style={{ flexDirection: 'row', gap: space.sm }}>

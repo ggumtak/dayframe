@@ -8,7 +8,7 @@ import { AI_ROUTES } from '@/features/ai/routes';
 import { KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor } from '@/features/keyboard';
 import { usePersonalPrefs } from '@/features/settings/prefsStore';
 import { useMinute } from '@/lib/clock';
-import { deviceTimeZone, dueDate, dueMinutes, formatDate, formatTime, logicalToday, type PlainDate, Temporal } from '@/lib/dates';
+import { deviceTimeZone, dueDate, dueMinutes, formatDate, formatDurationMinutes, formatTime, logicalToday, type PlainDate, Temporal } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { josa } from '@/lib/josa';
 import { nextOccurrence, type Task, type TaskPatch } from '@/lib/shared';
@@ -170,7 +170,7 @@ export function PlanDaySheet({
   const cursor = useListCursor(activeItems, itemTaskId, {
     enabled: visible,
     scrollRef,
-    estimatedRowHeight: activeTab === 'overdue' ? 116 : 64,
+    estimatedRowHeight: activeTab === 'overdue' ? 96 : 60,
   });
 
   useKeyHandler(
@@ -237,14 +237,14 @@ export function PlanDaySheet({
   );
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="하루 계획 · 일정 정리">
+    <Sheet visible={visible} onClose={onClose} title="하루 계획">
       {overdue.length > 0 ? (
         <View style={{ marginBottom: space.md }}>
           <Segmented<'overdue' | 'suggest'>
             value={activeTab} onChange={setTab}
             options={[
-              { value: 'overdue', label: `기한 지남 (${overdue.length})`, icon: 'alert-circle' },
-              { value: 'suggest', label: `오늘 추천 (${suggestions.length})`, icon: 'star' },
+              { value: 'overdue', label: `기한 지남 ${overdue.length}`, icon: 'alert-circle' },
+              { value: 'suggest', label: `추천 ${suggestions.length}`, icon: 'star' },
             ]} />
         </View>
       ) : null}
@@ -253,17 +253,18 @@ export function PlanDaySheet({
         {activeTab === 'overdue' ? (
           <>
             <View style={[styles.banner, { backgroundColor: colors.surfaceMuted }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Icon name="zap" size={15} color={colors.textMuted} />
-                <Txt variant="smallStrong">여러 날에 나누어 배정</Txt>
+              <View style={styles.bannerHeader}>
+                <Icon name="zap" size={14} color={colors.textMuted} />
+                <Txt variant="smallStrong" style={{ flex: 1 }}>자동 분산</Txt>
+                <Txt variant="caption" tone="faint" tabular>{proposals.length}개</Txt>
               </View>
-              <View style={{ flexDirection: 'row', gap: space.sm, marginTop: 4 }}>
-                <Button label="이대로 적용" icon="zap" onPress={applyBalanced} style={{ flex: 1, minHeight: 40 }} />
-                <Button label="모두 오늘로" kind="secondary" onPress={applyAllToday} style={{ minHeight: 40 }} />
+              <View style={styles.bannerActions}>
+                <Button label="적용" icon="zap" onPress={applyBalanced} style={{ flex: 1, minHeight: 38 }} />
+                <Button label="모두 오늘로" kind="secondary" onPress={applyAllToday} style={{ minHeight: 38 }} />
               </View>
             </View>
 
-            {proposals.map(({ task, targetDate, reason }) => {
+            {proposals.map(({ task, targetDate }) => {
               const targetLabel = formatDate(targetDate, now);
               const showProposedChip = Temporal.PlainDate.compare(targetDate, now) !== 0
                 && Temporal.PlainDate.compare(targetDate, tomorrow) !== 0;
@@ -276,16 +277,15 @@ export function PlanDaySheet({
                     { borderBottomColor: colors.border },
                     cursor.focusedId === task.id && { backgroundColor: colors.accentSoft, borderRadius: radius.sm },
                   ]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                  <View style={styles.itemHeader}>
                     <Txt variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>
                       {task.priority < 4 ? priorityMark(task.priority) + ' ' : ''}{task.title}
                     </Txt>
-                    <Txt variant="caption" style={{ fontWeight: '700' }}>
+                    <Txt variant="smallStrong" tone="muted">
                       → {targetLabel}
                     </Txt>
                   </View>
-                  <Txt variant="caption" tone="muted">{reason}</Txt>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  <View style={styles.chipRow}>
                     <Chip
                       icon="sun" label="오늘"
                       onPress={() => rescheduleWithUndo(task, now, '오늘')} />
@@ -323,15 +323,12 @@ export function PlanDaySheet({
           <>
             {autoSlotPlan.length > 0 ? (
               <View style={[styles.banner, { backgroundColor: colors.surfaceMuted }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Icon name="clock" size={15} color={colors.textMuted} />
-                  <Txt variant="smallStrong" style={{ flex: 1 }}>빈 시간 자동 배치</Txt>
+                <View style={styles.bannerHeader}>
+                  <Icon name="clock" size={14} color={colors.textMuted} />
+                  <Txt variant="smallStrong" style={{ flex: 1 }}>빈 시간 배치</Txt>
                   <Txt variant="caption" tone="faint" tabular>{autoSlotPlan.length}개</Txt>
                 </View>
-                <Txt variant="caption" tone="muted">
-                  시간이 없는 오늘 할 일을 기존 일정 사이 빈 시간에 우선순위대로 배치합니다.
-                </Txt>
-                <View style={{ gap: 3, marginTop: 2 }}>
+                <View style={{ gap: 3 }}>
                   {autoSlotPlan.slice(0, 3).map((item) => (
                     <View key={item.task.id} style={styles.slotPreviewRow}>
                       <Txt variant="caption" tone="accent" tabular style={{ minWidth: 56 }}>
@@ -344,50 +341,82 @@ export function PlanDaySheet({
                   ))}
                   {autoSlotPlan.length > 3 ? (
                     <Txt variant="caption" tone="faint" tabular>
-                      외 {autoSlotPlan.length - 3}개
+                      +{autoSlotPlan.length - 3}
                     </Txt>
                   ) : null}
                 </View>
-                <Button label="빈 시간에 자동 배치" icon="clock" onPress={applyAutoSlots} style={{ minHeight: 40, marginTop: 4 }} />
+                <Button label="자동 배치" icon="clock" onPress={applyAutoSlots} style={{ minHeight: 38, marginTop: 2 }} />
               </View>
             ) : null}
 
             {suggestions.length > 0 ? (
               <>
-                {suggestions.map(({ task, reason }) => (
-                  <View
-                    key={task.id}
-                    style={[
-                      styles.suggestRow,
-                      { borderColor: colors.border },
-                      cursor.focusedId === task.id && { backgroundColor: colors.accentSoft, borderRadius: radius.sm },
-                    ]}>
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <Txt variant="bodyStrong" numberOfLines={1}>{task.title}</Txt>
-                      <Txt variant="caption" tone="muted">{reason}</Txt>
+                {suggestions.map(({ task }) => {
+                  const taskDate = dueDate(task);
+                  const dateLabel = taskDate ? formatDate(taskDate, now) : null;
+                  const progress = subtaskProgress.get(task.id);
+                  const progressLabel = progress && progress.completed > 0
+                    ? `${progress.completed}/${progress.total}`
+                    : null;
+                  const durationLabel = task.duration_minutes ? formatDurationMinutes(task.duration_minutes) : null;
+                  const hasMeta = !!(dateLabel || progressLabel || durationLabel);
+                  return (
+                    <View
+                      key={task.id}
+                      style={[
+                        styles.suggestRow,
+                        { borderColor: colors.border },
+                        cursor.focusedId === task.id && { backgroundColor: colors.accentSoft, borderRadius: radius.sm },
+                      ]}>
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Txt variant="bodyStrong" numberOfLines={1}>
+                          {task.priority < 4 ? priorityMark(task.priority) + ' ' : ''}{task.title}
+                        </Txt>
+                        {hasMeta ? (
+                          <View style={styles.suggestMeta}>
+                            {dateLabel ? (
+                              <View style={styles.metaChip}>
+                                <Icon name="calendar" size={11} color={colors.textFaint} />
+                                <Txt variant="caption" tone="muted">{dateLabel}</Txt>
+                              </View>
+                            ) : null}
+                            {durationLabel ? (
+                              <View style={styles.metaChip}>
+                                <Icon name="clock" size={11} color={colors.textFaint} />
+                                <Txt variant="caption" tone="muted" tabular>{durationLabel}</Txt>
+                              </View>
+                            ) : null}
+                            {progressLabel ? (
+                              <View style={styles.metaChip}>
+                                <Icon name="check-square" size={11} color={colors.textFaint} />
+                                <Txt variant="caption" tone="muted" tabular>{progressLabel}</Txt>
+                              </View>
+                            ) : null}
+                          </View>
+                        ) : null}
+                      </View>
+                      <Pressable
+                        accessibilityRole="button" accessibilityLabel={task.title + ' 오늘로 옮기기'}
+                        onPress={() => addSuggestionToToday(task)}
+                        style={({ pressed }) => [styles.addPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 }]}>
+                        <Icon name="plus" size={14} color={colors.textMuted} />
+                        <Txt variant="smallStrong">오늘</Txt>
+                      </Pressable>
                     </View>
-                    <Pressable
-                      accessibilityRole="button" accessibilityLabel={task.title + ' 오늘로 옮기기'}
-                      onPress={() => addSuggestionToToday(task)}
-                      style={({ pressed }) => [styles.addPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.6 : 1 }]}>
-                      <Icon name="plus" size={14} color={colors.textMuted} />
-                      <Txt variant="smallStrong">오늘</Txt>
-                    </Pressable>
-                  </View>
-                ))}
+                  );
+                })}
               </>
             ) : autoSlotPlan.length === 0 ? (
-              <View style={{ paddingVertical: space.xl, alignItems: 'center', gap: space.sm }}>
-                <Icon name="check-circle" size={28} color={colors.textMuted} />
-                <Txt variant="bodyStrong">오늘로 가져올 할 일이 없습니다</Txt>
-                <Txt variant="small" tone="muted">지금 예정된 일정에 집중해 보세요.</Txt>
+              <View style={styles.emptySuggest}>
+                <Icon name="check-circle" size={24} color={colors.textFaint} />
+                <Txt variant="bodyStrong">추천 할 일 없음</Txt>
               </View>
             ) : null}
           </>
         )}
       </ScrollView>
       <Button
-        label="AI로 하루 계획 세우기" leading={<AiIcon size={16} color={colors.text} />} kind="secondary" style={{ marginTop: space.sm }}
+        label="AI 하루 계획" leading={<AiIcon size={16} color={colors.text} />} kind="secondary" style={{ marginTop: space.sm }}
         onPress={() => {
           onClose();
           router.push(AI_ROUTES.plan);
@@ -397,13 +426,20 @@ export function PlanDaySheet({
 }
 
 const styles = StyleSheet.create({
-  banner: { borderRadius: radius.md, padding: space.md, gap: 6 },
+  banner: { borderRadius: radius.md, padding: space.md, gap: space.sm },
+  bannerHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bannerActions: { flexDirection: 'row', gap: space.sm },
   slotPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  item: { borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: space.xs, paddingTop: space.xs, paddingBottom: space.md, gap: 4 },
+  item: { borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: space.xs, paddingTop: space.xs, paddingBottom: space.md, gap: space.sm },
+  itemHeader: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   suggestRow: {
     flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.xs, paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  suggestMeta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  metaChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  emptySuggest: { paddingVertical: space.xl, alignItems: 'center', gap: space.sm },
   addPill: {
     flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, height: 34, borderRadius: radius.pill,
   },

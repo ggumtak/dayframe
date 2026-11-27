@@ -122,7 +122,7 @@ export function TodayHabits() {
               },
             ]}>
             <Icon name="play" size={11} color={colors.accentText} />
-            <Txt variant="metaStrong" tone="accent">루틴 시작</Txt>
+            <Txt variant="metaStrong" tone="accent">루틴</Txt>
           </Pressable>
         ) : null}
       </View>
@@ -175,15 +175,20 @@ export function TodayHabits() {
                     {streak >= 2 ? (
                       <View style={styles.streakBadge} accessible accessibilityLabel={`${streak}${weekly ? '주' : '일'} 연속`}>
                         <Icon name="zap" size={11} color={colors.textFaint} />
-                        <Txt variant="meta" tone="muted" tabular>{streak}{weekly ? '주' : '일'} 연속</Txt>
+                        <Txt variant="meta" tone="muted" tabular>{streak}{weekly ? '주' : '일'}</Txt>
                       </View>
                     ) : null}
                     {missedYesterday ? (
-                      <Txt variant="metaStrong" tone="danger">어제 놓침</Txt>
+                      <View style={styles.missedBadge}>
+                        <View style={[styles.missedDot, { backgroundColor: colors.danger }]} />
+                        <Txt variant="metaStrong" tone="danger">어제 놓침</Txt>
+                      </View>
                     ) : null}
-                    <Txt variant="meta" tone={settled ? 'faint' : 'muted'} tabular>
-                      {weekly ? `이번 주 ${progress}/${habit.target_count}` : habit.target_count > 1 ? `${progress}/${habit.target_count}회` : settled ? '완료' : ''}
-                    </Txt>
+                    {weekly || habit.target_count > 1 ? (
+                      <Txt variant="meta" tone={settled ? 'faint' : 'muted'} tabular>
+                        {`${progress}/${habit.target_count}`}
+                      </Txt>
+                    ) : null}
                   </View>
                 </Pressable>
               );
@@ -224,4 +229,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  missedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  missedDot: { width: 5, height: 5, borderRadius: 2.5 },
 });

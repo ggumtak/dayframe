@@ -1,6 +1,6 @@
 import { type Href, router } from 'expo-router';
 import { type ReactNode, useMemo, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, View } from 'react-native';
+import { Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AiIcon } from '@/components/AiIcon';
 import { Button, Card, Divider, FoldHeader, Header, Icon, type IconName, IconButton, Row, Screen, Sheet, Txt } from '@/components/ui';
@@ -10,7 +10,7 @@ import { useKeyboard, useScreenContext } from '@/features/keyboard';
 import { RemindersCard } from '@/features/reminders/RemindersCard';
 import { useReminderSettings } from '@/features/reminders/settings';
 import { accentPalette, MODE_LABELS } from '@/features/settings/palettes';
-import type { Density, PersonalPrefs, StartupTab } from '@/features/settings/prefs';
+import type { PersonalPrefs, StartupTab } from '@/features/settings/prefs';
 import { usePersonalPrefs } from '@/features/settings/prefsStore';
 import { hiddenTabs, TAB_ICONS, TAB_LABELS, visibleTabs } from '@/features/settings/tabBar';
 import { useTabBarConfig } from '@/features/settings/tabBarStore';
@@ -19,13 +19,7 @@ import { UpdateCard } from '@/features/update/UpdateCard';
 import { useUpdate } from '@/features/update/useUpdate';
 import { deviceTimeZone } from '@/lib/dates';
 import { env } from '@/lib/env';
-import { radius, space, type, useTheme } from '@/theme';
-
-const DENSITY_LABELS: Record<Density, string> = {
-  compact: '컴팩트',
-  default: '기본',
-  comfortable: '여유롭게',
-};
+import { radius, space, useTheme } from '@/theme';
 
 const STARTUP_LABELS: Record<StartupTab, string> = {
   index: '오늘',
@@ -36,23 +30,22 @@ const STARTUP_LABELS: Record<StartupTab, string> = {
   last: '마지막 탭',
 };
 
-function summarizePersonalPrefs(prefs: PersonalPrefs): string {
+function summarizePersonalPrefs(prefs: PersonalPrefs): string | undefined {
   const parts: string[] = [];
-  if (prefs.dayStartHour > 0) parts.push(`야행성 새벽 ${prefs.dayStartHour}시`);
-  if (prefs.startOfWeek === 'sunday') parts.push('일요일 시작');
+  if (prefs.dayStartHour > 0) parts.push(`${prefs.dayStartHour}시 시작`);
+  if (prefs.startOfWeek === 'sunday') parts.push('일요일');
   if (prefs.timeFormat === '24h') parts.push('24시간');
   if (
     prefs.swipeLeft !== 'complete'
     || prefs.swipeRightPrimary !== 'schedule'
     || prefs.swipeRightSecondary !== 'delete'
   ) {
-    parts.push('스와이프 맞춤');
+    parts.push('스와이프');
   }
   if (prefs.todayHabitsPosition === 'top') parts.push('습관 상단');
   else if (prefs.todayHabitsPosition === 'hidden') parts.push('습관 숨김');
   if (!prefs.singleKeyShortcuts) parts.push('단일 키 끔');
-  if (parts.length > 0) return parts.slice(0, 3).join(' · ');
-  return '하루 기준 · 제스처 · 빠른 추가';
+  return parts.length > 0 ? parts.slice(0, 2).join(' · ') : undefined;
 }
 
 export default function Settings() {
@@ -78,9 +71,8 @@ export default function Settings() {
 
   const tabBarDetail = useMemo(() => {
     const visible = visibleTabs(tabBar).length;
-    const base = hidden.length ? `탭 ${visible}개 · ${hidden.length}개 숨김` : `탭 ${visible}개`;
-    return personal.startupTab !== 'index' ? `${base} · 시작 ${STARTUP_LABELS[personal.startupTab]}` : base;
-  }, [hidden.length, personal.startupTab, tabBar]);
+    return personal.startupTab !== 'index' ? `탭 ${visible}개 · ${STARTUP_LABELS[personal.startupTab]}` : `탭 ${visible}개`;
+  }, [personal.startupTab, tabBar]);
 
   const reminderDetail = Platform.OS !== 'android' ? 'Android 전용' : reminderSettings.enabled ? '켜짐' : '꺼짐';
 
@@ -109,28 +101,28 @@ export default function Settings() {
           </Group>
         ) : null}
 
-        <Group title="내 맞춤 설정">
+        <Group title="일반">
           <Card style={styles.list}>
             <LinkRow
               icon="sliders"
               label="맞춤 설정"
-              subtitle={personalSummary}
+              detail={personalSummary}
               href="/personalization" />
             <Divider inset={32} />
             <LinkRow
               icon="droplet"
-              label="외관 및 밀도"
-              detail={`${MODE_LABELS[mode]} · ${accentPalette(accent).label} · ${DENSITY_LABELS[personal.density]}`}
+              label="외관"
+              detail={`${MODE_LABELS[mode]} · ${accentPalette(accent).label}`}
               href="/appearance" />
             <Divider inset={32} />
             <LinkRow
               icon="sidebar"
-              label="탭 바 및 시작 화면"
+              label="탭 바"
               detail={tabBarDetail}
               href="/tab-bar" />
             <Divider inset={32} />
             <Row
-              icon="command" label="키보드 단축키" detail="? 키로 언제든 보기"
+              icon="command" label="키보드 단축키" detail="? 단축키"
               trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
               onPress={openHelp} />
           </Card>
@@ -149,15 +141,15 @@ export default function Settings() {
           {remindersOpen ? <RemindersCard /> : null}
         </View>
 
-        <Group title="AI · 도구">
+        <Group title="도구">
           <Card style={styles.list}>
             <LinkRow leading={<AiIcon size={18} color={colors.textMuted} />} label="AI 비서" detail={aiKey.ready && !aiKey.hasKey ? 'API 키 필요' : undefined} href={AI_ROUTES.hub} />
             <Divider inset={32} />
             <LinkRow icon="cpu" label="AI 연결" detail="Claude · ChatGPT" href="/ai" />
             <Divider inset={32} />
-            <LinkRow icon="check-circle" label="완료한 일" detail="전체 완료 기록" href="/completed" />
+            <LinkRow icon="check-circle" label="완료 기록" href="/completed" />
             <Divider inset={32} />
-            <LinkRow icon="star" label="습관 갤러리" detail="추천 습관 둘러보기" href="/routines" />
+            <LinkRow icon="star" label="습관 갤러리" href="/routines" />
           </Card>
         </Group>
 
@@ -167,14 +159,14 @@ export default function Settings() {
               {hidden.map((tab, index) => (
                 <View key={tab}>
                   {index > 0 ? <Divider inset={32} /> : null}
-                  <LinkRow icon={TAB_ICONS[tab]} label={TAB_LABELS[tab]} detail="탭 바에서 숨김" href={`/${tab}`} navigate />
+                  <LinkRow icon={TAB_ICONS[tab]} label={TAB_LABELS[tab]} href={`/${tab}`} navigate />
                 </View>
               ))}
             </Card>
           </Group>
         ) : null}
 
-        <Group title="앱 정보 · 계정">
+        <Group title="계정">
           {!updateHighlighted ? <UpdateCard /> : null}
           <Card style={styles.list}>
             <Row icon="github" label="업데이트 기록" detail={env.githubRepo} onPress={() => void Linking.openURL('https://github.com/' + env.githubRepo + '/releases')} />
@@ -186,7 +178,7 @@ export default function Settings() {
 
       <Sheet visible={confirm} onClose={() => setConfirm(false)} title="로그아웃할까요?">
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          로그아웃하면 이 기기의 데이터가 지워집니다. 오프라인에서 변경해 아직 동기화되지 않은 내용도 함께 사라집니다.
+          로그아웃하면 이 기기의 미동기화 데이터와 캐시가 지워집니다.
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button
@@ -215,27 +207,11 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
  * A settings row that opens another screen. `navigate` is for tab screens: it goes to the tab inside the
  * existing tab navigator, the way the habit screen opens 집중, rather than pushing a second copy.
  */
-function LinkRow({ icon, leading, label, subtitle, detail, href, navigate }: {
-  icon?: IconName; leading?: ReactNode; label: string; subtitle?: string; detail?: string; href: Href; navigate?: boolean;
+function LinkRow({ icon, leading, label, detail, href, navigate }: {
+  icon?: IconName; leading?: ReactNode; label: string; detail?: string; href: Href; navigate?: boolean;
 }) {
   const { colors } = useTheme();
   const open = () => (navigate ? router.navigate(href) : router.push(href));
-  if (subtitle) {
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        onPress={open}
-        style={({ pressed }) => [styles.subtitleRow, pressed && { backgroundColor: colors.surfaceMuted }]}>
-        {leading ?? (icon ? <Icon name={icon} size={20} color={colors.textMuted} /> : null)}
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[type.body as TextStyle, { color: colors.text }]} numberOfLines={1}>{label}</Text>
-          <Txt variant="small" tone="muted" numberOfLines={1}>{subtitle}</Txt>
-        </View>
-        <Icon name="chevron-right" size={18} color={colors.textFaint} />
-      </Pressable>
-    );
-  }
   return (
     <Row
       icon={icon} leading={leading} label={label} detail={detail}
@@ -249,5 +225,4 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   inline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   list: { paddingVertical: space.xs },
-  subtitleRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 58, paddingVertical: space.xs },
 });

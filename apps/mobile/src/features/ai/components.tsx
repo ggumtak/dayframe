@@ -40,9 +40,8 @@ export function AiScreen({ title, subtitle, right, children, footer, scroll = tr
 export function NeedKey({ onLeave }: { onLeave?: () => void }) {
   return (
     <EmptyState
-      icon="key" title="Anthropic 키가 필요합니다"
-      message="AI 비서는 내 Anthropic 키로 작동합니다. 키를 저장하면 바로 사용할 수 있습니다."
-      action={<Button label="키 저장하기" icon="key" onPress={() => { onLeave?.(); router.push(AI_ROUTES.key); }} style={{ marginTop: space.sm }} />} />
+      icon="key" title="Anthropic 키 필요"
+      action={<Button label="AI 비서 설정" icon="key" onPress={() => { onLeave?.(); router.push(AI_ROUTES.key); }} style={{ marginTop: space.sm }} />} />
   );
 }
 

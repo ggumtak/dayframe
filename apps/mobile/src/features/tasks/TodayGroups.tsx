@@ -46,20 +46,20 @@ const GroupSection = memo(function GroupSection({ group, model, folded, selected
             toggleTodayGroupFold(group.key, todayIso);
           }}
           style={({ pressed }) => [styles.header, { backgroundColor: pressed ? colors.surfaceMuted : 'transparent' }]}>
-          <Icon name={icon} size={14} color={iconColor} />
+          <Icon name={icon} size={13} color={iconColor} />
           <Txt
             variant="smallStrong" tone={group.danger ? 'danger' : 'muted'}
             numberOfLines={1} style={{ flexShrink: 1 }} accessibilityRole="header">
             {name}
           </Txt>
-          <Txt variant="small" tone="faint" tabular>{count}</Txt>
+          <Txt variant="caption" tone="faint" tabular>{count}</Txt>
           {hiddenOverdue > 0 ? (
             <View style={styles.foldedOverdue}>
               <View style={[styles.overdueDot, { backgroundColor: colors.danger }]} />
               <Txt variant="caption" tone="danger" tabular>{hiddenOverdue}</Txt>
             </View>
           ) : null}
-          <Icon name={folded ? 'chevron-right' : 'chevron-down'} size={15} color={colors.textFaint} />
+          <Icon name={folded ? 'chevron-right' : 'chevron-down'} size={14} color={colors.textFaint} />
         </Pressable>
         {canQuickAdd ? (
           <Pressable
@@ -76,7 +76,7 @@ const GroupSection = memo(function GroupSection({ group, model, folded, selected
               styles.addBtn,
               pressed && { backgroundColor: colors.surfaceMuted, opacity: 0.85 },
             ]}>
-            <Icon name="plus" size={16} color={colors.textFaint} />
+            <Icon name="plus" size={15} color={colors.textFaint} />
           </Pressable>
         ) : null}
       </View>
@@ -149,9 +149,9 @@ const styles = StyleSheet.create({
   list: { paddingTop: space.xs },
   section: { marginTop: space.md },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
-  header: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, minHeight: 42 },
+  header: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, minHeight: 38 },
   foldedOverdue: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 2 },
   overdueDot: { width: 6, height: 6, borderRadius: 3 },
-  addBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginRight: space.sm },
+  addBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: space.sm },
   rows: { borderTopWidth: StyleSheet.hairlineWidth },
 });

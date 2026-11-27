@@ -842,12 +842,12 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
   );
 
   const keyboardHint = openPane === 'calendar'
-    ? '←→↑↓ 날짜 이동 · Enter 적용 · Esc 닫기'
+    ? '↑↓←→ 이동 · Enter 선택 · Esc 닫기'
     : suggestions.length > 0
       ? '↑↓ 이동 · Tab 선택 · Esc 닫기'
       : checklistMode
-        ? 'Enter 줄바꿈 · Ctrl+Enter 체크리스트 저장 · Esc 닫기'
-        : 'Enter 추가 · Ctrl+Enter 저장 · Alt+M 메모 · Alt+1~4 우선순위 · Alt+K 계속 추가 · Esc 닫기';
+        ? 'Enter 줄바꿈 · Ctrl+Enter 저장 · Esc 닫기'
+        : 'Enter 추가 · Alt+M 메모 · Alt+1~4 우선순위 · Esc 닫기';
 
   return (
     <KeyboardAvoidingView behavior="padding" style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -875,7 +875,7 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
             {parent
               ? `하위 작업 · ${parent.title}`
               : checklistMode
-                ? `체크리스트 만들기${activeProject ? ` · #${activeProject.name}` : ''}`
+                ? `체크리스트${activeProject ? ` · #${activeProject.name}` : ''}`
                 : activeProject
                   ? `#${activeProject.name}${selectedSectionName ? ` · ${selectedSectionName}` : ''}`
                   : '새 할 일'}
@@ -911,10 +911,10 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
           onFocus={() => { if (openPane === 'calendar') closePane(); }}
           placeholder={
             parent
-              ? '하위 작업 입력'
+              ? '하위 작업'
               : checklistMode
-                ? '제목 입력 후 Enter로 체크리스트 항목 추가'
-                : '예: 금요일 3시 30분간 회의 #업무 !!!'
+                ? '제목 (Enter로 항목 추가)'
+                : '할 일 입력'
           }
           accessibilityLabel="할 일 입력" />
 
@@ -923,14 +923,14 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
             ref={notesInput}
             value={notes} onChangeText={setNotes} multiline maxLength={10000}
             onFocus={() => { if (openPane === 'calendar') closePane(); }}
-            placeholder="메모나 링크를 입력해 주세요" placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
+            placeholder="메모" placeholderTextColor={colors.textFaint} accessibilityLabel="메모"
             style={[type.small, styles.notesInput, { backgroundColor: colors.surfaceMuted, color: colors.text }]} />
         ) : null}
 
         {plainText ? (
           <View style={[styles.plainHint, { backgroundColor: colors.surfaceMuted }]}>
             <Icon name="type" size={13} color={colors.textMuted} />
-            <Txt variant="caption" tone="muted" style={{ flex: 1 }}>입력한 그대로 저장합니다 · 날짜·태그 자동 인식 꺼짐</Txt>
+            <Txt variant="caption" tone="muted" style={{ flex: 1 }}>자동 인식 꺼짐</Txt>
             <Pressable hitSlop={8} onPress={() => setPlainText(false)}>
               <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>해제</Txt>
             </Pressable>
@@ -943,11 +943,11 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
               <Icon name="check-square" size={13} color={colors.accentText} />
               <Txt variant="caption" tone="muted" style={{ flex: 1 }} tabular>
                 {multiLines.length >= 2
-                  ? `제목 1개 · 체크리스트 항목 ${multiLines.length - 1}개`
-                  : '첫 줄은 제목 · Enter로 항목을 이어서 입력'}
+                  ? `하위 항목 ${multiLines.length - 1}개`
+                  : '체크리스트'}
               </Txt>
               <Pressable hitSlop={6} onPress={appendChecklistLine} accessibilityRole="button" accessibilityLabel="체크리스트 줄 추가">
-                <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>+ 항목 줄</Txt>
+                <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>+ 항목</Txt>
               </Pressable>
             </View>
             {multiLines.length >= 2 ? (
@@ -971,13 +971,10 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
           </View>
         ) : isMultiLine ? (
           <View style={[styles.multiBox, { backgroundColor: colors.surfaceMuted }]}>
-            <Txt variant="caption" style={{ fontWeight: '700' }}>
-              {multiLines.length}줄을 어떻게 추가할까요?
-            </Txt>
             <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
-              <Chip icon="layers" label={`할 일 ${multiLines.length}개로 추가`} selected onPress={submitMultiSeparate} />
+              <Chip icon="layers" label={`할 일 ${multiLines.length}개`} selected onPress={submitMultiSeparate} />
               {!parent ? (
-                <Chip icon="git-merge" label={`체크리스트로 추가 (하위 ${multiLines.length - 1}개)`} onPress={submitMultiAsChecklist} />
+                <Chip icon="git-merge" label={`체크리스트 (${multiLines.length - 1})`} onPress={submitMultiAsChecklist} />
               ) : null}
             </View>
           </View>
@@ -1269,7 +1266,7 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
             style={[styles.undoBanner, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
             <Icon name="check" size={13} color={colors.accentText} />
             <Txt variant="caption" tone="muted" numberOfLines={1} style={{ flex: 1 }}>
-              방금 추가함 · {lastAdded.title}
+              추가됨 · {lastAdded.title}
             </Txt>
             <Pressable hitSlop={8} onPress={undoLastAdded} accessibilityRole="button" accessibilityLabel="방금 추가한 할 일 실행 취소">
               <Txt variant="caption" tone="accent" style={{ fontWeight: '700' }}>실행 취소</Txt>
@@ -1579,13 +1576,11 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
       <Sheet visible={fabMenuOpen} onClose={() => setFabMenuOpen(false)} title="빠른 실행">
         <Row
           icon="check-square"
-          label="체크리스트 빠르게 만들기"
-          detail="Enter로 항목 연속 입력"
+          label="체크리스트"
           onPress={() => openFromMenu({ initialMode: 'checklist' })} />
         <Row
           icon="bookmark"
-          label="템플릿 불러오기"
-          detail="자주 쓰는 체크리스트"
+          label="템플릿"
           onPress={() => {
             setFabMenuOpen(false);
             const cur = screenDefaults.current;
@@ -1597,13 +1592,11 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
           }} />
         <Row
           icon="layers"
-          label="연속 추가 모드"
-          detail="목록·태그·날짜 유지"
+          label="연속 추가"
           onPress={() => openFromMenu({ initialKeepOpen: true })} />
         <Row
           icon="compass"
-          label="오늘 하루 정리"
-          detail="밀린 일정 · 추천 작업"
+          label="오늘 정리"
           onPress={() => {
             setFabMenuOpen(false);
             setPlanDayOpen(true);

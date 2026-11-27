@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AiIcon } from '@/components/AiIcon';
 import { Icon, type IconName, IconButton, Txt } from '@/components/ui';
@@ -9,57 +10,64 @@ import { AI_MODELS } from '@/features/ai/models';
 import { useAiPrefs } from '@/features/ai/prefs';
 import { AI_ROUTES } from '@/features/ai/routes';
 import { KEY_PRIORITY, matchesCombo, useKeyHandler, useScreenFocused } from '@/features/keyboard';
-import { radius, space, useTheme } from '@/theme';
+import { fontFamily, radius, space, useTheme } from '@/theme';
 
-const FEATURES: { icon?: IconName; isAiIcon?: boolean; name: string; description: string; route: string }[] = [
-  { isAiIcon: true, name: '자유 부탁', description: '할 일 추가·시간·알람 설정·수정·삭제를 말하듯 부탁합니다.', route: AI_ROUTES.ask },
-  { icon: 'edit-3', name: '메모 정리', description: '두서없이 적은 메모를 깔끔한 할 일로 정리합니다.', route: AI_ROUTES.organize },
-  { icon: 'clock', name: '하루 계획', description: '오늘 할 일을 남은 시간에 맞춰 배치합니다.', route: AI_ROUTES.plan },
-  { icon: 'layers', name: '큰 일 쪼개기', description: '막막한 할 일을 바로 시작할 수 있는 작은 단계로 나눕니다.', route: AI_ROUTES.breakdown },
-  { icon: 'bar-chart-2', name: '주간 돌아보기', description: '지난 7일간의 할 일·습관·집중 기록을 돌아봅니다.', route: AI_ROUTES.review },
+const TOOLS: readonly { icon: IconName; name: string; tag: string; route: string }[] = [
+  { icon: 'edit-3', name: '메모 정리', tag: '메모 → 할 일', route: AI_ROUTES.organize },
+  { icon: 'clock', name: '하루 계획', tag: '시간 배치', route: AI_ROUTES.plan },
+  { icon: 'layers', name: '큰 일 쪼개기', tag: '단계 나누기', route: AI_ROUTES.breakdown },
+  { icon: 'bar-chart-2', name: '주간 돌아보기', tag: '7일 요약', route: AI_ROUTES.review },
 ];
 
-/**
- * One feature as a plain row (no card, no coloured icon tile): the name carries it. The key prompt, shown while no
- * key is saved, is the one row with an accent mark, because it is the only thing to do first.
- */
-function FeatureCard({ icon, isAiIcon, name, description, onPress, highlight }: {
-  icon?: IconName; isAiIcon?: boolean; name: string; description: string; onPress: () => void; highlight?: boolean;
-}) {
+const SHORTCUT_ROUTES = [AI_ROUTES.ask, ...TOOLS.map((tool) => tool.route)] as const;
+
+function ToolTile({ icon, name, tag, onPress }: { icon: IconName; name: string; tag: string; onPress: () => void }) {
   const { colors } = useTheme();
-  const markColor = highlight ? colors.accentText : colors.textMuted;
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={name} accessibilityHint={description} onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={name}
+      accessibilityHint={tag}
+      onPress={onPress}
       style={({ pressed }) => [
-        styles.row,
-        highlight ? { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, paddingHorizontal: space.md } : { borderBottomColor: colors.border },
-        !highlight && styles.divider, pressed && { opacity: 0.7 },
+        styles.tile,
+        { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.72 : 1 },
       ]}>
-      {isAiIcon ? <AiIcon size={20} color={markColor} /> : icon ? <Icon name={icon} size={20} color={markColor} /> : null}
-      <View style={{ flex: 1, gap: 2 }}>
-        <Txt variant="bodyStrong">{name}</Txt>
-        <Txt variant="small" tone="muted">{description}</Txt>
+      <Icon name={icon} size={20} color={colors.textMuted} />
+      <View style={styles.tileText}>
+        <Txt variant="bodyStrong" numberOfLines={1}>{name}</Txt>
+        <Txt variant="caption" tone="muted" numberOfLines={1}>{tag}</Txt>
       </View>
-      <Icon name="chevron-right" size={18} color={colors.textFaint} />
     </Pressable>
   );
 }
 
-/** AI 비서: the five features, and the way to the key when none is saved. */
+/** AI 비서: direct free-form prompt bar and compact 2×2 tool tiles. */
 export default function AssistantHub() {
+  const { colors } = useTheme();
   const isFocused = useScreenFocused();
   const { ready, hasKey } = useAiKeyStatus();
   const { model } = useAiPrefs();
+  const [prompt, setPrompt] = useState('');
   const modelName = AI_MODELS.find((item) => item.id === model)?.name ?? model;
+
+  const submitPrompt = () => {
+    const trimmed = prompt.trim();
+    if (!trimmed) {
+      router.push(AI_ROUTES.ask);
+      return;
+    }
+    setPrompt('');
+    router.push(`${AI_ROUTES.ask}?q=${encodeURIComponent(trimmed)}` as never);
+  };
 
   useKeyHandler(
     (event) => {
       if (event.editing) return false;
       if (!event.ctrl && !event.alt && !event.meta && !event.shift && ['1', '2', '3', '4', '5'].includes(event.key)) {
-        const feature = FEATURES[Number(event.key) - 1];
-        if (feature) {
-          if (!event.repeat) router.push(feature.route as never);
+        const route = SHORTCUT_ROUTES[Number(event.key) - 1];
+        if (route) {
+          if (!event.repeat) router.push(route as never);
           return true;
         }
       }
@@ -74,25 +82,135 @@ export default function AssistantHub() {
 
   return (
     <AiScreen
-      title="AI 비서" subtitle={hasKey ? `${modelName} · 내 Anthropic 키` : undefined}
+      title="AI 비서"
+      subtitle={hasKey ? modelName : undefined}
       right={<IconButton name="settings" label="AI 비서 설정" onPress={() => router.push(AI_ROUTES.key)} />}>
       {ready && !hasKey ? (
-        <FeatureCard
-          highlight icon="key" name="먼저 키를 저장해 주세요"
-          description="내 Anthropic 키로 작동하며, 사용한 만큼만 요금이 청구됩니다."
-          onPress={() => router.push(AI_ROUTES.key)} />
+        <>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="먼저 키를 저장해 주세요"
+            accessibilityHint="Anthropic API 키 필요"
+            onPress={() => router.push(AI_ROUTES.key)}
+            style={({ pressed }) => [
+              styles.banner,
+              { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.75 : 1 },
+            ]}>
+            <Icon name="key" size={20} color={colors.accentText} />
+            <View style={styles.bannerText}>
+              <Txt variant="bodyStrong">먼저 키를 저장해 주세요</Txt>
+              <Txt variant="small" tone="muted">Anthropic API 키 필요</Txt>
+            </View>
+            <Icon name="chevron-right" size={18} color={colors.textFaint} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="자유 부탁"
+            onPress={() => router.push(AI_ROUTES.ask)}
+            style={({ pressed }) => [
+              styles.askLink,
+              { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.72 : 1 },
+            ]}>
+            <AiIcon size={18} color={colors.textMuted} />
+            <Txt variant="bodyStrong" style={{ flex: 1 }}>자유 부탁</Txt>
+            <Icon name="chevron-right" size={16} color={colors.textFaint} />
+          </Pressable>
+        </>
       ) : null}
-      {FEATURES.map((feature) => (
-        <FeatureCard key={feature.route} {...feature} onPress={() => router.push(feature.route as never)} />
-      ))}
-      <Txt variant="caption" tone="faint" style={{ textAlign: 'center', marginTop: space.sm }}>
-        AI 제안은 미리 확인한 뒤 선택한 항목만 반영됩니다.
-      </Txt>
+
+      {hasKey ? (
+        <View style={[styles.promptBar, { backgroundColor: colors.surfaceMuted }]}>
+          <AiIcon size={18} color={colors.accentText} />
+          <TextInput
+            value={prompt}
+            onChangeText={setPrompt}
+            placeholder="무엇을 도와드릴까요?"
+            placeholderTextColor={colors.textFaint}
+            accessibilityLabel="무엇을 도와드릴까요?"
+            returnKeyType="send"
+            onSubmitEditing={submitPrompt}
+            style={[styles.promptInput, { color: colors.text, fontFamily }]}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="자유 부탁"
+            onPress={submitPrompt}
+            style={({ pressed }) => [
+              styles.sendBtn,
+              { backgroundColor: colors.accent, opacity: pressed ? 0.85 : 1 },
+            ]}>
+            <Icon name="arrow-up" size={16} color={colors.onAccent} />
+          </Pressable>
+        </View>
+      ) : null}
+
+      <View style={styles.grid}>
+        {[TOOLS.slice(0, 2), TOOLS.slice(2, 4)].map((pair, rowIndex) => (
+          <View key={rowIndex} style={styles.gridRow}>
+            {pair.map((tool) => (
+              <ToolTile
+                key={tool.route}
+                icon={tool.icon}
+                name={tool.name}
+                tag={tool.tag}
+                onPress={() => router.push(tool.route as never)}
+              />
+            ))}
+          </View>
+        ))}
+      </View>
     </AiScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    borderRadius: radius.md,
+    padding: space.md,
+  },
+  bannerText: { flex: 1, gap: 2 },
+  askLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    minHeight: 48,
+  },
+  promptBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    borderRadius: radius.lg,
+    paddingLeft: space.md,
+    paddingRight: 6,
+    paddingVertical: 6,
+    minHeight: 52,
+  },
+  promptInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 6,
+  },
+  sendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  grid: { gap: space.sm },
+  gridRow: { flexDirection: 'row', gap: space.sm },
+  tile: {
+    flex: 1,
+    borderRadius: radius.md,
+    padding: space.md,
+    gap: space.md,
+    minHeight: 104,
+    justifyContent: 'space-between',
+  },
+  tileText: { gap: 2 },
 });

@@ -3,7 +3,7 @@ import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, Chip, Header, Icon, IconButton, Screen, Txt } from '@/components/ui';
+import { Chip, Header, Icon, IconButton, Screen, Txt } from '@/components/ui';
 import { useHabitActions, useHabits } from '@/data/habits';
 import { HabitAvatar } from '@/features/habits/HabitAvatar';
 import { deleteHabitMeta, type HabitTimeOfDay, setHabitMeta } from '@/features/habits/habitMeta';
@@ -48,23 +48,19 @@ const PresetCard = memo(function PresetCard({
   return (
     <Pressable
       accessibilityRole="button" accessibilityState={{ selected: added }}
-      accessibilityLabel={`${routine.name}, ${routineLabel(routine)}, ${routine.quote}${added ? ', 이미 추가한 습관' : ', 눌러서 맞춤 추가하기'}`}
+      accessibilityLabel={`${routine.name}, ${routineLabel(routine)}${added ? ', 이미 추가한 습관' : ', 눌러서 맞춤 추가하기'}`}
       onPress={() => onOpen(routine)}
       style={({ pressed }) => [styles.card, {
         backgroundColor: focused ? colors.accentSoft : colors.surface,
         borderColor: focused ? colors.accent : added ? colors.accentSoft : colors.border,
         opacity: pressed ? 0.78 : 1,
       }]}>
-      <HabitAvatar name={routine.name} emoji={routine.emoji} size={44} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Txt variant="bodyStrong" numberOfLines={1}>{routine.name}</Txt>
-        <Txt variant="small" tone="muted" numberOfLines={1}>{routine.quote}</Txt>
-        <Txt variant="caption" tone="faint">{routineLabel(routine)}</Txt>
-      </View>
+      <HabitAvatar name={routine.name} emoji={routine.emoji} size={36} />
+      <Txt variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{routine.name}</Txt>
+      <Txt variant="caption" tone="faint" tabular>{routineLabel(routine)}</Txt>
       {added ? (
-        <View style={styles.badge}>
-          <Icon name="check" size={11} color={colors.textFaint} />
-          <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>추가됨</Txt>
+        <View style={styles.addedMark} accessible accessibilityLabel="추가됨">
+          <Icon name="check" size={16} color={colors.textFaint} />
         </View>
       ) : (
         <Pressable
@@ -88,6 +84,7 @@ const PresetCard = memo(function PresetCard({
 
 /** 습관 갤러리: ready-made habits by category. Tap `+` to add immediately, or tap a card to customize first. */
 export default function Routines() {
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const isFocused = useScreenFocused();
   useScreenContext('routines', isFocused);
@@ -103,7 +100,7 @@ export default function Routines() {
 
   const open = useCallback((routine: Routine) => {
     if (owned.has(routineKey(routine.name))) {
-      showToast('이미 추가된 습관입니다. 습관 탭에서 확인해 보세요.');
+      showToast('이미 추가된 습관입니다.');
       return;
     }
     const timeOfDay = inferTimeOfDay(routine);
@@ -123,7 +120,7 @@ export default function Routines() {
 
   const quickAdd = useCallback((routine: Routine) => {
     if (owned.has(routineKey(routine.name))) {
-      showToast('이미 추가된 습관입니다. 습관 탭에서 확인해 보세요.');
+      showToast('이미 추가된 습관입니다.');
       return;
     }
     const timeOfDay = inferTimeOfDay(routine);
@@ -153,7 +150,7 @@ export default function Routines() {
   const cursor = useListCursor(shown.items, routineName, {
     enabled: isFocused,
     scrollRef,
-    estimatedRowHeight: 78,
+    estimatedRowHeight: 62,
   });
 
   const switchCategory = (delta: -1 | 1) => {
@@ -209,10 +206,8 @@ export default function Routines() {
     <Screen>
       <Header
         title="습관 갤러리"
-        left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
-      <View style={styles.topAction}>
-        <Button label="직접 만들기" icon="plus" onPress={() => router.push('/habit/new')} style={{ minHeight: 44 }} />
-      </View>
+        left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />}
+        right={<IconButton name="plus" label="직접 만들기" onPress={() => router.push('/habit/new')} color={colors.textMuted} />} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} style={{ flexGrow: 0, flexShrink: 0 }}>
         {galleryCategories.map((item) => (
           <Chip key={item.title} icon={item.icon} label={item.title} selected={category === item.title} onPress={() => setCategory(item.title)} />
@@ -238,13 +233,12 @@ export default function Routines() {
 }
 
 const styles = StyleSheet.create({
-  topAction: { paddingHorizontal: space.lg, paddingBottom: space.sm },
   filters: { gap: 6, paddingHorizontal: space.lg, paddingBottom: space.sm, alignItems: 'center' },
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, paddingHorizontal: space.md,
+    flexDirection: 'row', alignItems: 'center', gap: space.sm + 2, paddingVertical: space.sm + 2, paddingHorizontal: space.md,
     borderRadius: radius.lg, borderWidth: 1,
   },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: radius.pill, paddingHorizontal: 7, height: 22 },
+  addedMark: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   quickAddBtn: {
     width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },

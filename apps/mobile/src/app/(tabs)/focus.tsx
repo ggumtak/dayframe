@@ -35,9 +35,9 @@ type PickerItem =
 const pickerItemKey = (item: PickerItem) => item.key;
 
 const pomoPresets = [
-  { label: '15 / 3분', focus: 15, rest: 3, longRest: 10 },
-  { label: '25 / 5분', focus: 25, rest: 5, longRest: 15 },
-  { label: '50 / 10분', focus: 50, rest: 10, longRest: 30 },
+  { label: '15분', focus: 15, rest: 3, longRest: 10 },
+  { label: '25분', focus: 25, rest: 5, longRest: 15 },
+  { label: '50분', focus: 50, rest: 10, longRest: 30 },
 ] as const;
 
 const timerPresets = [10, 15, 25, 45, 60, 90] as const;
@@ -460,7 +460,7 @@ export default function Focus() {
   return (
     <Screen>
       <Header
-        title="집중" subtitle={todayStats.count ? `오늘 ${todayStats.count}회 · ${formatMinutes(todayStats.seconds)}` : '오늘 첫 집중을 시작해 보세요'}
+        title="집중" subtitle={todayStats.count ? `오늘 ${todayStats.count}회 · ${formatMinutes(todayStats.seconds)}` : '기록 없음'}
         right={canConfigure ? (
           <IconButton name="sliders" label="시간 설정" onPress={() => setConfiguring(true)} color={colors.textMuted} />
         ) : undefined} />
@@ -468,14 +468,14 @@ export default function Focus() {
         {goalMinutes > 0 ? (
           <View
             accessibilityLabel={`오늘 집중 ${todayMinutes}분, 목표 ${goalMinutes}분`}
-            style={[styles.goalStrip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            style={styles.goalStrip}>
             <View style={styles.goalHeader}>
-              <Txt variant="smallStrong" tabular>{`오늘 집중 ${todayMinutes}분 / 목표 ${goalMinutes}분`}</Txt>
+              <Txt variant="smallStrong" tabular>{`${todayMinutes} / ${goalMinutes}분`}</Txt>
               <Txt variant="caption" tone={todayMinutes >= goalMinutes ? 'accent' : 'muted'} tabular style={{ fontWeight: '600' }}>
-                {todayMinutes >= goalMinutes ? '목표 달성' : `${goalPct}%`}
+                {todayMinutes >= goalMinutes ? '달성' : `${goalPct}%`}
               </Txt>
             </View>
-            <ProgressBar value={todayMinutes / goalMinutes} height={5} />
+            <ProgressBar value={todayMinutes / goalMinutes} height={4} />
           </View>
         ) : null}
 
@@ -563,16 +563,18 @@ export default function Focus() {
                             }} />
                         );
                       })}
-                      <Chip icon="sliders" label="직접 설정" onPress={() => setConfiguring(true)} />
+                      <Chip icon="sliders" label="직접" accessibilityLabel="직접 설정" onPress={() => setConfiguring(true)} />
                     </ScrollView>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }} accessibilityLabel={`${rounds}세트 중 ${round}세트 완료`}>
+                    <View
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      accessibilityLabel={`${rounds}세트 중 ${round}세트 완료, 휴식 ${prefs.shortBreakMinutes}분`}>
                       {Array.from({ length: rounds }, (_, index) => (
                         <View
                           key={index}
                           style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: index < round ? colors.accent : colors.surfaceMuted }} />
                       ))}
                       <Txt variant="small" tone="muted" tabular style={{ marginLeft: 4 }}>
-                        휴식 {prefs.shortBreakMinutes}분 · {rounds - round}세트 후 긴 휴식 {prefs.longBreakMinutes}분
+                        휴식 {prefs.shortBreakMinutes}분 · {rounds}세트
                       </Txt>
                     </View>
                   </View>
@@ -587,7 +589,7 @@ export default function Focus() {
                             setFocusPrefs({ timerMinutes: preset });
                           }} />
                       ))}
-                      <Chip icon="sliders" label="직접 설정" onPress={() => setConfiguring(true)} />
+                      <Chip icon="sliders" label="직접" accessibilityLabel="직접 설정" onPress={() => setConfiguring(true)} />
                     </ScrollView>
                   </View>
                 ) : null}
@@ -595,10 +597,10 @@ export default function Focus() {
                 {durationOverride !== null && prefs.mode !== 'stopwatch' ? (
                   <View style={styles.overrideNote}>
                     <Txt variant="caption" tone="muted" tabular>
-                      이번 집중만 {durationOverride}분으로 적용 중
+                      {durationOverride}분 임시 적용
                     </Txt>
                     <Pressable hitSlop={8} onPress={() => { haptic.tap(); setDurationOverride(null); }}>
-                      <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>기본값으로</Txt>
+                      <Txt variant="caption" tone="accent" style={{ fontWeight: '600' }}>초기화</Txt>
                     </Pressable>
                   </View>
                 ) : null}
@@ -609,7 +611,7 @@ export default function Focus() {
                 </View>
                 <View style={{ alignSelf: 'stretch', gap: space.sm }}>
                   <Button
-                    label={onBreak ? '휴식 건너뛰고 집중 시작' : prefs.mode === 'pomodoro' ? '집중 시작' : prefs.mode === 'timer' ? '타이머 시작' : '스톱워치 시작'}
+                    label={onBreak ? '집중 시작' : prefs.mode === 'pomodoro' ? '집중 시작' : prefs.mode === 'timer' ? '타이머 시작' : '스톱워치 시작'}
                     icon="play" onPress={() => start()} />
                   {onBreak ? <Button label="휴식 종료" kind="ghost" onPress={endRest} /> : null}
                 </View>
@@ -630,7 +632,7 @@ export default function Focus() {
                 <Txt variant="bodyStrong" numberOfLines={1}>{linkedTask.title}</Txt>
                 {linkedTotalSubs > 0 ? (
                   <Txt variant="caption" tone="muted" tabular>
-                    체크리스트 {linkedDoneSubs.length}/{linkedTotalSubs} 완료
+                    {linkedDoneSubs.length}/{linkedTotalSubs}
                   </Txt>
                 ) : null}
               </Pressable>
@@ -667,7 +669,7 @@ export default function Focus() {
         {weekly.totalCount > 0 ? (
           <Card style={{ alignSelf: 'stretch', gap: space.md }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Txt variant="section" tone="muted">최근 7일 집중</Txt>
+              <Txt variant="section" tone="muted">최근 7일</Txt>
               <Txt variant="smallStrong" tabular>
                 {formatMinutes(weekly.totalSeconds)} · {weekly.totalCount}회
               </Txt>
@@ -730,7 +732,7 @@ export default function Focus() {
         ) : null}
       </ScrollView>
 
-      <Sheet visible={configuring} onClose={() => setConfiguring(false)} title={prefs.mode === 'pomodoro' ? '뽀모도로 시간 설정' : '타이머 시간 설정'}>
+      <Sheet visible={configuring} onClose={() => setConfiguring(false)} title={prefs.mode === 'pomodoro' ? '뽀모도로 설정' : '타이머 설정'}>
         <View style={{ gap: space.md }}>
           {prefs.mode === 'pomodoro' ? (
             <>
@@ -756,9 +758,6 @@ export default function Focus() {
                   ))}
                 </View>
               </View>
-              <Txt variant="small" tone="muted">
-                {prefs.roundsBeforeLongBreak}세트 후 긴 휴식이 끝나면 타이머가 자동으로 멈추며, 다음 집중은 1세트부터 다시 시작됩니다.
-              </Txt>
             </>
           ) : (
             <>
@@ -785,13 +784,13 @@ export default function Focus() {
         </View>
       </Sheet>
 
-      <Sheet visible={picking} onClose={closePicking} title="무엇에 집중할까요?">
+      <Sheet visible={picking} onClose={closePicking} title="집중 대상">
         <View style={[styles.searchBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
           <Icon name="search" size={16} color={colors.textFaint} />
           <TextInput
             value={pickerQuery}
             onChangeText={setPickerQuery}
-            placeholder="할 일이나 습관 검색"
+            placeholder="할 일·습관 검색"
             placeholderTextColor={colors.textFaint}
             accessibilityLabel="집중 대상 검색"
             returnKeyType="search"
@@ -844,19 +843,19 @@ export default function Focus() {
           ))}
           {!candidates.length && !otherTasks.length && !activeHabits.length ? (
             <Txt tone="muted" style={{ paddingVertical: space.lg }}>
-              {normalizedQuery ? '검색 결과가 없습니다.' : '등록된 할 일이나 습관이 있으면 이곳에서 연결할 수 있습니다.'}
+              {normalizedQuery ? '검색 결과 없음' : '항목 없음'}
             </Txt>
           ) : null}
         </ScrollView>
       </Sheet>
 
-      <Sheet visible={confirmCancel} onClose={() => setConfirmCancelSessionId(null)} title="진행 중인 집중을 취소할까요?">
+      <Sheet visible={confirmCancel} onClose={() => setConfirmCancelSessionId(null)} title="집중 취소">
         <View style={{ gap: space.sm }}>
           <Txt tone="muted" style={{ marginBottom: space.sm }}>
-            {`지금까지 ${formatMinutes(netSeconds)} 집중했습니다. 기록 없이 취소하면 이번 집중 시간은 저장되지 않습니다.`}
+            {`${formatMinutes(netSeconds)} 기록이 저장되지 않습니다.`}
           </Txt>
           <Button
-            label="기록하고 완료"
+            label="저장 후 완료"
             icon="check"
             onPress={() => {
               setConfirmCancelSessionId(null);
@@ -864,7 +863,7 @@ export default function Focus() {
             }}
           />
           <Button
-            label="기록 없이 취소"
+            label="기록 삭제"
             kind="danger"
             icon="trash-2"
             onPress={() => {
@@ -872,7 +871,7 @@ export default function Focus() {
               stop('cancelled');
             }}
           />
-          <Button label="계속 집중하기" kind="secondary" onPress={() => setConfirmCancelSessionId(null)} />
+          <Button label="계속 집중" kind="secondary" onPress={() => setConfirmCancelSessionId(null)} />
         </View>
       </Sheet>
 
@@ -902,11 +901,7 @@ export default function Focus() {
 const styles = StyleSheet.create({
   goalStrip: {
     alignSelf: 'stretch',
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm + 2,
-    gap: space.sm,
+    gap: 6,
   },
   goalHeader: {
     flexDirection: 'row',

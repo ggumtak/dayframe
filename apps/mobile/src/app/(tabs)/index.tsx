@@ -2,12 +2,13 @@ import { router } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, type ScrollViewInstance, Share, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
+import Svg, { Circle } from 'react-native-svg';
 
 import { AiIconButton } from '@/components/AiIcon';
 import { EmptyToday, OfflineArt } from '@/components/art';
 import { AllDoneArt } from '@/components/art/Illustrations';
 import {
-  Button, Card, Chip, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, ProgressBar, Row, Screen, SectionTitle, Segmented, Sheet, Txt,
+  Button, Card, Chip, EMPTY_ART, EmptyState, Header, Icon, IconButton, Loading, Row, Screen, SectionTitle, Segmented, Sheet, Txt,
 } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabits } from '@/data/habits';
@@ -87,6 +88,46 @@ function snapshotSchedule(task: Task): TaskPatch {
     recurrence_mode: task.recurrence_mode,
     recurrence_local_time: task.recurrence_local_time,
   };
+}
+
+const DAY_RING_SIZE = 18;
+const DAY_RING_STROKE = 2.2;
+const DAY_RING_RADIUS = (DAY_RING_SIZE - DAY_RING_STROKE) / 2;
+const DAY_RING_CIRCUMFERENCE = 2 * Math.PI * DAY_RING_RADIUS;
+
+function DayProgressRing({ value }: { value: number }) {
+  const { colors } = useTheme();
+  const ratio = Math.max(0, Math.min(1, value));
+  const cx = DAY_RING_SIZE / 2;
+  return (
+    <Svg
+      width={DAY_RING_SIZE}
+      height={DAY_RING_SIZE}
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(ratio * 100) }}>
+      <Circle
+        cx={cx}
+        cy={cx}
+        r={DAY_RING_RADIUS}
+        stroke={colors.border}
+        strokeWidth={DAY_RING_STROKE}
+        fill="none"
+      />
+      {ratio > 0 ? (
+        <Circle
+          cx={cx}
+          cy={cx}
+          r={DAY_RING_RADIUS}
+          stroke={colors.accent}
+          strokeWidth={DAY_RING_STROKE}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={`${DAY_RING_CIRCUMFERENCE * ratio} ${DAY_RING_CIRCUMFERENCE}`}
+          transform={`rotate(-90 ${cx} ${cx})`}
+        />
+      ) : null}
+    </Svg>
+  );
 }
 
 export default function Today() {
@@ -441,17 +482,17 @@ export default function Today() {
         <Icon name="check-circle" size={24} color={colors.accentText} />
       )}
       <Txt variant="bodyStrong" style={{ textAlign: 'center' }}>
-        오늘 할 일 {done.length}개를 모두 마쳤습니다
+        모두 완료
       </Txt>
-      <Txt variant="small" tone="muted" style={{ textAlign: 'center' }}>
-        수고하셨습니다. 다른 할 일도 살펴볼까요?
+      <Txt variant="small" tone="muted" tabular style={{ textAlign: 'center' }}>
+        오늘 {done.length}개
       </Txt>
       <View style={styles.allDoneActions}>
         <Pressable
           accessibilityRole="button" accessibilityLabel="추천 보기" hitSlop={8}
           onPress={() => openPlanning('suggest')}
           style={({ pressed }) => [styles.allDoneLink, { opacity: pressed ? 0.6 : 1 }]}>
-          <Txt variant="smallStrong" tone="accent">추천 보기</Txt>
+          <Txt variant="smallStrong" tone="accent">추천</Txt>
         </Pressable>
         <Txt variant="caption" tone="faint">·</Txt>
         <Pressable
@@ -461,15 +502,15 @@ export default function Today() {
             router.push(AI_ROUTES.review);
           }}
           style={({ pressed }) => [styles.allDoneLink, { opacity: pressed ? 0.6 : 1 }]}>
-          <Txt variant="smallStrong" tone="muted">주간 돌아보기</Txt>
+          <Txt variant="smallStrong" tone="muted">돌아보기</Txt>
         </Pressable>
       </View>
     </View>
   ) : (
     <View style={styles.allDone}>
-      <Icon name="check-circle" size={20} color={colors.textMuted} />
+      <Icon name="check-circle" size={18} color={colors.textFaint} />
       <View style={{ flex: 1 }}>
-        <Txt variant="bodyStrong">오늘 남은 할 일이 없습니다</Txt>
+        <Txt variant="bodyStrong">오늘 할 일 없음</Txt>
       </View>
       <Pressable
         accessibilityRole="button" accessibilityLabel="할 일 추가" hitSlop={8}
@@ -524,7 +565,7 @@ export default function Today() {
         { borderColor: colors.border, backgroundColor: pressed ? colors.surfaceMuted : 'transparent' },
       ]}>
       <Icon name="moon" size={14} color={colors.textMuted} />
-      <Txt variant="smallStrong" tone="muted" style={{ flex: 1 }}>남은 일 내일로 미루기</Txt>
+      <Txt variant="smallStrong" tone="muted" style={{ flex: 1 }}>남은 일 내일로</Txt>
       <Txt variant="caption" tone="faint" tabular>{remaining}개</Txt>
       <Icon name="arrow-right" size={14} color={colors.textFaint} />
     </Pressable>
@@ -596,14 +637,32 @@ export default function Today() {
           {showFocusStrip ? (
             <View style={styles.dayBar}>
               <View style={styles.dayBarRow}>
-                <Txt variant="smallStrong" tabular>{done.length}/{totalToday}</Txt>
+                <View style={styles.dayProgress}>
+                  <DayProgressRing value={totalToday > 0 ? done.length / totalToday : 0} />
+                  <Txt variant="smallStrong" tabular>{done.length}/{totalToday}</Txt>
+                </View>
                 {plannedMinutes > 0 || todayFocusMinutes > 0 ? (
-                  <Txt variant="caption" tone="muted" tabular numberOfLines={1} style={{ flexShrink: 1 }}>
-                    {[
-                      plannedMinutes > 0 ? `예정 ${formatDurationMinutes(plannedMinutes)}` : null,
-                      todayFocusMinutes > 0 ? `집중 ${formatDurationMinutes(todayFocusMinutes)}` : null,
-                    ].filter(Boolean).join(' · ')}
-                  </Txt>
+                  <View style={styles.dayMetaGroup}>
+                    {plannedMinutes > 0 ? (
+                      <View style={styles.dayMetaItem} accessibilityLabel={`예정 ${formatDurationMinutes(plannedMinutes)}`}>
+                        <Icon name="clock" size={12} color={colors.textFaint} />
+                        <Txt variant="caption" tone="muted" tabular numberOfLines={1}>
+                          {formatDurationMinutes(plannedMinutes)}
+                        </Txt>
+                      </View>
+                    ) : null}
+                    {plannedMinutes > 0 && todayFocusMinutes > 0 ? (
+                      <Txt variant="caption" tone="faint">·</Txt>
+                    ) : null}
+                    {todayFocusMinutes > 0 ? (
+                      <View style={styles.dayMetaItem} accessibilityLabel={`집중 ${formatDurationMinutes(todayFocusMinutes)}`}>
+                        <Icon name="target" size={12} color={colors.textFaint} />
+                        <Txt variant="caption" tone="muted" tabular numberOfLines={1}>
+                          {formatDurationMinutes(todayFocusMinutes)}
+                        </Txt>
+                      </View>
+                    ) : null}
+                  </View>
                 ) : null}
                 <View style={{ flex: 1 }} />
                 {focusTarget ? (
@@ -618,7 +677,6 @@ export default function Today() {
                   </Pressable>
                 ) : null}
               </View>
-              <ProgressBar value={totalToday > 0 ? done.length / totalToday : 0} height={3} />
             </View>
           ) : null}
 
@@ -653,14 +711,8 @@ export default function Today() {
                       <View style={[styles.guideBadge, { backgroundColor: colors.surfaceMuted }]}>
                         <Icon name="compass" size={18} color={colors.textMuted} />
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Txt variant="bodyStrong">Dayframe 시작 가이드</Txt>
-                        <Txt variant="caption" tone="muted">체크리스트 · 타임라인 · 습관 · 집중을 한곳에서</Txt>
-                      </View>
+                      <Txt variant="bodyStrong" style={{ flex: 1 }}>Dayframe 시작</Txt>
                     </View>
-                    <Txt variant="small" tone="muted">
-                      바로 써 볼 수 있는 4단계 체험 체크리스트를 오늘 할 일에 추가해 드릴까요?
-                    </Txt>
                     <View style={{ flexDirection: 'row', gap: space.sm }}>
                       <Button label="체험 체크리스트 추가" kind="secondary" icon="check-square" onPress={createStarterChecklist} style={{ flex: 1, minHeight: 42 }} />
                       <Button label="건너뛰기" kind="secondary" onPress={dismissOnboarding} style={{ minHeight: 42 }} />
@@ -670,15 +722,14 @@ export default function Today() {
                 </View>
               ) : remaining === 0 && done.length === 0 && !showHabitsOnToday ? (
                 <EmptyState
-                  icon="sun" art={<EmptyToday size={EMPTY_ART} />} title="오늘 할 일이 없습니다"
-                  message="할 일을 바로 추가하거나, 하루 계획에서 다른 할 일을 가져올 수 있습니다."
+                  icon="sun" art={<EmptyToday size={EMPTY_ART} />} title="오늘 할 일 없음"
                   action={(
                     <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap', justifyContent: 'center' }}>
                       <Button
-                        label="+ 할 일 추가" kind="secondary"
+                        label="할 일 추가" kind="secondary" icon="plus"
                         onPress={() => quickAdd.open({ dueToday: true })} />
                       <Button
-                        label="할 일 추천 보기" kind="ghost" icon="compass"
+                        label="추천" accessibilityLabel="할 일 추천 보기" kind="ghost" icon="compass"
                         onPress={() => openPlanning('suggest')} />
                     </View>
                   )} />
@@ -743,7 +794,7 @@ export default function Today() {
                   ) : remaining === 0 ? (
                     allDoneCard
                   ) : restOverdue.length > 0 && mitTasks.length === 0 && eveningTasks.length === 0 ? (
-                    <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 예정된 할 일이 없습니다.</Txt>
+                    <Txt variant="small" tone="muted" style={{ padding: space.lg }}>오늘 할 일 없음</Txt>
                   ) : null}
                   {eveningSection}
                   {eveningWrapUpFooter}
@@ -857,8 +908,11 @@ const styles = StyleSheet.create({
   panes: { flex: 1, flexDirection: 'row' },
   side: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth },
   headerBadgeDot: { position: 'absolute', top: 7, right: 7, width: 7, height: 7, borderRadius: 4 },
-  dayBar: { paddingHorizontal: space.lg, paddingBottom: space.sm, gap: 6 },
+  dayBar: { paddingHorizontal: space.lg, paddingBottom: space.xs },
   dayBarRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 28 },
+  dayProgress: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dayMetaGroup: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  dayMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 1 },
   focusStart: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 28 },
   focusSection: { marginTop: space.md },
   focusSectionHeader: {

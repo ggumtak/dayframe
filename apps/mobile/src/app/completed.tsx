@@ -204,7 +204,7 @@ export default function Completed() {
   };
 
   const selectedProjectLabel = projectFilter === 'all'
-    ? '모든 목록'
+    ? '목록'
     : projectFilter === 'inbox'
       ? '미분류'
       : names.get(projectFilter) ?? '목록';
@@ -295,11 +295,16 @@ export default function Completed() {
     <Screen>
       <Header
         title="완료한 일"
-        subtitle={allEntries.length > 0 ? `이번 주 ${weekDoneCount}개 완료 · 표시 ${total}개` : undefined}
-        left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
+        left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />}
+        right={allEntries.length > 0 ? (
+          <View style={styles.weekStat}>
+            <Icon name="check-circle" size={14} color={colors.accentText} />
+            <Txt variant="smallStrong" tone="muted" tabular>이번 주 {weekDoneCount}</Txt>
+          </View>
+        ) : undefined} />
       {query.isPending ? <Loading /> : query.isError ? (
         <EmptyState
-          icon="cloud-off" art={<OfflineArt size={EMPTY_ART} />} title="완료 기록을 불러오지 못했습니다" message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+          icon="cloud-off" art={<OfflineArt size={EMPTY_ART} />} title="불러오지 못함"
           action={<Button label="다시 시도" kind="secondary" onPress={() => void refreshAll()} />} />
       ) : (
         <>
@@ -310,7 +315,7 @@ export default function Completed() {
                   <Icon name="search" size={16} color={colors.textMuted} />
                   <TextInput
                     ref={searchInput}
-                    value={search} onChangeText={setSearch} placeholder="완료한 일 검색" placeholderTextColor={colors.textFaint}
+                    value={search} onChangeText={setSearch} placeholder="검색" placeholderTextColor={colors.textFaint}
                     autoCorrect={false} returnKeyType="search" accessibilityLabel="완료한 일 검색"
                     style={[{ fontFamily, flex: 1, color: colors.text, fontSize: 15, paddingVertical: 8 }, Platform.select({ web: { outlineStyle: 'none' } as object, default: {} })]} />
                   {search ? <IconButton name="x" label="지우기" size={16} color={colors.textMuted} onPress={() => setSearch('')} style={{ width: 32, height: 32 }} /> : null}
@@ -329,7 +334,7 @@ export default function Completed() {
                   selected={projectFilter !== 'all'}
                   onPress={() => setPickingProject(true)} />
                 <Chip
-                  icon="layers" label="하위 작업 숨기기" selected={hideSubtasks}
+                  icon="layers" label="하위 제외" selected={hideSubtasks}
                   onPress={() => setHideSubtasks((prev) => !prev)} />
               </ScrollView>
             </View>
@@ -344,11 +349,10 @@ export default function Completed() {
               <EmptyState
                 icon={hasAnyFilters ? 'search' : 'check-circle'}
                 art={hasAnyFilters ? <EmptySearch size={EMPTY_ART} /> : <EmptyDone size={EMPTY_ART} />}
-                title={hasAnyFilters ? '조건에 맞는 완료 기록이 없습니다' : '아직 완료한 일이 없습니다'}
-                message={hasAnyFilters ? '필터를 변경하거나 다른 검색어로 찾아보세요.' : '할 일을 완료하면 이곳에 기록이 쌓입니다.'}
+                title={hasAnyFilters ? '일치하는 기록 없음' : '완료한 일 없음'}
                 action={hasAnyFilters ? (
                   <Button
-                    label="필터 초기화" kind="secondary"
+                    label="필터 해제" kind="secondary"
                     onPress={() => {
                       setSearch('');
                       setPeriod('all');
@@ -389,11 +393,15 @@ export default function Completed() {
                             {entry.isRecurring ? <Icon name="repeat" size={11} color={colors.textFaint} /> : null}
                             <Txt variant="small" tone="faint" tabular>
                               {formatTime(at.hour * 60 + at.minute, prefs.timeFormat)
-                                + (entry.isRecurring ? ' 반복 완료' : ' 완료')
                                 + (project ? ' · #' + project : '')}
                             </Txt>
                           </View>
-                          {parentTitle ? <Txt variant="caption" tone="faint" numberOfLines={1}>상위 할 일 · {parentTitle}</Txt> : null}
+                          {parentTitle ? (
+                            <View style={styles.metaRow}>
+                              <Icon name="corner-down-right" size={11} color={colors.textFaint} />
+                              <Txt variant="caption" tone="faint" numberOfLines={1}>{parentTitle}</Txt>
+                            </View>
+                          ) : null}
                         </Pressable>
                         {!entry.isRecurring ? (
                           <IconButton
@@ -415,10 +423,10 @@ export default function Completed() {
         </>
       )}
 
-      <Sheet visible={pickingProject} onClose={() => setPickingProject(false)} title="목록 필터">
+      <Sheet visible={pickingProject} onClose={() => setPickingProject(false)} title="목록">
         <ScrollView style={{ maxHeight: 360 }}>
           <Row
-            icon="layers" label="모든 목록"
+            icon="layers" label="전체"
             trailing={projectFilter === 'all' ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
             onPress={() => {
               haptic.tap();
@@ -451,7 +459,7 @@ export default function Completed() {
         </ScrollView>
       </Sheet>
 
-      <Sheet visible={!!inspecting} onClose={() => setInspecting(null)} title={inspecting?.isRecurring ? '반복 완료 기록' : '완료한 할 일'}>
+      <Sheet visible={!!inspecting} onClose={() => setInspecting(null)} title={inspecting?.isRecurring ? '반복 기록' : '완료 기록'}>
         {inspecting ? (
           <View style={{ gap: space.md }}>
             <Txt variant="bodyStrong">{inspecting.task.title}</Txt>
@@ -460,7 +468,7 @@ export default function Completed() {
                 <View style={styles.detailMetaRow}>
                   <Icon name={inspecting.isRecurring ? 'repeat' : 'check-circle'} size={15} color={colors.textFaint} />
                   <Txt variant="small" tone="muted" tabular>
-                    {formatDate(inspectedAt.toPlainDate(), now)} {formatTime(inspectedAt.hour * 60 + inspectedAt.minute, prefs.timeFormat)} 완료
+                    {formatDate(inspectedAt.toPlainDate(), now)} {formatTime(inspectedAt.hour * 60 + inspectedAt.minute, prefs.timeFormat)}
                   </Txt>
                 </View>
               ) : null}
@@ -485,7 +493,7 @@ export default function Completed() {
               {inspectedParent ? (
                 <View style={styles.detailMetaRow}>
                   <Icon name="corner-down-right" size={15} color={colors.textFaint} />
-                  <Txt variant="small" tone="muted" numberOfLines={1}>상위 할 일 · {inspectedParent}</Txt>
+                  <Txt variant="small" tone="muted" numberOfLines={1}>{inspectedParent}</Txt>
                 </View>
               ) : null}
               {inspectedTags.length > 0 ? (
@@ -521,7 +529,7 @@ export default function Completed() {
               <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xs }}>
                 {openById.has(inspecting.task.id) ? (
                   <Button
-                    label="반복 할 일 보기" kind="secondary" icon="external-link" style={{ flex: 1 }}
+                    label="할 일 열기" kind="secondary" icon="external-link" style={{ flex: 1 }}
                     onPress={() => {
                       const id = inspecting.task.id;
                       setInspecting(null);
@@ -535,9 +543,9 @@ export default function Completed() {
         ) : null}
       </Sheet>
 
-      <Sheet visible={!!deleting} onClose={() => setDeleting(null)} title="완료 기록을 삭제할까요?">
+      <Sheet visible={!!deleting} onClose={() => setDeleting(null)} title="기록 삭제">
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          ‘{deleting?.title}’ 완료 기록이 완전히 삭제되며 되돌릴 수 없습니다.
+          ‘{deleting?.title}’ 기록을 삭제할까요?
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button label="삭제" kind="danger" onPress={confirmDelete} />
@@ -549,6 +557,7 @@ export default function Completed() {
 }
 
 const styles = StyleSheet.create({
+  weekStat: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingRight: space.xs },
   searchField: { flexDirection: 'row', alignItems: 'center', gap: space.sm, borderRadius: radius.md, paddingLeft: space.md, paddingRight: space.xs },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, paddingLeft: space.lg, paddingTop: 12 },
   recurringMark: {

@@ -176,7 +176,7 @@ export const TaskRow = memo(function TaskRow({
   const settleStyle = useAnimatedStyle(() => ({ opacity: settleOpacity.value }));
 
   const due = formatDue(task, prefs.timeFormat);
-  const repeat = describeRecurrence(task.recurrence_rule, task.recurrence_mode);
+  const repeat = describeRecurrence(task.recurrence_rule);
   const late = isPastDue(task);
   const bucket = dueBucket(task);
 
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
   titleText: { flex: 1 },
   badges: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   metaRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
-  meta: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.md, rowGap: 2 },
+  meta: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, rowGap: 2 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 190 },
   subtaskPill: {
     flexDirection: 'row', alignItems: 'center', gap: 3, minHeight: 28, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.sm,
