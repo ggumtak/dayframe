@@ -41,6 +41,7 @@ jobs:
       ANDROID_ABIS: 'arm64-v8a'
     steps:
       - name: Require main
+        working-directory: .
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
