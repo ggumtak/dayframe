@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { AiIcon } from '@/components/AiIcon';
 import { Icon, type IconName, IconButton, Txt } from '@/components/ui';
 import { AiScreen } from '@/features/ai/components';
 import { useAiKeyStatus } from '@/features/ai/keyStore';
@@ -10,7 +11,8 @@ import { AI_ROUTES } from '@/features/ai/routes';
 import { KEY_PRIORITY, matchesCombo, useKeyHandler, useScreenFocused } from '@/features/keyboard';
 import { radius, space, useTheme } from '@/theme';
 
-const FEATURES: { icon: IconName; name: string; description: string; route: string }[] = [
+const FEATURES: { icon?: IconName; isAiIcon?: boolean; name: string; description: string; route: string }[] = [
+  { isAiIcon: true, name: '자유 부탁', description: '할 일 추가·시간·알람 설정·수정·삭제를 말하듯 부탁합니다.', route: AI_ROUTES.ask },
   { icon: 'edit-3', name: '메모 정리', description: '두서없이 적은 메모를 깔끔한 할 일로 정리합니다.', route: AI_ROUTES.organize },
   { icon: 'clock', name: '하루 계획', description: '오늘 할 일을 남은 시간에 맞춰 배치합니다.', route: AI_ROUTES.plan },
   { icon: 'layers', name: '큰 일 쪼개기', description: '막막한 할 일을 바로 시작할 수 있는 작은 단계로 나눕니다.', route: AI_ROUTES.breakdown },
@@ -21,10 +23,11 @@ const FEATURES: { icon: IconName; name: string; description: string; route: stri
  * One feature as a plain row (no card, no coloured icon tile): the name carries it. The key prompt, shown while no
  * key is saved, is the one row with an accent mark, because it is the only thing to do first.
  */
-function FeatureCard({ icon, name, description, onPress, highlight }: {
-  icon: IconName; name: string; description: string; onPress: () => void; highlight?: boolean;
+function FeatureCard({ icon, isAiIcon, name, description, onPress, highlight }: {
+  icon?: IconName; isAiIcon?: boolean; name: string; description: string; onPress: () => void; highlight?: boolean;
 }) {
   const { colors } = useTheme();
+  const markColor = highlight ? colors.accentText : colors.textMuted;
   return (
     <Pressable
       accessibilityRole="button" accessibilityLabel={name} accessibilityHint={description} onPress={onPress}
@@ -33,7 +36,7 @@ function FeatureCard({ icon, name, description, onPress, highlight }: {
         highlight ? { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, paddingHorizontal: space.md } : { borderBottomColor: colors.border },
         !highlight && styles.divider, pressed && { opacity: 0.7 },
       ]}>
-      <Icon name={icon} size={20} color={highlight ? colors.accentText : colors.textMuted} />
+      {isAiIcon ? <AiIcon size={20} color={markColor} /> : icon ? <Icon name={icon} size={20} color={markColor} /> : null}
       <View style={{ flex: 1, gap: 2 }}>
         <Txt variant="bodyStrong">{name}</Txt>
         <Txt variant="small" tone="muted">{description}</Txt>
@@ -43,7 +46,7 @@ function FeatureCard({ icon, name, description, onPress, highlight }: {
   );
 }
 
-/** AI 비서: the four features, and the way to the key when none is saved. */
+/** AI 비서: the five features, and the way to the key when none is saved. */
 export default function AssistantHub() {
   const isFocused = useScreenFocused();
   const { ready, hasKey } = useAiKeyStatus();
@@ -53,7 +56,7 @@ export default function AssistantHub() {
   useKeyHandler(
     (event) => {
       if (event.editing) return false;
-      if (!event.ctrl && !event.alt && !event.meta && !event.shift && ['1', '2', '3', '4'].includes(event.key)) {
+      if (!event.ctrl && !event.alt && !event.meta && !event.shift && ['1', '2', '3', '4', '5'].includes(event.key)) {
         const feature = FEATURES[Number(event.key) - 1];
         if (feature) {
           if (!event.repeat) router.push(feature.route as never);

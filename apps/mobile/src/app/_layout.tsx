@@ -49,6 +49,7 @@ function Routes({ signedIn }: { signedIn: boolean }) {
         <Stack.Screen name="ai" />
         <Stack.Screen name="ai-key" />
         <Stack.Screen name="assistant/index" />
+        <Stack.Screen name="assistant/ask" />
         <Stack.Screen name="assistant/organize" />
         <Stack.Screen name="assistant/plan" />
         <Stack.Screen name="assistant/breakdown" />

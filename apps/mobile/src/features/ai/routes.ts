@@ -2,6 +2,7 @@
 export const AI_ROUTES = {
   hub: '/assistant',
   key: '/ai-key',
+  ask: '/assistant/ask',
   organize: '/assistant/organize',
   plan: '/assistant/plan',
   review: '/assistant/review',

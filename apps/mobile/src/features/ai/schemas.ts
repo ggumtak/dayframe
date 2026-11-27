@@ -5,7 +5,7 @@
 // Pure: tested with node:test.
 import type { Temporal } from '@js-temporal/polyfill';
 
-import { parseHHMM, parseIsoDate } from './time.ts';
+import { formatHHMM, parseHHMM, parseIsoDate } from './time.ts';
 
 /** A JSON schema for the request plus the check that turns an untyped reply into `T`, or null when unusable. */
 export interface AiSchema<T> {
@@ -194,4 +194,256 @@ export function parseReview(raw: unknown): WeeklyReview | null {
   return {
     headline, wins: sentences(raw.wins, 6), slipped: sentences(raw.slipped, 6), patterns: sentences(raw.patterns, 5), suggestions,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// 자유 부탁
+
+export type CommandActionKind =
+  | 'add_task'
+  | 'update_task'
+  | 'complete_task'
+  | 'delete_task'
+  | 'add_habit'
+  | 'set_habit_reminder';
+
+export interface CommandAction {
+  kind: CommandActionKind;
+  taskId: string | null;
+  habitId: string | null;
+  title: string | null;
+  /** YYYY-MM-DD, 'clear' (update_task only), or null. */
+  date: string | 'clear' | null;
+  /** Minutes after midnight, 'clear' (update_task only), or null. */
+  minutes: number | 'clear' | null;
+  /** 1..1440, 'clear' (update_task only, from 0), or null. */
+  durationMinutes: number | 'clear' | null;
+  priority: 1 | 2 | 3 | 4 | null;
+  /** Matched list name, 'inbox' (미분류), or null. */
+  list: string | 'inbox' | null;
+  notes: string | null;
+  subtasks: string[];
+  /** Lead minutes (0..43200), 'off' (from -1), or null. */
+  reminderMinutes: number | 'off' | null;
+  habitCadence: 'daily' | 'weekly' | null;
+  habitTarget: number | null;
+  /** Normalized 24-hour HH:MM, 'off', or null. */
+  habitReminderTime: string | 'off' | null;
+}
+
+export interface CommandReply {
+  reply: string;
+  actions: CommandAction[];
+}
+
+export interface CommandContext {
+  listNames: string[];
+  taskIds: string[];
+  habitIds: string[];
+  today: Temporal.PlainDate;
+}
+
+export const MAX_COMMAND_ACTIONS = 20;
+const MAX_REMINDER_MINUTES = 43_200;
+
+const COMMAND_KINDS: readonly CommandActionKind[] = [
+  'add_task', 'update_task', 'complete_task', 'delete_task', 'add_habit', 'set_habit_reminder',
+];
+
+function isCommandKind(value: unknown): value is CommandActionKind {
+  return typeof value === 'string' && (COMMAND_KINDS as readonly string[]).includes(value);
+}
+
+function cleanNotes(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 1000) : null;
+}
+
+function parseCommandDate(value: unknown, allowClear: boolean): string | 'clear' | null {
+  if (allowClear && typeof value === 'string' && value.trim().toLowerCase() === 'clear') return 'clear';
+  return parseIsoDate(value)?.toString() ?? null;
+}
+
+function parseCommandTime(value: unknown, allowClear: boolean): number | 'clear' | null {
+  if (allowClear && typeof value === 'string' && value.trim().toLowerCase() === 'clear') return 'clear';
+  return parseHHMM(value);
+}
+
+function parseCommandDuration(value: unknown, allowClear: boolean): number | 'clear' | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  if (allowClear && rounded === 0) return 'clear';
+  return rounded >= 1 && rounded <= 24 * 60 ? rounded : null;
+}
+
+function parseCommandList(value: unknown, listNames: string[]): string | 'inbox' | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase() === 'inbox' || sameText(trimmed, '미분류')) return 'inbox';
+  return listNames.find((name) => sameText(name, trimmed)) ?? null;
+}
+
+function parseCommandReminder(value: unknown): number | 'off' | null {
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'off') return 'off';
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  if (rounded === -1) return 'off';
+  return rounded >= 0 && rounded <= MAX_REMINDER_MINUTES ? rounded : null;
+}
+
+function parseHabitReminder(value: unknown, allowOff: boolean): string | 'off' | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (allowOff && trimmed.toLowerCase() === 'off') return 'off';
+  const minutes = parseHHMM(trimmed);
+  return minutes !== null ? formatHHMM(minutes) : null;
+}
+
+export function commandSchema({ listNames, taskIds, habitIds, today }: CommandContext): AiSchema<CommandReply> {
+  const names = [...new Set(listNames.filter((name) => name.trim()))];
+  const validTaskIds = [...new Set(taskIds.filter((id) => id.trim()))];
+  const validHabitIds = [...new Set(habitIds.filter((id) => id.trim()))];
+  const listEnum = [...new Set(['inbox', ...names])];
+
+  const json = obj({
+    reply: str('Short, natural Korean reply in 합니다체 summarizing what was prepared or answering the question.'),
+    actions: arr(obj({
+      kind: { type: 'string', enum: [...COMMAND_KINDS] },
+      task_id: validTaskIds.length ? nullable({ type: 'string', enum: validTaskIds }) : { type: 'null' },
+      habit_id: validHabitIds.length ? nullable({ type: 'string', enum: validHabitIds }) : { type: 'null' },
+      title: nullable(str('Task or habit title in Korean. Required for add_task and add_habit; set on update_task only to rename.')),
+      date: nullable(str('YYYY-MM-DD, or "clear" to remove the schedule on update_task.')),
+      time: nullable(str('24-hour HH:MM, or "clear" to make an existing task all-day on update_task.')),
+      duration_minutes: nullable(int('Estimated minutes (1..1440), or 0 to clear on update_task.')),
+      priority: nullable({ type: 'integer', enum: [1, 2, 3, 4], description: '1 highest, 4 none.' }),
+      list: nullable({ type: 'string', enum: listEnum }),
+      notes: nullable(str('Task notes when requested, otherwise null.')),
+      subtasks: arr(str()),
+      reminder_minutes: nullable(int('Lead minutes before task time (0 = on time, 10 = 10m before, 30 = 30m before, max 43200), or -1 to turn off.')),
+      habit_cadence: nullable({ type: 'string', enum: ['daily', 'weekly'] }),
+      habit_target: nullable(int('Target count per period: 1..20 for daily, 1..7 for weekly.')),
+      habit_reminder_time: nullable(str('24-hour HH:MM for habit alert, or "off" to turn off.')),
+    })),
+  });
+
+  return {
+    json,
+    rootKey: 'actions',
+    parse: (raw) => parseCommandReply(raw, { listNames: names, taskIds: validTaskIds, habitIds: validHabitIds, today }),
+  };
+}
+
+export function parseCommandReply(raw: unknown, { listNames, taskIds, habitIds, today }: CommandContext): CommandReply | null {
+  if (!isRecord(raw) || !Array.isArray(raw.actions)) return null;
+  const validTasks = new Set(taskIds);
+  const validHabits = new Set(habitIds);
+  const actions: CommandAction[] = [];
+
+  for (const item of raw.actions) {
+    if (!isRecord(item) || !isCommandKind(item.kind)) continue;
+    const { kind } = item;
+
+    const base: CommandAction = {
+      kind,
+      taskId: null,
+      habitId: null,
+      title: null,
+      date: null,
+      minutes: null,
+      durationMinutes: null,
+      priority: null,
+      list: null,
+      notes: null,
+      subtasks: [],
+      reminderMinutes: null,
+      habitCadence: null,
+      habitTarget: null,
+      habitReminderTime: null,
+    };
+
+    if (kind === 'add_task') {
+      const title = cleanText(item.title);
+      if (!title) continue;
+      const minutes = parseCommandTime(item.time, false);
+      let date = parseCommandDate(item.date, false);
+      if (typeof minutes === 'number' && !date) date = today.toString();
+      const subtasks = list(item.subtasks).map((sub) => cleanText(sub)).filter((sub): sub is string => !!sub).slice(0, 20);
+      actions.push({
+        ...base,
+        title,
+        date,
+        minutes,
+        durationMinutes: parseCommandDuration(item.duration_minutes, false),
+        priority: wholeIn(item.priority, 1, 4) as 1 | 2 | 3 | 4 | null,
+        list: parseCommandList(item.list, listNames),
+        notes: cleanNotes(item.notes),
+        subtasks,
+        reminderMinutes: parseCommandReminder(item.reminder_minutes),
+      });
+    } else if (kind === 'update_task') {
+      const taskId = typeof item.task_id === 'string' && validTasks.has(item.task_id) ? item.task_id : null;
+      if (!taskId) continue;
+      const title = cleanText(item.title);
+      const date = parseCommandDate(item.date, true);
+      const minutes = date === 'clear' ? null : parseCommandTime(item.time, true);
+      const durationMinutes = parseCommandDuration(item.duration_minutes, true);
+      const priority = wholeIn(item.priority, 1, 4) as 1 | 2 | 3 | 4 | null;
+      const listName = parseCommandList(item.list, listNames);
+      const notes = cleanNotes(item.notes);
+      const subtasks = list(item.subtasks).map((sub) => cleanText(sub)).filter((sub): sub is string => !!sub).slice(0, 20);
+      const reminderMinutes = parseCommandReminder(item.reminder_minutes);
+      const hasChange = title !== null || date !== null || minutes !== null || durationMinutes !== null
+        || priority !== null || listName !== null || notes !== null || subtasks.length > 0 || reminderMinutes !== null;
+      if (!hasChange) continue;
+      actions.push({
+        ...base,
+        taskId,
+        title,
+        date,
+        minutes,
+        durationMinutes,
+        priority,
+        list: listName,
+        notes,
+        subtasks,
+        reminderMinutes,
+      });
+    } else if (kind === 'complete_task' || kind === 'delete_task') {
+      const taskId = typeof item.task_id === 'string' && validTasks.has(item.task_id) ? item.task_id : null;
+      if (!taskId) continue;
+      actions.push({ ...base, taskId });
+    } else if (kind === 'add_habit') {
+      const title = cleanText(item.title, 120);
+      if (!title) continue;
+      const habitCadence: 'daily' | 'weekly' = item.habit_cadence === 'weekly' ? 'weekly' : 'daily';
+      const maxTarget = habitCadence === 'weekly' ? 7 : 20;
+      const habitTarget = wholeIn(item.habit_target, 1, maxTarget);
+      const habitReminderTime = parseHabitReminder(item.habit_reminder_time, false);
+      actions.push({
+        ...base,
+        title,
+        habitCadence,
+        habitTarget,
+        habitReminderTime,
+      });
+    } else if (kind === 'set_habit_reminder') {
+      const habitId = typeof item.habit_id === 'string' && validHabits.has(item.habit_id) ? item.habit_id : null;
+      const habitReminderTime = parseHabitReminder(item.habit_reminder_time, true);
+      if (!habitId || !habitReminderTime) continue;
+      actions.push({
+        ...base,
+        habitId,
+        habitReminderTime,
+      });
+    }
+
+    if (actions.length >= MAX_COMMAND_ACTIONS) break;
+  }
+
+  const reply = cleanText(raw.reply, 600);
+  if (!reply && actions.length === 0) return null;
+  return { reply: reply ?? '요청하신 내용을 정리했습니다.', actions };
 }

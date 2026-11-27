@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { AiIcon } from '@/components/AiIcon';
 import { Button, EmptyState, Icon, type IconName, Loading, Txt } from '@/components/ui';
 import { useFocusSessions } from '@/data/focus';
 import { useHabitDetails, useHabits } from '@/data/habits';
@@ -197,7 +198,8 @@ export default function Review() {
   const canMake = shown ? true : completions.isSuccess;
   const footer = state.status === 'loading' || state.status === 'error' || cached === undefined || !canMake ? undefined : (
     <Button
-      label={shown ? '다시 만들기' : '돌아보기 만들기'} icon={shown ? 'refresh-cw' : 'zap'} kind={shown && !stale ? 'secondary' : 'primary'}
+      label={shown ? '다시 만들기' : '돌아보기 만들기'} icon={shown ? 'refresh-cw' : undefined}
+      leading={shown ? undefined : <AiIcon size={16} color={colors.onAccent} />} kind={shown && !stale ? 'secondary' : 'primary'}
       onPress={() => void make()} />
   );
 

@@ -2,6 +2,7 @@ import { type Href, router } from 'expo-router';
 import { type ReactNode, useMemo, useState } from 'react';
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, type TextStyle, View } from 'react-native';
 
+import { AiIcon } from '@/components/AiIcon';
 import { Button, Card, Divider, FoldHeader, Header, Icon, type IconName, IconButton, Row, Screen, Sheet, Txt } from '@/components/ui';
 import { useProfile, useSession } from '@/data/session';
 import { AI_ROUTES, useAiKeyStatus } from '@/features/ai';
@@ -150,7 +151,7 @@ export default function Settings() {
 
         <Group title="AI · 도구">
           <Card style={styles.list}>
-            <LinkRow icon="zap" label="AI 비서" detail={aiKey.ready && !aiKey.hasKey ? 'API 키 필요' : undefined} href={AI_ROUTES.hub} />
+            <LinkRow leading={<AiIcon size={18} color={colors.textMuted} />} label="AI 비서" detail={aiKey.ready && !aiKey.hasKey ? 'API 키 필요' : undefined} href={AI_ROUTES.hub} />
             <Divider inset={32} />
             <LinkRow icon="cpu" label="AI 연결" detail="Claude · ChatGPT" href="/ai" />
             <Divider inset={32} />
@@ -214,8 +215,8 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
  * A settings row that opens another screen. `navigate` is for tab screens: it goes to the tab inside the
  * existing tab navigator, the way the habit screen opens 집중, rather than pushing a second copy.
  */
-function LinkRow({ icon, label, subtitle, detail, href, navigate }: {
-  icon: IconName; label: string; subtitle?: string; detail?: string; href: Href; navigate?: boolean;
+function LinkRow({ icon, leading, label, subtitle, detail, href, navigate }: {
+  icon?: IconName; leading?: ReactNode; label: string; subtitle?: string; detail?: string; href: Href; navigate?: boolean;
 }) {
   const { colors } = useTheme();
   const open = () => (navigate ? router.navigate(href) : router.push(href));
@@ -226,7 +227,7 @@ function LinkRow({ icon, label, subtitle, detail, href, navigate }: {
         accessibilityLabel={label}
         onPress={open}
         style={({ pressed }) => [styles.subtitleRow, pressed && { backgroundColor: colors.surfaceMuted }]}>
-        <Icon name={icon} size={20} color={colors.textMuted} />
+        {leading ?? (icon ? <Icon name={icon} size={20} color={colors.textMuted} /> : null)}
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[type.body as TextStyle, { color: colors.text }]} numberOfLines={1}>{label}</Text>
           <Txt variant="small" tone="muted" numberOfLines={1}>{subtitle}</Txt>
@@ -237,7 +238,7 @@ function LinkRow({ icon, label, subtitle, detail, href, navigate }: {
   }
   return (
     <Row
-      icon={icon} label={label} detail={detail}
+      icon={icon} leading={leading} label={label} detail={detail}
       trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
       onPress={open} />
   );

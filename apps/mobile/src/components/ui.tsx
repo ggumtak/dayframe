@@ -97,8 +97,8 @@ export function IconButton({ name, label, onPress, color, size = 22, style }: {
  * Buttons by weight. `primary` is the one filled accent button a screen may have (DESIGN.md); every other action is
  * `secondary` (neutral fill), `ghost` (no fill, accent label) or `danger` (neutral fill, red label).
  */
-export function Button({ label, onPress, kind = 'primary', icon, loading, disabled, style, ...props }: Omit<PressableProps, 'style'> & {
-  label: string; kind?: 'primary' | 'secondary' | 'ghost' | 'danger'; icon?: IconName; loading?: boolean;
+export function Button({ label, onPress, kind = 'primary', icon, leading, loading, disabled, style, ...props }: Omit<PressableProps, 'style'> & {
+  label: string; kind?: 'primary' | 'secondary' | 'ghost' | 'danger'; icon?: IconName; leading?: ReactNode; loading?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
@@ -128,7 +128,7 @@ export function Button({ label, onPress, kind = 'primary', icon, loading, disabl
         style,
       ]}>
       {loading ? <ActivityIndicator size="small" color={palette.foreground} />
-        : icon ? <Icon name={icon} size={18} color={palette.icon} /> : null}
+        : leading ?? (icon ? <Icon name={icon} size={18} color={palette.icon} /> : null)}
       <Text style={[type.bodyStrong as TextStyle, { color: palette.foreground }]}>{label}</Text>
     </Pressable>
   );
@@ -514,8 +514,8 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
 }
 
 /** A full-width row for sheets and settings lists. */
-export function Row({ icon, label, detail, onPress, tone = 'default', trailing }: {
-  icon?: IconName; label: string; detail?: string; onPress?: () => void; tone?: 'default' | 'danger'; trailing?: ReactNode;
+export function Row({ icon, leading, label, detail, onPress, tone = 'default', trailing }: {
+  icon?: IconName; leading?: ReactNode; label: string; detail?: string; onPress?: () => void; tone?: 'default' | 'danger'; trailing?: ReactNode;
 }) {
   const { colors } = useTheme();
   const color = tone === 'danger' ? colors.danger : colors.text;
@@ -523,7 +523,7 @@ export function Row({ icon, label, detail, onPress, tone = 'default', trailing }
     <Pressable
       accessibilityRole={onPress ? 'button' : undefined} accessibilityLabel={label} disabled={!onPress} onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surfaceMuted }]}>
-      {icon ? <Icon name={icon} size={20} color={tone === 'danger' ? colors.danger : colors.textMuted} /> : null}
+      {leading ?? (icon ? <Icon name={icon} size={20} color={tone === 'danger' ? colors.danger : colors.textMuted} /> : null)}
       <Text style={[type.body as TextStyle, { color, flex: 1 }]} numberOfLines={1}>{label}</Text>
       {detail ? <Txt variant="small" tone="muted" numberOfLines={1}>{detail}</Txt> : null}
       {trailing}

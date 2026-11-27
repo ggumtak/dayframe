@@ -7,6 +7,7 @@ import {
 import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AiIcon } from '@/components/AiIcon';
 import { MonthCalendar } from '@/components/MonthCalendar';
 import { Chip, Icon, IconButton, type IconName, Row, Sheet, Txt } from '@/components/ui';
 import { useNewTaskDate } from '@/data/session';
@@ -884,7 +885,7 @@ function QuickAddSheet({ defaults, frame, onClose, onOpenTemplates }: {
               accessibilityRole="button" accessibilityLabel="AI로 정리"
               onPress={openAiOrganize}
               style={({ pressed }) => [styles.topPill, { backgroundColor: colors.surfaceMuted, opacity: pressed ? 0.65 : 1 }]}>
-              <Icon name="zap" size={12} color={colors.textMuted} />
+              <AiIcon size={14} color={colors.textMuted} />
               <Txt variant="caption" tone="muted" style={{ fontWeight: '600' }}>AI로 정리</Txt>
             </Pressable>
           )}

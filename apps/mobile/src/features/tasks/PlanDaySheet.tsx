@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, type ScrollViewInstance, StyleSheet, View } from 'react-native';
 
+import { AiIcon } from '@/components/AiIcon';
 import { Button, Chip, Icon, Segmented, Sheet, Txt } from '@/components/ui';
 import { AI_ROUTES } from '@/features/ai/routes';
 import { KEY_PRIORITY, matchesCombo, useKeyHandler, useListCursor } from '@/features/keyboard';
@@ -386,7 +387,7 @@ export function PlanDaySheet({
         )}
       </ScrollView>
       <Button
-        label="AI로 하루 계획 세우기" icon="zap" kind="secondary" style={{ marginTop: space.sm }}
+        label="AI로 하루 계획 세우기" leading={<AiIcon size={16} color={colors.text} />} kind="secondary" style={{ marginTop: space.sm }}
         onPress={() => {
           onClose();
           router.push(AI_ROUTES.plan);

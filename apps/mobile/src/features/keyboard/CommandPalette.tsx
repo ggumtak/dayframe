@@ -21,6 +21,7 @@ import {
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AiIcon } from '@/components/AiIcon';
 import { Icon, IconButton, type IconName, Txt } from '@/components/ui';
 import { useProjects, useTagNames, useTaskIndex } from '@/data/tasks';
 import { AI_ROUTES } from '@/features/ai/routes';
@@ -72,7 +73,8 @@ type PaletteGroupId = 'quick' | 'navigate' | 'project' | 'tasks';
 interface PaletteItem {
   id: string;
   group: PaletteGroupId;
-  icon: IconName;
+  icon?: IconName;
+  isAiIcon?: boolean;
   label: string;
   detail?: string;
   detailTone?: 'muted' | 'danger';
@@ -386,7 +388,7 @@ function CommandPaletteOverlay() {
       {
         id: 'nav:assistant',
         group: 'navigate',
-        icon: 'zap',
+        isAiIcon: true,
         label: 'AI 비서',
         keywords: ['assistant', 'ai', '인공지능'],
         run: () => pushScreen(AI_ROUTES.hub),
@@ -719,10 +721,14 @@ function CommandPaletteOverlay() {
                         borderLeftColor: active ? colors.accent : 'transparent',
                       },
                     ]}>
-                    <Icon
-                      name={item.icon}
-                      size={17}
-                      color={active ? colors.accentText : colors.textMuted} />
+                    {item.isAiIcon ? (
+                      <AiIcon size={16} color={active ? colors.accentText : colors.textMuted} />
+                    ) : item.icon ? (
+                      <Icon
+                        name={item.icon}
+                        size={17}
+                        color={active ? colors.accentText : colors.textMuted} />
+                    ) : null}
                     <View style={styles.itemBody}>
                       <Text
                         numberOfLines={1}
