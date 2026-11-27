@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { AiIcon } from '@/components/AiIcon';
 import { Button, EmptyState, Icon, IconButton, Loading, Txt } from '@/components/ui';
 import { useTasks } from '@/data/tasks';
 import { runAi } from '@/features/ai/client';
@@ -111,7 +112,7 @@ export default function Plan() {
       <Button label={changing.length ? `적용 (${changing.length})` : '변경할 항목 없음'} icon="check" disabled={!changing.length} onPress={apply} style={{ flex: 1.4 }} />
     </View>
   ) : (
-    <Button label="계획 세우기" icon="zap" onPress={() => void propose(false)} />
+    <Button label="계획 세우기" leading={<AiIcon size={16} color={colors.onAccent} />} onPress={() => void propose(false)} />
   );
 
   let body;

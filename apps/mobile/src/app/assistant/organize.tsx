@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import { AiIcon } from '@/components/AiIcon';
 import { Button, Chip, Icon, Sheet, Txt } from '@/components/ui';
 import { nextPosition, useProjects, useTasks } from '@/data/tasks';
 import { runAi } from '@/features/ai/client';
@@ -240,7 +241,7 @@ export default function Organize() {
       <Button label={chosen.length ? `${chosen.length}개 추가` : '선택한 할 일 없음'} icon="plus" disabled={!chosen.length} onPress={add} style={{ flex: 2 }} />
     </View>
   ) : (
-    <Button label="정리하기" icon="zap" disabled={!memo.trim()} onPress={() => void organize()} />
+    <Button label="정리하기" leading={<AiIcon size={16} color={colors.onAccent} />} disabled={!memo.trim()} onPress={() => void organize()} />
   );
 
   return (

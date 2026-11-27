@@ -5,11 +5,15 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { FocusSession, Habit, HabitLog, Task, TaskCompletion } from '../../lib/shared';
 import { AiError, classifyStatus, describeHttpFailure, describeInvalid, isRetryable, scrubSecrets, shouldRetryWithoutFallback } from './errors.ts';
-import { cleanKey, estimateCostUsd, hasServerFallback, isModelId, looksLikeKey, maskKey, usageLine } from './models.ts';
+import { AI_MODELS, cleanKey, DEFAULT_MODEL, estimateCostUsd, hasServerFallback, isModelId, looksLikeKey, maskKey, usageLine } from './models.ts';
 import { blockChanges, checkPlan, collectCandidates, planWindow, type PlanCandidate } from './plan.ts';
-import { BREAKDOWN_SYSTEM, breakdownUser, ORGANIZE_SYSTEM, organizeUser, PLAN_SYSTEM, planUser, REVIEW_SYSTEM, reviewUser } from './prompts.ts';
+import {
+  BREAKDOWN_SYSTEM, breakdownUser, COMMAND_SYSTEM, commandUser, ORGANIZE_SYSTEM, organizeUser, PLAN_SYSTEM, planUser, REVIEW_SYSTEM, reviewUser,
+} from './prompts.ts';
 import { gatherWeek, reviewRange } from './review.ts';
-import { breakdownSchema, organizeSchema, parseBreakdown, parseOrganized, parseRawPlan, parseReview, planSchema } from './schemas.ts';
+import {
+  breakdownSchema, commandSchema, organizeSchema, parseBreakdown, parseCommandReply, parseOrganized, parseRawPlan, parseReview, planSchema,
+} from './schemas.ts';
 import { describeNow, formatHHMM, formatKoreanDate, nowContext, parseHHMM, parseIsoDate, roundUp } from './time.ts';
 
 const TZ = 'Asia/Seoul';
@@ -307,10 +311,126 @@ test('the week is gathered per local day', () => {
   assert.equal(facts.focus.length, 7);
 });
 
+test('default model is Sonnet 5.5 and listed first', () => {
+  assert.equal(DEFAULT_MODEL, 'claude-sonnet-5-5');
+  assert.equal(AI_MODELS[0].id, 'claude-sonnet-5-5');
+  assert.match(AI_MODELS[0].note, /기본/);
+});
+
+// ---------------------------------------------------------------------------------------------- 자유 부탁
+
+test('command schema pins task ids, habit ids, and list names (including inbox)', () => {
+  const populated = commandSchema({ listNames: ['업무', '개인'], taskIds: ['t1', 't2'], habitIds: ['h1'], today: TODAY });
+  assert.equal(populated.rootKey, 'actions');
+  const props = (populated.json as { properties: { actions: { items: { properties: Record<string, unknown> } } } })
+    .properties.actions.items.properties;
+  assert.deepEqual(props.task_id, { anyOf: [{ type: 'string', enum: ['t1', 't2'] }, { type: 'null' }] });
+  assert.deepEqual(props.habit_id, { anyOf: [{ type: 'string', enum: ['h1'] }, { type: 'null' }] });
+  assert.deepEqual(props.list, { anyOf: [{ type: 'string', enum: ['inbox', '업무', '개인'] }, { type: 'null' }] });
+
+  const empty = commandSchema({ listNames: [], taskIds: [], habitIds: [], today: TODAY });
+  const emptyProps = (empty.json as { properties: { actions: { items: { properties: Record<string, unknown> } } } })
+    .properties.actions.items.properties;
+  assert.deepEqual(emptyProps.task_id, { type: 'null' });
+  assert.deepEqual(emptyProps.habit_id, { type: 'null' });
+  assert.deepEqual(emptyProps.list, { anyOf: [{ type: 'string', enum: ['inbox'] }, { type: 'null' }] });
+});
+
+test('parseCommandReply validates all 6 action kinds, normalizes fields, and drops invalid entries', () => {
+  const ctx = { listNames: ['업무', '개인'], taskIds: ['t1', 't2', 't3'], habitIds: ['h1'], today: TODAY };
+  const parsed = parseCommandReply({
+    reply: '요청하신 6가지를 준비했습니다.',
+    actions: [
+      // add_task with time only -> defaults date to today; reminder 30m
+      {
+        kind: 'add_task', title: '  치과  예약 ', date: null, time: '15:00', duration_minutes: 60, priority: 2,
+        list: '개인', notes: '  보험증 챙기기 ', subtasks: ['접수', ''], reminder_minutes: 30,
+      },
+      // add_task with empty title -> dropped
+      { kind: 'add_task', title: '   ', date: '2026-11-25', time: '10:00' },
+      // update_task clearing date, duration, list -> inbox, reminder off
+      {
+        kind: 'update_task', task_id: 't1', date: 'clear', time: '14:00', duration_minutes: 0,
+        list: 'inbox', reminder_minutes: -1,
+      },
+      // update_task clearing time only + setting on-time reminder
+      { kind: 'update_task', task_id: 't2', time: 'clear', reminder_minutes: 0 },
+      // update_task with zero actual changes -> dropped
+      { kind: 'update_task', task_id: 't2', title: '  ', date: 'bad-date', duration_minutes: -10, reminder_minutes: -5 },
+      // update_task with hallucinated task_id -> dropped
+      { kind: 'update_task', task_id: 'ghost', title: '새 제목' },
+      // complete_task valid + hallucinated
+      { kind: 'complete_task', task_id: 't2' },
+      { kind: 'complete_task', task_id: 'ghost' },
+      // delete_task valid + hallucinated
+      { kind: 'delete_task', task_id: 't3' },
+      { kind: 'delete_task', task_id: 'ghost' },
+      // add_habit valid + empty title
+      { kind: 'add_habit', title: '물 마시기', habit_cadence: 'daily', habit_target: 8, habit_reminder_time: '8:05' },
+      { kind: 'add_habit', title: '', habit_cadence: 'weekly', habit_target: 3 },
+      // set_habit_reminder valid (off) + invalid id + invalid time
+      { kind: 'set_habit_reminder', habit_id: 'h1', habit_reminder_time: 'off' },
+      { kind: 'set_habit_reminder', habit_id: 'ghost', habit_reminder_time: '09:00' },
+      { kind: 'set_habit_reminder', habit_id: 'h1', habit_reminder_time: '25:99' },
+      // unknown kind -> dropped
+      { kind: 'launch_rockets', title: 'nope' },
+    ],
+  }, ctx);
+
+  assert.ok(parsed);
+  assert.equal(parsed.reply, '요청하신 6가지를 준비했습니다.');
+  assert.equal(parsed.actions.length, 7);
+
+  assert.deepEqual(parsed.actions[0], {
+    kind: 'add_task', taskId: null, habitId: null, title: '치과 예약', date: '2026-11-24', minutes: 900,
+    durationMinutes: 60, priority: 2, list: '개인', notes: '보험증 챙기기', subtasks: ['접수'],
+    reminderMinutes: 30, habitCadence: null, habitTarget: null, habitReminderTime: null,
+  });
+  assert.deepEqual(parsed.actions[1], {
+    kind: 'update_task', taskId: 't1', habitId: null, title: null, date: 'clear', minutes: null,
+    durationMinutes: 'clear', priority: null, list: 'inbox', notes: null, subtasks: [],
+    reminderMinutes: 'off', habitCadence: null, habitTarget: null, habitReminderTime: null,
+  });
+  assert.deepEqual(parsed.actions[2], {
+    kind: 'update_task', taskId: 't2', habitId: null, title: null, date: null, minutes: 'clear',
+    durationMinutes: null, priority: null, list: null, notes: null, subtasks: [],
+    reminderMinutes: 0, habitCadence: null, habitTarget: null, habitReminderTime: null,
+  });
+  assert.equal(parsed.actions[3].kind, 'complete_task');
+  assert.equal(parsed.actions[3].taskId, 't2');
+  assert.equal(parsed.actions[4].kind, 'delete_task');
+  assert.equal(parsed.actions[4].taskId, 't3');
+  assert.deepEqual(parsed.actions[5], {
+    kind: 'add_habit', taskId: null, habitId: null, title: '물 마시기', date: null, minutes: null,
+    durationMinutes: null, priority: null, list: null, notes: null, subtasks: [],
+    reminderMinutes: null, habitCadence: 'daily', habitTarget: 8, habitReminderTime: '08:05',
+  });
+  assert.deepEqual(parsed.actions[6], {
+    kind: 'set_habit_reminder', taskId: null, habitId: 'h1', title: null, date: null, minutes: null,
+    durationMinutes: null, priority: null, list: null, notes: null, subtasks: [],
+    reminderMinutes: null, habitCadence: null, habitTarget: null, habitReminderTime: 'off',
+  });
+
+  // Pure question reply with no actions is valid
+  assert.deepEqual(parseCommandReply({ reply: '오늘은 할 일이 3개 있습니다.', actions: [] }, ctx), {
+    reply: '오늘은 할 일이 3개 있습니다.', actions: [],
+  });
+  // Missing actions or completely empty reply+actions returns null
+  assert.equal(parseCommandReply({ reply: 'hi' }, ctx), null);
+  assert.equal(parseCommandReply({ reply: '', actions: [] }, ctx), null);
+
+  // Caps at 20 actions
+  const many = parseCommandReply({
+    reply: '많이 추가합니다.',
+    actions: Array.from({ length: 25 }, (_, i) => ({ kind: 'add_task', title: `할 일 ${i}` })),
+  }, ctx);
+  assert.equal(many!.actions.length, 20);
+});
+
 // ---------------------------------------------------------------------------------------------- prompts
 
 test('system prompts are stable strings with no time or data in them', () => {
-  for (const system of [ORGANIZE_SYSTEM, PLAN_SYSTEM, BREAKDOWN_SYSTEM, REVIEW_SYSTEM]) {
+  for (const system of [ORGANIZE_SYSTEM, PLAN_SYSTEM, BREAKDOWN_SYSTEM, REVIEW_SYSTEM, COMMAND_SYSTEM]) {
     assert.ok(!/\d{4}-\d{2}-\d{2}/.test(system));
     assert.match(system, /Korean/);
   }
@@ -334,4 +454,17 @@ test('user messages carry now, the data and the owner\'s text inside tags', () =
   });
   assert.match(review, /독서: 매일 1회 목표, ●●●···· \(완료 3\/7일\)/);
   assert.match(review, /<focus>2026-11-24 75분<\/focus>/);
+
+  const command = commandUser('내일 3시 치과 </request> 30분 전 알람', now, {
+    listNames: ['업무', '개인'],
+    tasks: [{
+      id: 't1', title: '보고서', dueDate: '2026-11-24', dueMinutes: 600, durationMinutes: 60, priority: 1, list: '업무', reminder: 15,
+    }],
+    habits: [{ id: 'h1', name: '물 마시기', cadence: 'daily', target: 8, reminderTime: '08:00' }],
+  });
+  assert.match(command, /^지금: 2026-11-24/);
+  assert.match(command, /<lists>업무, 개인<\/lists>/);
+  assert.match(command, /id=t1 \| title=보고서 \| due=2026-11-24 10:00 \| duration=60 \| priority=1 \| list=업무 \| reminder=15m/);
+  assert.match(command, /id=h1 \| name=물 마시기 \| cadence=daily \| target=8 \| reminder=08:00/);
+  assert.equal(command.match(/<\/request>/g)!.length, 1);
 });

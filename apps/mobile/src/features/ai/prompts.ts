@@ -65,6 +65,29 @@ export const REVIEW_SYSTEM = OWNER
   + '- Habit marks per day: ● done, ◐ partly, – skipped, ❄ rest day, · nothing logged.\n\n'
   + KOREAN;
 
+export const COMMAND_SYSTEM = OWNER
+  + 'The owner can ask you anything in plain Korean: create, edit, reschedule, set or turn off reminders for tasks, '
+  + 'complete or delete tasks, add habits, set or turn off habit alerts, or simply ask a question about their schedule. '
+  + 'The app shows every proposed action in a preview list and only applies the ones the owner ticks.\n\n'
+  + 'Action kinds (use `actions` array; return `actions: []` for pure questions):\n'
+  + '- add_task: create a new task. Require `title`. Fill `date` (YYYY-MM-DD), `time` (24-hour HH:MM), `duration_minutes` (1–1440), '
+  + '`priority` (1 highest, 4 none), `list` (one of `<lists>`, or null), `notes`, `subtasks`, and `reminder_minutes` only when requested or clearly implied.\n'
+  + '- update_task: change an existing task identified strictly by `task_id` from `<tasks>`. Set ONLY the fields that should change and leave unchanged fields null (and `subtasks: []`). '
+  + 'To clear an existing field: `date: "clear"` (removes schedule), `time: "clear"` (keeps date as all-day), `duration_minutes: 0` (removes duration), `list: "inbox"` (moves to 미분류).\n'
+  + '- complete_task: mark an existing task done using its `task_id` from `<tasks>`.\n'
+  + '- delete_task: delete an existing task using its `task_id` from `<tasks>` only when the owner clearly asks to delete it.\n'
+  + '- add_habit: create a new habit. `title` is the habit name, `habit_cadence` is "daily" or "weekly", `habit_target` is 1–20 (daily) or 1–7 (weekly), and `habit_reminder_time` is "HH:MM" if requested.\n'
+  + '- set_habit_reminder: change or turn off an existing habit\'s alert using `habit_id` from `<habits>` and `habit_reminder_time` ("HH:MM" or "off").\n\n'
+  + 'Alarm and reminder rules:\n'
+  + '- Task `reminder_minutes`: "30분 전 알람" → 30, "10분 전 알람" → 10, "1시간 전" → 60, "정각 알람" or "정시 알림" → 0, "알람 꺼줘" or "알림 끄기" → -1. Leave null if the owner did not ask to change the reminder.\n'
+  + '- Habit `habit_reminder_time`: "아침 8시 알림" → "08:00", "저녁 9시 반" → "21:30", "알림 꺼줘" → "off". Leave null if not mentioned.\n\n'
+  + 'Rules:\n'
+  + '- Never invent a `task_id`, `habit_id`, or `list` name. Only pick IDs that appear in `<tasks>` or `<habits>` and list names from `<lists>`.\n'
+  + '- Match tasks and habits carefully by title, date, and list. If the request is ambiguous or the item does not exist, explain clearly in `reply` without guessing destructive changes.\n'
+  + '- If the owner only asks a question (e.g. summarizing today or asking for advice), answer clearly in `reply` and return `actions: []`.\n'
+  + '- `reply`: a brief, warm, clear Korean response in 합니다체 summarizing what you prepared or answering the question.\n\n'
+  + KOREAN;
+
 /** A one-line, tag-safe rendering of free text written by the owner. */
 const line = (text: string) => text.replace(/\s+/g, ' ').replace(/</g, '‹').trim();
 
@@ -117,6 +140,57 @@ export function reviewUser(now: NowContext, facts: WeekFacts): string {
     '<still_overdue>\n' + (overdue.join('\n') || '(없음)') + '\n</still_overdue>',
     '<habits days="' + facts.range.from + '부터 7일">\n' + (habits.join('\n') || '(없음)') + '\n</habits>',
     '<focus>' + focus.join(', ') + '</focus>',
+  ].join('\n');
+}
+
+export interface CommandTaskInput {
+  id: string;
+  title: string;
+  dueDate: string | null;
+  dueMinutes: number | null;
+  durationMinutes: number | null;
+  priority: 1 | 2 | 3 | 4;
+  list: string | null;
+  reminder: number | 'off' | null;
+}
+
+export interface CommandHabitInput {
+  id: string;
+  name: string;
+  cadence: 'daily' | 'weekly';
+  target: number;
+  reminderTime: string | null;
+}
+
+export function commandUser(
+  requestText: string,
+  now: NowContext,
+  context: { listNames: string[]; tasks: CommandTaskInput[]; habits: CommandHabitInput[] },
+): string {
+  const taskRows = context.tasks.map((task) => [
+    `id=${task.id}`,
+    `title=${line(task.title)}`,
+    task.dueDate ? `due=${task.dueDate}${task.dueMinutes !== null ? ' ' + formatHHMM(task.dueMinutes) : ''}` : null,
+    task.durationMinutes ? `duration=${task.durationMinutes}` : null,
+    `priority=${task.priority}`,
+    task.list ? `list=${line(task.list)}` : null,
+    task.reminder === 'off' ? 'reminder=off' : typeof task.reminder === 'number' ? `reminder=${task.reminder}m` : null,
+  ].filter(Boolean).join(' | '));
+
+  const habitRows = context.habits.map((habit) => [
+    `id=${habit.id}`,
+    `name=${line(habit.name)}`,
+    `cadence=${habit.cadence}`,
+    `target=${habit.target}`,
+    habit.reminderTime ? `reminder=${habit.reminderTime}` : null,
+  ].filter(Boolean).join(' | '));
+
+  return [
+    describeNow(now),
+    '<lists>' + (context.listNames.length ? context.listNames.map(line).join(', ') : '(없음)') + '</lists>',
+    '<tasks>\n' + (taskRows.join('\n') || '(없음)') + '\n</tasks>',
+    '<habits>\n' + (habitRows.join('\n') || '(없음)') + '\n</habits>',
+    '<request>\n' + requestText.replace(/<\/request>/gi, '').trim() + '\n</request>',
   ].join('\n');
 }
 

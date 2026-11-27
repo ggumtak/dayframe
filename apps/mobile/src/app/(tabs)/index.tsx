@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, type ScrollViewInstance, Share, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
+import { AiIconButton } from '@/components/AiIcon';
 import { EmptyToday, OfflineArt } from '@/components/art';
 import { AllDoneArt } from '@/components/art/Illustrations';
 import {
@@ -552,6 +553,7 @@ export default function Today() {
         ].filter(Boolean).join(' · ')}
         right={(
           <View style={{ flexDirection: 'row' }}>
+            <AiIconButton label="AI 비서" onPress={() => router.push(AI_ROUTES.hub)} color={colors.textMuted} />
             <View style={{ position: 'relative' }}>
               <IconButton
                 name="compass" label="하루 계획·일정 정리"
@@ -837,12 +839,6 @@ export default function Today() {
             onPress={() => {
               closeOptions();
               shareToday();
-            }} />
-          <Row
-            icon="zap" label="AI 비서"
-            onPress={() => {
-              closeOptions();
-              router.push(AI_ROUTES.hub);
             }} />
           <Row
             icon="settings" label="설정"

@@ -147,6 +147,65 @@ function review(user) {
   };
 }
 
+function command(user) {
+  const { date } = readNow(user);
+  const lists = /<lists>(.*)<\/lists>/.exec(user)?.[1]?.split(', ').filter((name) => name && name !== '(없음)') ?? [];
+  const list = (name) => (lists.includes(name) ? name : null);
+  const taskRows = (/<tasks>\n([\s\S]*?)\n<\/tasks>/.exec(user)?.[1] ?? '').split('\n').filter((row) => row && row !== '(없음)');
+  const firstTask = taskRows.length ? {
+    id: /(?:^| \| )id=([^|]*?)(?: \||$)/.exec(taskRows[0])?.[1]?.trim() ?? null,
+    title: /(?:^| \| )title=([^|]*?)(?: \||$)/.exec(taskRows[0])?.[1]?.trim() ?? null,
+  } : null;
+
+  const emptyAction = {
+    task_id: null,
+    habit_id: null,
+    title: null,
+    date: null,
+    time: null,
+    duration_minutes: null,
+    priority: null,
+    list: null,
+    notes: null,
+    subtasks: [],
+    reminder_minutes: null,
+    habit_cadence: null,
+    habit_target: null,
+    habit_reminder_time: null,
+  };
+
+  const actions = [
+    {
+      ...emptyAction,
+      kind: 'add_task',
+      title: '치과 예약',
+      date: addDays(date, 1),
+      time: '15:00',
+      duration_minutes: 60,
+      priority: 2,
+      list: list('개인'),
+      reminder_minutes: 30,
+    },
+  ];
+
+  if (firstTask?.id) {
+    actions.push({
+      ...emptyAction,
+      kind: 'update_task',
+      task_id: firstTask.id,
+      time: '14:00',
+      reminder_minutes: 15,
+    });
+  }
+
+  return {
+    reply: firstTask?.title
+      ? `내일 오후 3시 치과 예약(30분 전 알람)을 추가하고, ‘${firstTask.title}’ 시간을 오후 2시(15분 전 알람)로 변경할 준비를 했습니다.`
+      : '내일 오후 3시 치과 예약과 30분 전 알람을 추가할 준비를 했습니다.',
+    actions,
+  };
+}
+
 /** Validates the request the way the API would, then answers it. `headers` are lower-cased. */
 export function handleAnthropic(method, headers, body, log) {
   if (method !== 'POST') return error(405, 'invalid_request_error', 'Method not allowed');
@@ -182,6 +241,7 @@ export function handleAnthropic(method, headers, body, log) {
   else if ('blocks' in properties) reply = plan(user);
   else if ('steps' in properties) reply = breakdown(user);
   else if ('headline' in properties) reply = review(user);
+  else if ('actions' in properties) reply = command(user);
   else reply = null; // the connection check: plain text
 
   const text = reply ? JSON.stringify(reply) : 'OK';

@@ -2,6 +2,7 @@ import * as Clipboard from 'expo-clipboard';
 import { type ComponentProps, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { AiIcon } from '@/components/AiIcon';
 import { Button, Card, Icon, IconButton, Sheet, Txt } from '@/components/ui';
 import { type CheckResult, checkConnection } from '@/features/ai/client';
 import { AiScreen, ErrorDetail } from '@/features/ai/components';
@@ -170,7 +171,7 @@ export default function AiKeySettings() {
             </View>
             {check ? <CheckLine result={check} /> : null}
             <Button
-              label={checking ? '연결 확인 중' : '연결 확인'} icon="zap" kind="secondary" loading={checking}
+              label={checking ? '연결 확인 중' : '연결 확인'} leading={<AiIcon size={16} color={colors.text} />} kind="secondary" loading={checking}
               onPress={() => void runCheck()} />
             <View style={{ flexDirection: 'row', gap: space.sm }}>
               <Button label="키 변경" kind="secondary" onPress={() => { setCheck(null); setEditing(true); }} style={{ flex: 1 }} />

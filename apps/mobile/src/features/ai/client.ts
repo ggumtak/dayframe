@@ -19,7 +19,7 @@ import { readAiPrefs } from './prefs';
 import { CHECK_SYSTEM, CHECK_USER } from './prompts';
 import type { AiSchema } from './schemas';
 
-export type AiFeature = 'organize' | 'plan' | 'breakdown' | 'review';
+export type AiFeature = 'ask' | 'organize' | 'plan' | 'breakdown' | 'review';
 
 export interface AiResult<T> {
   data: T;
@@ -31,7 +31,7 @@ export interface AiResult<T> {
 }
 
 /** Room for adaptive thinking plus the JSON; a short list of steps needs less. Non-streaming stays well under the SDK timeout. */
-const MAX_TOKENS: Record<AiFeature, number> = { organize: 16_000, plan: 16_000, breakdown: 8_000, review: 16_000 };
+const MAX_TOKENS: Record<AiFeature, number> = { ask: 16_000, organize: 16_000, plan: 16_000, breakdown: 8_000, review: 16_000 };
 const TIMEOUT_MS = 180_000;
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 
