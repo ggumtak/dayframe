@@ -169,19 +169,17 @@ export default function Plan() {
       </>
     );
   } else if (!candidates.length) {
-    body = <EmptyState icon="check-circle" title="오늘 할 일이 없습니다" message="오늘 예정이거나 지연된 할 일이 있으면 하루 계획을 세울 수 있습니다." />;
+    body = <EmptyState icon="check-circle" title="오늘 할 일이 없습니다" message="오늘 예정되거나 지연된 할 일이 없습니다." />;
   } else {
     body = (
       <>
-        <Txt variant="small" tone="muted">
-          오늘·지연된 할 일 {candidates.length}개를 우선순위와 소요 시간에 맞춰 남은 시간에 배치합니다. 이미 시간이 정해진 일정은 그대로 유지합니다.
-        </Txt>
+        <Txt variant="small" tone="muted">오늘·지연 할 일 {candidates.length}개</Txt>
         <Stepper label="시작 시간" value={prefs.dayStart} min={0} max={prefs.dayEnd - 60} onChange={(dayStart) => setAiPrefs({ dayStart })} />
         <Stepper label="종료 시간" value={prefs.dayEnd} min={prefs.dayStart + 60} max={24 * 60} onChange={(dayEnd) => setAiPrefs({ dayEnd })} />
         {!span ? (
-          <NoteCard icon="moon">오늘 남은 시간이 부족합니다. 종료 시간을 늦추거나 내일 다시 계획해 보세요.</NoteCard>
+          <NoteCard icon="moon">오늘 남은 시간이 부족합니다. 종료 시간을 늦춰 보세요.</NoteCard>
         ) : (
-          <Txt variant="caption" tone="faint">{formatTime(span.start)}부터 {formatTime(span.end)}까지 일정을 배치합니다.</Txt>
+          <Txt variant="caption" tone="faint">{formatTime(span.start)} ~ {formatTime(span.end)} 배치</Txt>
         )}
         <View style={{ gap: 6, marginTop: space.sm }}>
           {candidates.map((candidate) => (

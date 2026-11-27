@@ -4,6 +4,7 @@ import {
   Pressable, RefreshControl, ScrollView as PlainScroll, type ScrollViewInstance, StyleSheet, Switch, Text, type TextStyle, TextInput, View,
 } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
+import Svg, { Circle } from 'react-native-svg';
 
 import { Checkbox } from '@/components/Checkbox';
 import { EmptyList } from '@/components/art';
@@ -53,7 +54,7 @@ const sortLabels: Record<SortMode, string> = {
   manual: '내 순서',
   smart: '추천순',
   schedule: '일정순',
-  priority: '우선순위순',
+  priority: '우선순위',
   title: '이름순',
 };
 
@@ -70,11 +71,11 @@ const taskIdOf = (task: Task) => task.id;
 
 type DoneWindow = 'today' | '3' | '7' | '30' | 'all';
 const doneWindows: { value: DoneWindow; label: string; short: string }[] = [
-  { value: 'today', label: '오늘만', short: '오늘' },
-  { value: '3', label: '최근 3일', short: '최근 3일' },
-  { value: '7', label: '최근 7일', short: '최근 7일' },
-  { value: '30', label: '최근 30일', short: '최근 30일' },
-  { value: 'all', label: '전체 기간', short: '전체' },
+  { value: 'today', label: '오늘', short: '오늘' },
+  { value: '3', label: '최근 3일', short: '3일' },
+  { value: '7', label: '최근 7일', short: '7일' },
+  { value: '30', label: '최근 30일', short: '30일' },
+  { value: 'all', label: '전체', short: '전체' },
 ];
 const isDoneWindow = (value: string): value is DoneWindow => doneWindows.some((item) => item.value === value);
 const isScope = (value: string): value is Scope => value.length > 0;
@@ -306,8 +307,33 @@ export default function Inbox() {
     if (done === 0) return null;
     const total = scopeRoots.length + done;
     if (total === 0) return null;
-    return { done, total, pct: Math.round((done / total) * 100) };
+    return { done, total };
   }, [selected, selectedMeta?.showProgress, projectCompletedRoots.length, scopeRoots.length]);
+
+  const completedCountsByProject = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const task of completedAll ?? []) {
+      if (!task.parent_task_id && task.project_id) {
+        map.set(task.project_id, (map.get(task.project_id) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [completedAll]);
+
+  const filterCounts = useMemo(() => {
+    let due = 0;
+    let undated = 0;
+    let priority = 0;
+    let checklist = 0;
+    for (const task of scopeRoots) {
+      const d = dueDate(task);
+      if (d && Temporal.PlainDate.compare(d, logicalToday(task.timezone, prefs.dayStartHour, nowInstant)) <= 0) due += 1;
+      if (!task.due_at) undated += 1;
+      if (task.priority < 4) priority += 1;
+      if ((subtaskProgress.get(task.id)?.total ?? 0) > 0) checklist += 1;
+    }
+    return { all: scopeRoots.length, due, undated, priority, checklist } as Record<ListFilter, number>;
+  }, [scopeRoots, prefs.dayStartHour, nowInstant, subtaskProgress]);
 
   const counts = useMemo(() => {
     const map = new Map<string | null, number>();
@@ -567,18 +593,10 @@ export default function Inbox() {
   }, [triageIds, triageIndex, byId]);
 
   const title = effectiveScope === 'all'
-    ? '전체 목록'
+    ? '전체'
     : activeSavedFilter
       ? activeSavedFilter.name
       : selected?.name ?? '목록';
-  const subtitle = tasks.length
-    ? [
-      `${tasks.length}개`,
-      canSortManually ? '' : effectiveScope === 'all' && sort === 'manual' ? '목록별' : activeSavedFilter ? '스마트 뷰' : sortLabels[sort],
-    ].filter(Boolean).join(' · ')
-    : activeSavedFilter
-      ? '스마트 뷰'
-      : undefined;
 
   const visibleTasks = useMemo(() => {
     if (allProjectGroups && allProjectGroups.length > 0) {
@@ -706,7 +724,7 @@ export default function Inbox() {
   return (
     <Screen>
       <Header
-        title={title} subtitle={subtitle}
+        title={title}
         right={(
           <View style={{ flexDirection: 'row' }}>
             {tasks.length > 0 ? (
@@ -778,16 +796,14 @@ export default function Inbox() {
       </View>
 
       {projectProgress ? (
-        <View style={styles.progressWrap}>
-          <View style={styles.progressHeader}>
-            <Txt variant="caption" tone="muted" tabular>
-              완료 {projectProgress.done} / 전체 {projectProgress.total} · {projectProgress.pct}%
-            </Txt>
-            {isChecklistProject ? (
-              <Txt variant="caption" tone="faint">체크리스트</Txt>
-            ) : null}
-          </View>
-          <ProgressBar value={projectProgress.done / projectProgress.total} height={4} />
+        <View style={styles.progressRow} accessibilityLabel={`진행 ${projectProgress.done}/${projectProgress.total}`}>
+          <ProjectPie value={projectProgress.done / projectProgress.total} size={16} />
+          <Txt variant="smallStrong" tone="muted" tabular>
+            {projectProgress.done}/{projectProgress.total}
+          </Txt>
+          {isChecklistProject ? (
+            <Txt variant="caption" tone="faint">체크리스트</Txt>
+          ) : null}
         </View>
       ) : null}
 
@@ -799,6 +815,7 @@ export default function Inbox() {
           {filterOptions.map((option) => (
             <FilterPill
               key={option.value} label={option.label}
+              count={option.value === 'all' ? undefined : filterCounts[option.value]}
               selected={listFilter === option.value}
               onPress={() => selectFilter(option.value)} />
           ))}
@@ -807,11 +824,12 @@ export default function Inbox() {
 
       {!selectedIds && effectiveScope === 'inbox' && scopeRoots.length >= 2 ? (
         <Pressable
-          accessibilityRole="button" accessibilityLabel={`미분류 ${scopeRoots.length}개 빠르게 정리`}
+          accessibilityRole="button" accessibilityLabel={`미분류 ${scopeRoots.length}개 정리`}
           onPress={openTriage}
           style={({ pressed }) => [styles.triageRow, { opacity: pressed ? 0.6 : 1 }]}>
           <Icon name="zap" size={14} color={colors.accentText} />
-          <Txt variant="smallStrong" tone="accent" tabular>{scopeRoots.length}개 빠르게 정리</Txt>
+          <Txt variant="smallStrong" tone="accent">미분류 정리</Txt>
+          <Txt variant="smallStrong" tone="accent" tabular>{scopeRoots.length}</Txt>
           <Icon name="chevron-right" size={14} color={colors.accentText} />
         </Pressable>
       ) : null}
@@ -823,12 +841,14 @@ export default function Inbox() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {tasks.length === 0 && listFilter !== 'all' ? (
             <EmptyState
-              icon="filter" title="조건에 맞는 할 일이 없습니다"
-              message="다른 필터를 선택하거나 전체 할 일을 확인해 보세요."
+              icon="filter" title="일치하는 할 일 없음"
               action={<Button label="필터 해제" kind="secondary" onPress={() => selectFilter('all')} />} />
           ) : allProjectGroups && allProjectGroups.length > 0 ? (
             allProjectGroups.map((group) => {
               const collapsed = !selectedIds && collapsedSections.has(group.key);
+              const groupDone = group.projectId ? (completedCountsByProject.get(group.projectId) ?? 0) : 0;
+              const showPie = !!group.projectId && groupDone > 0 && projectMeta[group.projectId]?.showProgress !== false;
+              const groupTotal = group.tasks.length + groupDone;
               return (
                 <View key={group.key}>
                   <View style={[styles.sectionHeader, { borderBottomColor: colors.border }]}>
@@ -837,9 +857,17 @@ export default function Inbox() {
                       onPress={() => toggleSectionCollapse(group.key)}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={15} color={colors.textFaint} />
-                      <Icon name={group.icon} size={14} color={colors.textFaint} />
+                      {showPie ? (
+                        <ProjectPie value={groupDone / groupTotal} size={16} />
+                      ) : (
+                        <Icon
+                          name={group.icon} size={14}
+                          color={group.projectId ? (listColor(projectMeta[group.projectId]?.color, isDark) ?? colors.textFaint) : colors.textFaint} />
+                      )}
                       <Txt variant="section">{group.name}</Txt>
-                      <Txt variant="small" tone="faint" tabular>{group.tasks.length}</Txt>
+                      <Txt variant="small" tone="faint" tabular>
+                        {showPie ? `${groupDone}/${groupTotal}` : group.tasks.length}
+                      </Txt>
                     </Pressable>
                     <IconButton
                       name="plus" label={group.name + '에 할 일 추가'} size={16} color={colors.textMuted}
@@ -894,7 +922,7 @@ export default function Inbox() {
                           onPress={() => quickAdd.open({ projectId: selected!.id, sectionId: section.id })}
                           style={styles.emptySection}>
                           <Icon name="plus" size={14} color={colors.textFaint} />
-                          <Txt variant="small" tone="faint">이 섹션에 할 일 추가</Txt>
+                          <Txt variant="small" tone="faint">할 일 추가</Txt>
                         </Pressable>
                       )
                     ) : null}
@@ -915,18 +943,17 @@ export default function Inbox() {
                 selectedIds={selectedIds} onToggleSelect={toggleSelect} focusedTaskId={cursor.focusedId} />
               {selected ? (
                 <Pressable
-                  accessibilityRole="button" accessibilityLabel="섹션으로 나누기" onPress={openCreateSection}
+                  accessibilityRole="button" accessibilityLabel="섹션 추가" onPress={openCreateSection}
                   style={({ pressed }) => [styles.addSectionBtn, { opacity: pressed ? 0.6 : 1 }]}>
                   <Icon name="bookmark" size={14} color={colors.textMuted} />
-                  <Txt variant="small" tone="muted">섹션으로 나누기</Txt>
+                  <Txt variant="small" tone="muted">섹션 추가</Txt>
                 </Pressable>
               ) : null}
             </>
           ) : isChecklistProject && projectCompletedRoots.length > 0 ? (
             <View style={styles.checklistAllDone}>
               <Icon name="check-circle" size={24} color={colors.accentText} />
-              <Txt variant="bodyStrong">모든 항목을 체크했습니다</Txt>
-              <Txt variant="small" tone="muted">다시 사용할 때 아래 버튼으로 한 번에 초기화할 수 있습니다.</Txt>
+              <Txt variant="bodyStrong">모두 완료</Txt>
             </View>
           ) : (
             <EmptyState
@@ -936,21 +963,10 @@ export default function Inbox() {
                   ? (projectMeta[selected.id]?.icon ?? 'hash')
                   : effectiveScope === 'all' ? 'layers' : 'inbox'}
               art={<EmptyList size={EMPTY_ART} />}
-              title={activeSavedFilter
-                ? `‘${activeSavedFilter.name}’에 해당하는 할 일이 없습니다`
-                : selected
-                  ? '아직 등록된 할 일이 없습니다'
-                  : effectiveScope === 'all' ? '아직 할 일이 없습니다' : '미분류 할 일이 없습니다'}
-              message={activeSavedFilter
-                ? '조건에 맞는 할 일이 생기면 이곳에 자동으로 모입니다.'
-                : selected
-                  ? '아래 + 버튼으로 할 일을 추가하거나 템플릿으로 시작해 보세요.'
-                  : effectiveScope === 'all'
-                    ? '아래 + 버튼으로 새 할 일을 추가해 보세요.'
-                    : '목록을 지정하지 않은 할 일이 이곳에 모입니다. 위 + 버튼으로 새 목록을 만들어 보세요.'}
+              title={activeSavedFilter ? '일치하는 할 일 없음' : effectiveScope === 'inbox' ? '미분류 비어 있음' : '비어 있음'}
               action={!activeSavedFilter ? (
                 <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
-                  <Button label="템플릿에서 추가" kind="secondary" icon="bookmark" onPress={() => setShowTemplates(true)} />
+                  <Button label="템플릿" kind="secondary" icon="bookmark" onPress={() => setShowTemplates(true)} />
                   {selected ? <Button label="섹션 추가" kind="ghost" icon="plus" onPress={openCreateSection} /> : null}
                 </View>
               ) : undefined} />
@@ -959,7 +975,7 @@ export default function Inbox() {
           {!selectedIds && isChecklistProject && projectCompletedRoots.length > 0 ? (
             <View style={{ paddingHorizontal: space.lg, marginTop: space.md }}>
               <Button
-                label={`체크 초기화 (${projectCompletedRoots.length}개)`}
+                label={`초기화 (${projectCompletedRoots.length})`}
                 kind="secondary" icon="rotate-ccw"
                 onPress={resetProjectChecklist} />
             </View>
@@ -976,7 +992,7 @@ export default function Inbox() {
                   }}
                   style={({ pressed }) => [styles.completedToggle, { flex: 1, opacity: pressed ? 0.6 : 1 }]}>
                   <Icon name={completedExpanded ? 'chevron-down' : 'chevron-right'} size={15} color={colors.textFaint} />
-                  <Txt variant="smallStrong" tone="muted" tabular>완료한 할 일 {completedInScope.length}</Txt>
+                  <Txt variant="smallStrong" tone="muted" tabular>완료 {completedInScope.length}</Txt>
                 </Pressable>
                 {!isChecklistProject && !activeSavedFilter ? (
                   <Pressable
@@ -1027,14 +1043,17 @@ export default function Inbox() {
         visible={showTemplates} onClose={() => setShowTemplates(false)}
         projectId={selected?.id ?? null} />
 
-      <Sheet visible={!!triageIds} onClose={closeTriage} title="미분류 빠르게 정리">
+      <Sheet visible={!!triageIds} onClose={closeTriage} title="미분류 정리">
         {triageTask ? (
           <View style={{ gap: space.md }}>
             <View style={{ gap: 6 }}>
               <View style={styles.progressHeader}>
-                <Txt variant="caption" tone="muted" tabular>
-                  {Math.min(triageIndex + 1, triageTotal)} / {triageTotal}
-                </Txt>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <ProjectPie value={triageTotal > 0 ? (triageIndex + 1) / triageTotal : 1} size={16} />
+                  <Txt variant="caption" tone="muted" tabular>
+                    {Math.min(triageIndex + 1, triageTotal)}/{triageTotal}
+                  </Txt>
+                </View>
                 <Pressable hitSlop={8} onPress={advanceTriage}>
                   <Txt variant="caption" tone="muted">건너뛰기</Txt>
                 </Pressable>
@@ -1088,11 +1107,11 @@ export default function Inbox() {
                   selected={!!triageDueDate && triageDueDate.equals(nowDate.add({ days: 1 }))}
                   onPress={() => flow.reschedule(triageTask, nowDate.add({ days: 1 }))} />
                 <Chip
-                  icon="coffee" label="이번 주말"
+                  icon="coffee" label="주말"
                   selected={!!triageDueDate && triageDueDate.equals(triageSaturday)}
                   onPress={() => flow.reschedule(triageTask, triageSaturday)} />
                 <Chip
-                  icon="slash" label="날짜 없음"
+                  icon="slash" label="없음"
                   selected={!triageDueDate}
                   onPress={() => flow.reschedule(triageTask, null)} />
               </View>
@@ -1104,7 +1123,7 @@ export default function Inbox() {
                 {PRIORITIES.map((p) => (
                   <Chip
                     key={p}
-                    label={p < 4 ? `P${p} ${priorityMark(p)}` : 'P4 없음'}
+                    label={p < 4 ? priorityMark(p) : '없음'}
                     selected={triageTask.priority === p}
                     onPress={() => taskActions.update(triageTask.id, { priority: p })} />
                 ))}
@@ -1134,13 +1153,13 @@ export default function Inbox() {
         ) : (
           <View style={{ alignItems: 'center', gap: space.md, paddingVertical: space.lg }}>
             <Icon name="check-circle" size={28} color={colors.accentText} />
-            <Txt variant="bodyStrong">미분류 정리를 마쳤습니다</Txt>
+            <Txt variant="bodyStrong">정리 완료</Txt>
             <Button label="닫기" kind="secondary" onPress={closeTriage} style={{ alignSelf: 'stretch' }} />
           </View>
         )}
       </Sheet>
 
-      <Sheet visible={pickingDoneWindow} onClose={() => setPickingDoneWindow(false)} title="완료한 할 일 표시 기간">
+      <Sheet visible={pickingDoneWindow} onClose={() => setPickingDoneWindow(false)} title="표시 기간">
         {doneWindows.map((item) => (
           <Row
             key={item.value} label={item.label}
@@ -1151,11 +1170,9 @@ export default function Inbox() {
               setPickingDoneWindow(false);
             }} />
         ))}
-        <Txt variant="small" tone="muted" style={{ marginTop: space.sm }}>
-          기간이 지나도 삭제되지 않으며, 완료한 일 화면에서 언제든 확인할 수 있습니다.
-        </Txt>
+        <Divider style={{ marginVertical: space.xs }} />
         <Row
-          icon="check-circle" label="완료한 일 전체 보기"
+          icon="check-circle" label="완료 기록"
           trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
           onPress={() => {
             setPickingDoneWindow(false);
@@ -1163,15 +1180,12 @@ export default function Inbox() {
           }} />
       </Sheet>
 
-      <Sheet visible={pickingSort} onClose={() => setPickingSort(false)} title="정렬 기준">
+      <Sheet visible={pickingSort} onClose={() => setPickingSort(false)} title="정렬">
         {(['manual', 'smart', 'schedule', 'priority', 'title'] as SortMode[]).map((option) => (
           <Row
             key={option}
             icon={option === 'manual' ? 'menu' : option === 'smart' ? 'zap' : option === 'schedule' ? 'calendar' : option === 'priority' ? 'flag' : 'type'}
             label={sortLabels[option]}
-            detail={option === 'manual'
-              ? (effectiveScope === 'all' ? '목록별로 묶어 표시' : undefined)
-              : option === 'smart' ? '긴급도 · 우선순위 · 진행률' : undefined}
             trailing={sort === option ? <Icon name="check" size={18} color={colors.accentText} /> : undefined}
             onPress={() => {
               haptic.tap();
@@ -1183,17 +1197,17 @@ export default function Inbox() {
 
       <Sheet visible={projectMenu && !!selected} onClose={() => setProjectMenu(false)} title={selected ? '#' + selected.name : ''}>
         <PlainScroll style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
-          <Row icon="plus" label="새 섹션 추가" detail="단계·주제별로 구분" onPress={openCreateSection} />
+          <Row icon="plus" label="섹션 추가" onPress={openCreateSection} />
           <Row
-            icon="bookmark" label="체크리스트 템플릿 추가"
+            icon="bookmark" label="템플릿 추가"
             onPress={() => {
               setProjectMenu(false);
               setShowTemplates(true);
             }} />
-          <Row icon="edit-2" label="목록 편집" detail="이름 · 색상 · 아이콘" onPress={openRename} />
+          <Row icon="edit-2" label="목록 편집" onPress={openRename} />
           <Divider style={{ marginVertical: space.xs }} />
           <Row
-            icon="check-square" label="체크리스트 목록 (초기화 가능)"
+            icon="check-square" label="체크리스트 모드"
             trailing={(
               <Switch
                 value={!!selectedMeta?.checklistMode}
@@ -1234,14 +1248,14 @@ export default function Inbox() {
           {canMoveProjectUp || canMoveProjectDown ? <Divider style={{ marginVertical: space.xs }} /> : null}
           {canMoveProjectUp ? (
             <Row
-              icon="arrow-up" label="목록 위로 이동"
+              icon="arrow-up" label="위로 이동"
               onPress={() => {
                 void moveSelectedProject(-1);
               }} />
           ) : null}
           {canMoveProjectDown ? (
             <Row
-              icon="arrow-down" label="목록 아래로 이동"
+              icon="arrow-down" label="아래로 이동"
               onPress={() => {
                 void moveSelectedProject(1);
               }} />
@@ -1260,7 +1274,7 @@ export default function Inbox() {
         {activeSavedFilter ? (
           <>
             <Row
-              icon="bookmark" label="목록 탭에서 고정 해제"
+              icon="bookmark" label="고정 해제"
               onPress={() => {
                 const target = activeSavedFilter;
                 setSavedViewMenu(false);
@@ -1269,7 +1283,7 @@ export default function Inbox() {
                 showToast(`‘${target.name}’ 고정을 해제했습니다.`);
               }} />
             <Row
-              icon="trash-2" label="스마트 뷰 삭제" tone="danger"
+              icon="trash-2" label="뷰 삭제" tone="danger"
               onPress={() => {
                 const target = activeSavedFilter;
                 setSavedViewMenu(false);
@@ -1283,14 +1297,14 @@ export default function Inbox() {
 
       <Sheet visible={!!managingSection} onClose={() => setManagingSection(null)} title={managingSection?.name ?? ''}>
         <Row
-          icon="plus" label="이 섹션에 할 일 추가"
+          icon="plus" label="할 일 추가"
           onPress={() => {
             const target = managingSection;
             setManagingSection(null);
             if (target && selected) quickAdd.open({ projectId: selected.id, sectionId: target.id });
           }} />
         <Row
-          icon="edit-2" label="섹션 이름 변경"
+          icon="edit-2" label="이름 변경"
           onPress={() => {
             if (!managingSection) return;
             setSectionName(managingSection.name);
@@ -1314,7 +1328,7 @@ export default function Inbox() {
             }} />
         ) : null}
         <Row
-          icon="trash-2" label="섹션 삭제" detail="할 일은 유지됩니다" tone="danger"
+          icon="trash-2" label="섹션 삭제" tone="danger"
           onPress={() => {
             if (!managingSection) return;
             const removed = managingSection.name;
@@ -1324,11 +1338,11 @@ export default function Inbox() {
           }} />
       </Sheet>
 
-      <Sheet visible={!!sectionEditor} onClose={() => setSectionEditor(null)} title={sectionEditor?.mode === 'rename' ? '섹션 이름 변경' : '새 섹션'}>
+      <Sheet visible={!!sectionEditor} onClose={() => setSectionEditor(null)} title={sectionEditor?.mode === 'rename' ? '섹션 이름' : '새 섹션'}>
         <View style={{ gap: space.md }}>
           <TextInput
             value={sectionName} onChangeText={setSectionName} autoFocus maxLength={120}
-            placeholder="예: 준비물, 진행 중, 확인 필요" placeholderTextColor={colors.textFaint}
+            placeholder="섹션 이름" placeholderTextColor={colors.textFaint}
             returnKeyType="done" onSubmitEditing={saveSection} accessibilityLabel="섹션 이름"
             style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
           <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -1344,7 +1358,7 @@ export default function Inbox() {
         <View style={{ gap: space.md }}>
           <TextInput
             value={projectName} onChangeText={setProjectName} autoFocus maxLength={120}
-            placeholder="예: 회사, 건강, 장보기" placeholderTextColor={colors.textFaint}
+            placeholder="목록 이름" placeholderTextColor={colors.textFaint}
             returnKeyType="done" onSubmitEditing={saveProject} accessibilityLabel="목록 이름"
             style={[type.body, styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} />
           <View style={{ gap: 6 }}>
@@ -1403,10 +1417,10 @@ export default function Inbox() {
         </View>
       </Sheet>
 
-      <Sheet visible={confirmDelete && !!selected} onClose={() => setConfirmDelete(false)} title={`#${selected?.name ?? ''} 목록을 삭제할까요?`}>
+      <Sheet visible={confirmDelete && !!selected} onClose={() => setConfirmDelete(false)} title={`#${selected?.name ?? ''} 삭제`}>
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
           {counts.get(selected?.id ?? null)
-            ? `이 목록의 할 일 ${counts.get(selected?.id ?? null)}개도 함께 삭제됩니다. 삭제한 내용은 되돌릴 수 없습니다.`
+            ? `할 일 ${counts.get(selected?.id ?? null)}개가 함께 삭제됩니다.`
             : '삭제한 목록은 되돌릴 수 없습니다.'}
         </Txt>
         <View style={{ gap: space.sm }}>
@@ -1420,12 +1434,33 @@ export default function Inbox() {
   );
 }
 
+/** Things 3–style mini circular progress pie (outer ring + clockwise inner pie wedge). */
+function ProjectPie({ value, size = 16 }: { value: number; size?: number }) {
+  const { colors } = useTheme();
+  const ratio = Math.max(0, Math.min(1, value));
+  const cx = size / 2;
+  const outerR = cx - 1.25;
+  const pieR = (cx - 2.75) / 2;
+  const pieStroke = pieR * 2;
+  const circ = 2 * Math.PI * pieR;
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <Circle cx={cx} cy={cx} r={outerR} fill="none" stroke={ratio > 0 ? colors.accent : colors.control} strokeWidth={1.5} />
+      {ratio > 0 ? (
+        <Circle
+          cx={cx} cy={cx} r={pieR} fill="none" stroke={colors.accent} strokeWidth={pieStroke}
+          strokeDasharray={`${circ * ratio} ${circ}`} transform={`rotate(-90 ${cx} ${cx})`} />
+      ) : null}
+    </Svg>
+  );
+}
+
 /** A filter inside the chosen list: plain text, the selected one on a quiet fill, so it never reads as a second list row. */
-function FilterPill({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+function FilterPill({ label, count, selected, onPress }: { label: string; count?: number; selected: boolean; onPress: () => void }) {
   const { colors } = useTheme();
   return (
     <Pressable
-      accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected }} hitSlop={{ top: 6, bottom: 6 }}
+      accessibilityRole="button" accessibilityLabel={count ? `${label} ${count}` : label} accessibilityState={{ selected }} hitSlop={{ top: 6, bottom: 6 }}
       onPress={() => {
         haptic.tap();
         onPress();
@@ -1435,6 +1470,7 @@ function FilterPill({ label, selected, onPress }: { label: string; selected: boo
         { backgroundColor: selected ? colors.surfaceMuted : 'transparent', opacity: pressed ? 0.6 : 1 },
       ]}>
       <Txt variant="smallStrong" tone={selected ? 'default' : 'muted'} style={{ fontWeight: selected ? '600' : '500' }}>{label}</Txt>
+      {count ? <Txt variant="caption" tone="faint" tabular>{count}</Txt> : null}
     </Pressable>
   );
 }
@@ -1442,10 +1478,10 @@ function FilterPill({ label, selected, onPress }: { label: string; selected: boo
 const styles = StyleSheet.create({
   chipStripRow: { flexDirection: 'row', alignItems: 'center' },
   projectChipWrap: { flexDirection: 'row', alignItems: 'center' },
-  progressWrap: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm, gap: 6 },
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, paddingTop: 2, paddingBottom: space.xs },
   progressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   triageRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, paddingLeft: space.lg, paddingRight: space.md, paddingVertical: 8 },
-  filterPill: { height: 30, paddingHorizontal: 10, borderRadius: radius.sm, justifyContent: 'center' },
+  filterPill: { height: 30, paddingHorizontal: 10, borderRadius: radius.sm, flexDirection: 'row', alignItems: 'center', gap: 4 },
   triageCard: {
     borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, padding: space.md, gap: 4,
   },

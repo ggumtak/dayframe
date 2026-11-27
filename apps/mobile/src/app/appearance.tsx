@@ -39,7 +39,6 @@ export default function Appearance() {
               { value: 'light', label: MODE_LABELS.light, icon: 'sun' },
               { value: 'dark', label: MODE_LABELS.dark, icon: 'moon' },
             ]} />
-          {mode === 'system' ? <Txt variant="small" tone="muted">기기의 다크 모드 설정을 따릅니다.</Txt> : null}
         </View>
 
         <View style={{ gap: space.sm }}>
@@ -79,7 +78,6 @@ export default function Appearance() {
               })}
             </View>
           </Card>
-          <Txt variant="small" tone="muted">주요 버튼과 선택한 탭, 체크 표시, 홈 화면 위젯에 적용됩니다.</Txt>
         </View>
 
         <View style={{ gap: space.sm }}>
@@ -102,10 +100,7 @@ export default function Appearance() {
                 setPersonalPrefs({ showNotePreview: !prefs.showNotePreview });
               }}
               style={styles.toggleRow}>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Txt variant="bodyStrong">메모 미리보기</Txt>
-                <Txt variant="small" tone="muted">목록에서 할 일 제목 아래 메모 첫 줄을 함께 보여줍니다.</Txt>
-              </View>
+              <Txt variant="bodyStrong" style={{ flex: 1 }}>메모 미리보기</Txt>
               <Switch
                 accessibilityLabel="메모 미리보기"
                 value={prefs.showNotePreview}
@@ -117,12 +112,12 @@ export default function Appearance() {
         </View>
 
         <View style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted" accessibilityRole="header">제스처 · 피드백</Txt>
+          <Txt variant="section" tone="muted" accessibilityRole="header">제스처</Txt>
           <Card style={{ paddingVertical: space.xs }}>
             <Row
               icon="sliders"
               label="맞춤 설정"
-              detail="스와이프 · 진동 피드백"
+              detail="스와이프 · 진동"
               trailing={<Icon name="chevron-right" size={18} color={colors.textFaint} />}
               onPress={() => router.push('/personalization')} />
           </Card>
@@ -190,8 +185,8 @@ const styles = StyleSheet.create({
   swatch: { width: '25%', alignItems: 'center', gap: 6, minHeight: 64 },
   ring: { width: 44, height: 44, borderRadius: radius.pill, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  noteCard: { paddingVertical: space.md },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 44 },
+  noteCard: { paddingVertical: space.xs },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 40 },
   previewRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
   previewMeta: { flexDirection: 'row', alignItems: 'center', gap: space.xs, flexWrap: 'wrap' },
 });

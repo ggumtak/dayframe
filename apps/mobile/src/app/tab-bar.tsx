@@ -17,13 +17,13 @@ const STARTUP_TAB_OPTIONS: readonly { value: StartupTab; label: string; icon: Ic
   { value: 'upcoming', label: TAB_LABELS.upcoming, icon: TAB_ICONS.upcoming },
   { value: 'habits', label: TAB_LABELS.habits, icon: TAB_ICONS.habits },
   { value: 'focus', label: TAB_LABELS.focus, icon: TAB_ICONS.focus },
-  { value: 'last', label: '마지막으로 본 탭', icon: 'rotate-ccw' },
+  { value: 'last', label: '마지막 탭', icon: 'rotate-ccw' },
 ];
 
 const TODAY_BADGE_OPTIONS: { value: TodayBadgeMode; label: string }[] = [
   { value: 'all', label: '오늘 + 지연' },
   { value: 'overdue', label: '지연만' },
-  { value: 'off', label: '표시 안 함' },
+  { value: 'off', label: '끄기' },
 ];
 
 /** 탭 바: which tabs sit in the bottom bar and in what order. 오늘 always comes first. */
@@ -40,12 +40,12 @@ export default function TabBarSettings() {
         <BarPreview />
 
         <View style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted" accessibilityRole="header">탭 순서와 표시</Txt>
+          <Txt variant="section" tone="muted" accessibilityRole="header">탭 구성</Txt>
           <Card style={{ paddingVertical: space.xs }}>
             <View style={styles.row}>
               <Icon name={TAB_ICONS.index} size={20} color={colors.textMuted} />
               <Txt style={{ flex: 1 }}>{TAB_LABELS.index}</Txt>
-              <Txt variant="small" tone="faint">첫 번째 고정</Txt>
+              <Txt variant="small" tone="faint">고정</Txt>
               <Icon name="lock" size={16} color={colors.textFaint} />
             </View>
             {config.order.map((tab, index) => {
@@ -72,12 +72,11 @@ export default function TabBarSettings() {
               );
             })}
           </Card>
-          <Txt variant="small" tone="muted">숨긴 탭은 설정의 ‘숨긴 탭’에서 언제든 열 수 있습니다.</Txt>
         </View>
 
         <View style={{ gap: space.sm }}>
-          <Txt variant="section" tone="muted" accessibilityRole="header">기본 시작 화면</Txt>
-          <Card style={{ gap: space.sm }}>
+          <Txt variant="section" tone="muted" accessibilityRole="header">시작 화면</Txt>
+          <Card>
             <View style={styles.chipWrap}>
               {STARTUP_TAB_OPTIONS.map((option) => (
                 <Chip
@@ -89,24 +88,22 @@ export default function TabBarSettings() {
                 />
               ))}
             </View>
-            <Txt variant="small" tone="muted">앱을 처음 열 때 바로 이동할 화면을 선택합니다.</Txt>
           </Card>
         </View>
 
         <View style={{ gap: space.sm }}>
           <Txt variant="section" tone="muted" accessibilityRole="header">오늘 탭 배지</Txt>
-          <Card style={{ gap: space.sm }}>
+          <Card>
             <Segmented<TodayBadgeMode>
               value={personalPrefs.todayBadgeMode}
               options={TODAY_BADGE_OPTIONS}
               onChange={(todayBadgeMode) => setPersonalPrefs({ todayBadgeMode })}
             />
-            <Txt variant="small" tone="muted">하단 ‘오늘’ 탭 아이콘 위에 표시할 할 일 개수 기준입니다.</Txt>
           </Card>
         </View>
 
         <Button
-          label="기본 설정으로 되돌리기" kind="secondary" icon="rotate-ccw" disabled={isDefaultTabBar(config)}
+          label="기본값으로 되돌리기" kind="secondary" icon="rotate-ccw" disabled={isDefaultTabBar(config)}
           onPress={() => setTabBarConfig(DEFAULT_TAB_BAR)} />
       </ScrollView>
     </Screen>

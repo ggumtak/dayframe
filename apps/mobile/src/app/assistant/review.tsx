@@ -176,14 +176,14 @@ export default function Review() {
       <EmptyState
         icon="wifi-off"
         title="완료 기록을 불러오지 못했습니다"
-        message="지난 7일의 완료 기록을 가져와야 주간 돌아보기를 만들 수 있습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+        message="인터넷 연결을 확인한 뒤 다시 시도해 주세요."
         action={<Button label="다시 시도" icon="refresh-cw" onPress={() => void completions.refetch()} />} />
     );
   } else {
     body = (
       <>
         <Txt variant="small" tone="muted">
-          {dateLabel(range.from)} ~ {dateLabel(range.to)} 기록을 바탕으로 한 주를 정리해 드립니다. 만든 돌아보기는 저장되므로 다시 열어도 요금이 들지 않습니다.
+          {dateLabel(range.from)} ~ {dateLabel(range.to)}
         </Txt>
         <View style={styles.stats}>
           <Stat label="완료" value={`${facts.completed.length}개`} />

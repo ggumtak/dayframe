@@ -253,9 +253,9 @@ export default function Organize() {
           <AiErrorView kind={state.kind} detail={state.detail} onRetry={() => void organize()} />
         ) : preview ? (
           <>
-            <Txt variant="small" tone="muted">
-              {drafts.length ? '추가할 할 일만 선택해 주세요. 항목을 누르면 제목·날짜·시간·목록을 수정할 수 있습니다.' : '메모에서 할 일을 찾지 못했습니다. 내용을 조금 더 구체적으로 적어 다시 시도해 보세요.'}
-            </Txt>
+            {!drafts.length ? (
+              <Txt variant="small" tone="muted">메모에서 할 일을 찾지 못했습니다.</Txt>
+            ) : null}
             {drafts.map((draft) => (
               <DraftRow
                 key={draft.key} draft={draft} now={now} onEdit={() => setEditing(draft)}
@@ -268,7 +268,7 @@ export default function Organize() {
             <View style={[styles.memo, { backgroundColor: colors.surfaceMuted }]}>
               <TextInput
                 value={memo} onChangeText={setMemo} multiline textAlignVertical="top" accessibilityLabel="메모"
-                placeholder={'떠오르는 일을 자유롭게 적어 보세요.\n\n예: 내일 오전에 치과 전화, 금요일까지 보고서 초안. 주말엔 장보기(우유, 계란)'}
+                placeholder="예: 내일 10시 치과, 금요일까지 보고서, 주말 장보기"
                 placeholderTextColor={colors.textFaint} style={[styles.memoInput, { color: colors.text, fontFamily }]} />
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -282,9 +282,6 @@ export default function Organize() {
                 </Pressable>
               ) : null}
             </View>
-            <Txt variant="caption" tone="faint">
-              날짜·시간·목록은 메모 내용을 바탕으로 자동으로 채워 드립니다. 추가하기 전에 하나씩 수정할 수 있습니다.
-            </Txt>
           </>
         )}
       </KeyGate>

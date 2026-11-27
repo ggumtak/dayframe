@@ -163,7 +163,7 @@ export function HabitAdjustSheet({
                 <View style={{ alignItems: 'center', flex: 1 }}>
                   <Txt variant="heading" tabular>{todayCount} / {habit.target_count}회</Txt>
                   <Txt variant="caption" tone="muted">
-                    {todayCount >= habit.target_count ? '오늘 목표 달성' : `목표까지 ${habit.target_count - todayCount}회 남음`}
+                    {todayCount >= habit.target_count ? '목표 달성' : `${habit.target_count - todayCount}회 남음`}
                   </Txt>
                 </View>
                 <IconButton
@@ -203,7 +203,7 @@ export function HabitAdjustSheet({
             <>
               <Row
                 icon="clock"
-                label="이 습관으로 집중 시작"
+                label="집중 시작"
                 onPress={() => {
                   haptic.tap();
                   onClose();
@@ -226,9 +226,9 @@ export function HabitAdjustSheet({
             </>
           ) : null}
 
-          <Row icon="skip-forward" label="오늘 건너뛰기" detail="달성률에서 제외" onPress={() => mark('skipped')} />
-          <Row icon="pause-circle" label="오늘 쉬어가기" detail="연속 기록 유지" onPress={() => mark('frozen')} />
-          {!isMultiDaily && todayLog ? <Row icon="rotate-ccw" label="오늘 기록 지우기" onPress={() => mark(null)} /> : null}
+          <Row icon="skip-forward" label="건너뛰기" detail="달성률 제외" onPress={() => mark('skipped')} />
+          <Row icon="pause-circle" label="쉬어가기" detail="연속 유지" onPress={() => mark('frozen')} />
+          {!isMultiDaily && todayLog ? <Row icon="rotate-ccw" label="기록 지우기" onPress={() => mark(null)} /> : null}
         </View>
       ) : null}
     </Sheet>
@@ -297,19 +297,16 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
   const strength = useMemo(() => computeHabitStrength(habit, logs, day), [habit, logs, day]);
   const look = habitLook(habit.name, meta);
   const statusText = strength.missedYesterday
-    ? '어제 놓침'
+    ? ''
     : weekly || habit.target_count > 1
-      ? (weekly ? `이번 주 ${progress}/${habit.target_count}회` : `오늘 ${progress}/${habit.target_count}회`)
+      ? (weekly ? `주 ${progress}/${habit.target_count}` : `${progress}/${habit.target_count}회`)
         + (todayLog?.status === 'skipped' ? ' · 건너뜀' : todayLog?.status === 'frozen' ? ' · 쉬어감' : '')
       : !done && todayLog?.status === 'skipped'
         ? '건너뜀'
         : !done && todayLog?.status === 'frozen'
           ? '쉬어감'
           : '';
-  const streakText = streak > 0 ? `${streak}${weekly ? '주' : '일'} 연속` : '';
-  const strengthText = strength.score > 0 ? `꾸준함 ${strength.score}%` : '';
-  const statsText = [streakText, strengthText].filter(Boolean).join(' · ');
-  const statsLabel = [streakText, strengthText].filter(Boolean).join(', ');
+  const hasFooter = strength.missedYesterday || !!statusText || streak > 0 || strength.score > 0;
 
   const checkIn = () => {
     // Protect completed multi-count habits from accidental wipe to 0: open the adjust sheet instead.
@@ -416,22 +413,29 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
                 );
               })}
             </View>
-            {statusText || statsText ? (
-              // One quiet line: today's status only when the ring cannot show it, then streak and strength.
+            {hasFooter ? (
+              // One quiet line: missed/status signal, then compact icon-led streak and consistency.
               <View style={styles.footer}>
-                {statusText ? (
-                  <Txt
-                    variant={strength.missedYesterday ? 'smallStrong' : 'small'}
-                    tone={strength.missedYesterday ? 'danger' : 'muted'}
-                    tabular numberOfLines={1}>
+                {strength.missedYesterday ? (
+                  <View style={styles.missedBadge}>
+                    <View style={[styles.missedDot, { backgroundColor: colors.danger }]} />
+                    <Txt variant="metaStrong" tone="danger" numberOfLines={1}>어제 놓침</Txt>
+                  </View>
+                ) : statusText ? (
+                  <Txt variant="meta" tone="muted" tabular numberOfLines={1}>
                     {statusText}
                   </Txt>
                 ) : null}
-                {statusText && statsText ? <Txt variant="small" tone="faint">·</Txt> : null}
-                {statsText ? (
-                  <View style={styles.stats} accessible accessibilityLabel={statsLabel}>
-                    {streak > 0 ? <Icon name="zap" size={11} color={colors.textFaint} /> : null}
-                    <Txt variant="small" tone="muted" tabular numberOfLines={1}>{statsText}</Txt>
+                {streak > 0 ? (
+                  <View style={styles.statItem} accessible accessibilityLabel={`${streak}${weekly ? '주' : '일'} 연속`}>
+                    <Icon name="zap" size={11} color={colors.textFaint} />
+                    <Txt variant="meta" tone="muted" tabular>{streak}{weekly ? '주' : '일'}</Txt>
+                  </View>
+                ) : null}
+                {strength.score > 0 ? (
+                  <View style={styles.statItem} accessible accessibilityLabel={`꾸준함 ${strength.score}%`}>
+                    <Icon name="activity" size={11} color={colors.textFaint} />
+                    <Txt variant="meta" tone="muted" tabular>{strength.score}%</Txt>
                   </View>
                 ) : null}
               </View>
@@ -455,8 +459,10 @@ export const HabitCard = memo(function HabitCard({ habit, logs, stats, meta, dat
 
 const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
-  footer: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  stats: { flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 1 },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  missedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  missedDot: { width: 5, height: 5, borderRadius: 2.5 },
   moreBtn: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   todayLabel: { fontWeight: '700' },
   dot: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },

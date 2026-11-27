@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AiIcon } from '@/components/AiIcon';
@@ -8,6 +8,7 @@ import { useHabitActions, useHabits } from '@/data/habits';
 import { nextPosition, useProjects, useTaskActions, useTasks } from '@/data/tasks';
 import { runAi } from '@/features/ai/client';
 import { AiErrorView, AiLoading, AiScreen, KeyGate, Toggle, UsageLine } from '@/features/ai/components';
+import { useAiKeyStatus } from '@/features/ai/keyStore';
 import { PRIORITY_LABEL } from '@/features/ai/labels';
 import { COMMAND_SYSTEM, type CommandHabitInput, type CommandTaskInput, commandUser } from '@/features/ai/prompts';
 import { type CommandAction, type CommandActionKind, type CommandReply, commandSchema } from '@/features/ai/schemas';
@@ -29,8 +30,8 @@ import { fontFamily, radius, space, useTheme } from '@/theme';
 const MAX_CONTEXT_TASKS = 80;
 
 const EXAMPLES: readonly { label: string; prompt: string }[] = [
-  { label: '내일 오후 3시 치과 · 30분 전 알람', prompt: '내일 오후 3시에 치과 예약 추가하고 30분 전 알람 맞춰줘' },
-  { label: '오늘 할 일 시간·알람 변경', prompt: '오늘 할 일 중 가장 급한 일 시간을 오후 2시로 바꾸고 15분 전 알람 설정해줘' },
+  { label: '내일 3시 치과 · 30분 전 알람', prompt: '내일 오후 3시에 치과 예약 추가하고 30분 전 알람 맞춰줘' },
+  { label: '급한 일 오후 2시로 변경', prompt: '오늘 할 일 중 가장 급한 일 시간을 오후 2시로 바꾸고 15분 전 알람 설정해줘' },
   { label: '매일 아침 8시 습관 추가', prompt: '매일 아침 물 한 잔 마시기 습관 추가하고 오전 8시 알림 맞춰줘' },
 ];
 
@@ -268,10 +269,12 @@ export default function AskAssistant() {
   const overrides = useReminderOverrides();
   const taskActions = useTaskActions();
   const habitActions = useHabitActions();
+  const { ready: keyReady, hasKey } = useAiKeyStatus();
   const request = useAiRequest<CommandReply>();
 
-  const { text: carried } = useLocalSearchParams<{ text?: string }>();
-  const [promptText, setPromptText] = useState(typeof carried === 'string' ? carried : '');
+  const { q, text: carried } = useLocalSearchParams<{ q?: string; text?: string }>();
+  const initialQuery = typeof q === 'string' && q.trim() ? q.trim() : '';
+  const [promptText, setPromptText] = useState(initialQuery || (typeof carried === 'string' ? carried : ''));
   const [replyText, setReplyText] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<DraftAction[] | null>(null);
 
@@ -321,8 +324,8 @@ export default function AskAssistant() {
   const { state } = request;
   const preview = state.status === 'done' && replyText !== null && drafts !== null;
 
-  const submit = async () => {
-    const text = promptText.trim();
+  const submit = async (override?: string) => {
+    const text = (override ?? promptText).trim();
     if (!text) return;
     const result = await request.run((signal) => runAi({
       feature: 'ask',
@@ -346,6 +349,14 @@ export default function AskAssistant() {
       setDrafts(result.data.actions.map((action, index) => ({ key: index, action, include: true })));
     }
   };
+
+  const autoSubmitted = useRef(false);
+  useEffect(() => {
+    if (autoSubmitted.current || !initialQuery || !keyReady || !hasKey) return;
+    autoSubmitted.current = true;
+    void submit(initialQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery, keyReady, hasKey]);
 
   const resetToInput = () => {
     setDrafts(null);
@@ -641,7 +652,7 @@ export default function AskAssistant() {
                 multiline
                 textAlignVertical="top"
                 accessibilityLabel="부탁할 내용"
-                placeholder="예: 내일 오후 3시 치과 예약 넣고 30분 전 알람 맞춰줘"
+                placeholder="예: 내일 3시 치과, 30분 전 알람"
                 placeholderTextColor={colors.textFaint}
                 style={[styles.textInput, { color: colors.text, fontFamily }]}
               />
@@ -663,9 +674,6 @@ export default function AskAssistant() {
                 </Pressable>
               </View>
             )}
-            <Txt variant="caption" tone="faint">
-              할 일 추가·수정·완료·삭제와 알람, 습관 설정을 한 번에 부탁할 수 있습니다. 적용 전에 변경 내용을 확인하고 선택할 수 있습니다.
-            </Txt>
           </>
         )}
       </KeyGate>

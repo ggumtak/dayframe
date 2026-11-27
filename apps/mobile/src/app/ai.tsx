@@ -16,17 +16,17 @@ const guides: { name: string; steps: string[] }[] = [
   {
     name: 'Claude',
     steps: [
-      '컴퓨터에서 claude.ai를 열고 ‘설정 → 커넥터’로 이동합니다.',
-      '‘커스텀 커넥터 추가’를 누르고 이름에는 Dayframe, 주소에는 복사한 연결 주소를 붙여 넣습니다. 인증 방식은 ‘로그인 없음’을 선택합니다.',
-      '대화창에서 “오늘 할 일 보여줘”라고 입력해 연결을 확인합니다. 한 번 등록하면 휴대폰 Claude 앱에서도 바로 사용할 수 있습니다.',
+      'claude.ai → 설정 → 커넥터',
+      '커스텀 커넥터 추가 · 이름 Dayframe · 주소 붙여넣기 · 로그인 없음',
+      '“오늘 할 일 보여줘”로 연결 확인',
     ],
   },
   {
     name: 'ChatGPT',
     steps: [
-      '컴퓨터에서 chatgpt.com을 열고 ‘설정 → 앱 및 커넥터 → 고급 설정’에서 개발자 모드를 켭니다.',
-      '‘만들기’를 누르고 이름에는 Dayframe, ‘MCP 서버 URL’ 칸에는 복사한 연결 주소를 붙여 넣은 뒤 인증은 ‘인증 없음’을 선택합니다.',
-      '대화창에서 Dayframe을 선택한 뒤 “오늘 할 일 보여줘”라고 입력해 연결을 확인합니다.',
+      'chatgpt.com → 설정 → 앱 및 커넥터 → 개발자 모드 켜기',
+      '만들기 · 이름 Dayframe · MCP URL 붙여넣기 · 인증 없음',
+      'Dayframe 선택 후 “오늘 할 일 보여줘”로 확인',
     ],
   },
 ];
@@ -41,7 +41,7 @@ function formatMoment(iso: string): string {
 async function copyAddress(url: string) {
   try {
     await Clipboard.setStringAsync(url);
-    showToast('연결 주소를 복사했습니다. 컴퓨터에서도 그대로 붙여 넣어 주세요.');
+    showToast('연결 주소를 복사했습니다.');
   } catch {
     showToast('복사에 실패했습니다. 주소를 길게 눌러 직접 복사해 주세요.', { tone: 'error' });
   }
@@ -69,17 +69,13 @@ export default function AiConnections() {
     <Screen>
       <Header title="AI 연결" left={<IconButton name="arrow-left" label="뒤로" onPress={() => router.back()} />} />
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg, paddingBottom: space.xxl * 2 }}>
-        <Txt tone="muted">
-          Claude나 ChatGPT에 연결 주소를 등록하면, 대화만으로 할 일과 습관을 확인하고 추가·수정·완료할 수 있습니다.
-        </Txt>
+        <Txt variant="small" tone="muted">Claude·ChatGPT에서 할 일과 습관을 관리합니다.</Txt>
 
         {fresh ? (
           <Card style={{ gap: space.md }}>
             <View style={{ gap: 2 }}>
               <Txt variant="bodyStrong">{fresh.label} 연결 주소</Txt>
-              <Txt variant="smallStrong">
-                이 주소는 지금 한 번만 표시됩니다. 주소를 알면 누구나 내 할 일을 보고 수정·삭제할 수 있으니 AI 설정 화면에만 입력해 주세요.
-              </Txt>
+              <Txt variant="small" tone="muted">지금 한 번만 표시됩니다. 외부에 공유하지 마세요.</Txt>
             </View>
             <View style={{ backgroundColor: colors.surfaceMuted, borderRadius: radius.sm, padding: space.md }}>
               <Txt variant="small" selectable accessibilityLabel="연결 주소">{fresh.url}</Txt>
@@ -88,7 +84,6 @@ export default function AiConnections() {
             {Platform.OS !== 'web' ? (
               <Button label="컴퓨터로 공유하기" kind="secondary" icon="share-2" onPress={() => void shareAddress(fresh.url)} />
             ) : null}
-            <Txt variant="small" tone="muted">한 글자만 달라도 연결되지 않습니다. 직접 입력하지 말고 반드시 복사해서 붙여 넣어 주세요.</Txt>
             <Button label="등록 완료" kind="secondary" onPress={() => setFresh(null)} />
           </Card>
         ) : (
@@ -96,7 +91,7 @@ export default function AiConnections() {
             <Button
               label="새 연결 주소 만들기" icon="plus" loading={create.isPending} disabled={full || isPending}
               onPress={() => setChoosing(true)} />
-            {full ? <Txt variant="small" tone="muted">연결은 최대 {MAX_CONNECTIONS}개까지 만들 수 있습니다. 사용하지 않는 연결을 먼저 해제해 주세요.</Txt> : null}
+            {full ? <Txt variant="small" tone="muted">최대 {MAX_CONNECTIONS}개까지 연결할 수 있습니다.</Txt> : null}
           </View>
         )}
 
@@ -104,7 +99,7 @@ export default function AiConnections() {
           <Txt variant="section" tone="muted">연결된 AI</Txt>
           {isPending ? <Loading /> : isError && !connections ? (
             <Card style={{ gap: space.md }}>
-              <Txt tone="muted">연결 목록을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.</Txt>
+              <Txt tone="muted">연결 목록을 불러오지 못했습니다.</Txt>
               <Button label="다시 시도" kind="secondary" onPress={() => void refetch()} />
             </Card>
           ) : connections?.length ? (
@@ -140,9 +135,6 @@ export default function AiConnections() {
               ))}
             </Card>
           ))}
-          <Txt variant="small" tone="faint">
-            서비스 업데이트에 따라 메뉴 이름이 달라질 수 있습니다. AI로 변경한 내용은 앱을 다시 열면 반영됩니다.
-          </Txt>
         </View>
       </ScrollView>
 
@@ -159,7 +151,7 @@ export default function AiConnections() {
 
       <Sheet visible={!!removing} onClose={() => setRemoving(null)} title={(removing?.label ?? '') + ' 연결을 해제할까요?'}>
         <Txt tone="muted" style={{ marginBottom: space.lg }}>
-          연결을 해제하면 이 주소는 더 이상 사용할 수 없습니다. 다시 연결하려면 새 주소를 만들어 다시 등록해야 합니다.
+          연결을 해제하면 이 주소는 사용할 수 없습니다.
         </Txt>
         <View style={{ gap: space.sm }}>
           <Button

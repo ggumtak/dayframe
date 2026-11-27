@@ -254,7 +254,7 @@ export default function Habits() {
   return (
     <Screen>
       <Header
-        title="습관" subtitle={habits.length ? `${habits.length}개 중 ${done}개 달성` : undefined}
+        title="습관" subtitle={habits.length ? `${done}/${habits.length}` : undefined}
         right={(
           <View style={{ flexDirection: 'row' }}>
             <IconButton name="star" label="습관 갤러리" onPress={() => router.push('/routines')} color={colors.textMuted} />
@@ -269,10 +269,13 @@ export default function Habits() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}>
           {habits.length ? (
             <>
-              <Card style={{ gap: space.sm, paddingVertical: space.md }}>
-                <Txt variant="caption" tone="muted" style={{ fontWeight: '700' }} tabular>
-                  이번 주 달성 현황 · {weeklyPct}%
-                </Txt>
+              <View style={[styles.weekStrip, { borderBottomColor: colors.border }]}>
+                <View style={styles.weekHead}>
+                  <Txt variant="section" tone="muted">이번 주</Txt>
+                  <Txt variant="smallStrong" tone="default" tabular style={{ fontWeight: '700' }}>
+                    {weeklyPct}%
+                  </Txt>
+                </View>
                 <View style={styles.weekBars}>
                   {weeklySummary.map((bar) => {
                     const isToday = bar.date.equals(nowDay);
@@ -327,7 +330,7 @@ export default function Habits() {
                     <Divider />
                     <View style={styles.selectedDayHead}>
                       <Txt variant="smallStrong" tabular style={{ flex: 1 }}>
-                        {selectedBar.date.month}월 {selectedBar.date.day}일 ({weekdayName(selectedBar.date)}) · {selectedBar.met}/{selectedBar.eligible} 완료 ({Math.round(selectedBar.ratio * 100)}%)
+                        {selectedBar.date.month}월 {selectedBar.date.day}일 ({weekdayName(selectedBar.date)}) · {selectedBar.met}/{selectedBar.eligible}
                       </Txt>
                       <Pressable
                         accessibilityRole="button"
@@ -366,11 +369,11 @@ export default function Habits() {
                         ))}
                       </View>
                     ) : (
-                      <Txt variant="small" tone="faint">이날 시작한 습관이 없습니다.</Txt>
+                      <Txt variant="small" tone="faint">기록 없음</Txt>
                     )}
                   </View>
                 ) : null}
-              </Card>
+              </View>
 
               {groupedHabits.map((group) => {
                 const remainingInGroup = group.items.filter((habit) => !isSettledToday(habit)).length;
@@ -387,7 +390,7 @@ export default function Habits() {
                             <Txt variant="caption" tone="faint" tabular>{group.items.length}</Txt>
                           </>
                         ) : (
-                          <Txt variant="section" tone="muted">오늘의 습관</Txt>
+                          <Txt variant="section" tone="muted">오늘</Txt>
                         )}
                         <View style={{ flex: 1 }} />
                         {showRoutineStart ? (
@@ -408,7 +411,7 @@ export default function Habits() {
                               },
                             ]}>
                             <Icon name="play" size={11} color={colors.accentText} />
-                            <Txt variant="metaStrong" tone="accent">루틴 시작</Txt>
+                            <Txt variant="metaStrong" tone="accent">루틴</Txt>
                           </Pressable>
                         ) : null}
                       </View>
@@ -424,10 +427,10 @@ export default function Habits() {
             </>
           ) : (
             <EmptyState
-              icon="repeat" art={<EmptyHabits size={EMPTY_ART} />} title="습관을 만들어 보세요" message="매일이나 매주 반복할 습관을 정해 보세요. 체크할 때마다 연속 기록이 쌓입니다."
+              icon="repeat" art={<EmptyHabits size={EMPTY_ART} />} title="습관 없음"
               action={(
                 <View style={{ gap: space.sm, marginTop: space.md, alignSelf: 'stretch' }}>
-                  <Button label="습관 갤러리에서 고르기" icon="star" onPress={() => router.push('/routines')} />
+                  <Button label="습관 갤러리" icon="star" onPress={() => router.push('/routines')} />
                   <Button label="직접 만들기" kind="secondary" icon="plus" onPress={() => router.push('/habit/new')} />
                 </View>
               )} />
@@ -439,7 +442,7 @@ export default function Habits() {
                 onPress={() => setShowArchived((open) => !open)}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: space.xs, opacity: pressed ? 0.6 : 1 })}>
                 <Icon name="archive" size={14} color={colors.textMuted} />
-                <Txt variant="smallStrong" tone="muted" tabular>보관한 습관 {archived.length}</Txt>
+                <Txt variant="smallStrong" tone="muted" tabular>보관 {archived.length}</Txt>
                 <Icon name={showArchived ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textFaint} />
               </Pressable>
               {showArchived ? (
@@ -477,6 +480,16 @@ export default function Habits() {
 }
 
 const styles = StyleSheet.create({
+  weekStrip: {
+    gap: space.sm,
+    paddingBottom: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  weekHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   weekBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
   barCol: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 4 },
   barTrack: { height: 38, justifyContent: 'flex-end', width: '100%', alignItems: 'center' },
